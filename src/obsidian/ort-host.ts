@@ -1,15 +1,18 @@
 // Adapter zu onnxruntime-web (Spec §4): WASM base64-inline (Store-Regel: kein
 // Laufzeit-Nachladen von Code), WebGPU-EP, Sessions als schmales Session-Interface.
 //
-// Step-1-Verifikation (onnxruntime-web@1.27.0):
-//   - `ls dist/*.wasm` → `ort-wasm-simd-threaded.jsep.wasm` existiert (JSEP =
-//     WebGPU-Build, ~25,6 MB). Dateiname unverändert übernommen.
-//   - `exports` enthält `./webgpu` → default: `dist/ort.webgpu.bundle.min.mjs`.
-//     Der `.bundle.`-Build inlint das mjs-WASM-Glue selbst; zusammen mit dem
-//     hier per `env.wasm.wasmBinary` gesetzten Binary bleibt alles in main.js
-//     (kein Sidecar-Fetch, kein Blob-URL-Worker). Import bleibt `.../webgpu`.
+// WASM-Variante MUSS zum Glue des importierten Bundles passen (Smoke-Test-Befund
+// 2026-07-16): `onnxruntime-web/webgpu` → `ort.webgpu.bundle.min.mjs` referenziert
+// in 1.27 `ort-wasm-simd-threaded.asyncify.wasm` (NICHT mehr die jsep-Variante —
+// deren Export-Tabelle weicht in 62/35 Namen ab). Falsche Paarung bricht die
+// interne Init mit "XA.$b is not a function" und `InferenceSession.create`
+// resolved nie (Hänger auf "Generating"). Prüfbefehl bei ORT-Upgrades:
+//   grep -o '[a-z.-]*\.wasm' dist/ort.webgpu.bundle.min.mjs | sort -u
+//   → genau diese Datei unten importieren.
+// Der `.bundle.`-Build inlint das mjs-Glue; zusammen mit `env.wasm.wasmBinary`
+// bleibt alles in main.js (kein Sidecar-Fetch, kein Blob-URL-Worker).
 import * as ort from "onnxruntime-web/webgpu";
-import ortWasm from "../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.wasm";
+import ortWasm from "../../node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.wasm";
 import type { OrtValue, Session } from "../core/engine";
 
 let initialized = false;
