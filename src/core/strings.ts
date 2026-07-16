@@ -21,6 +21,7 @@ export const STRINGS = {
   emptyNoModelCta: "Download model (~2.5 GB)",
   emptyNoImage: "Enter a prompt and press Generate.",
   insertNeedsEditor: "Open a note to insert the image",
+  saveFailed: (msg: string) => `Save failed: ${msg}`,
   oomHint: "Generation failed. Try closing other apps — the model needs roughly 4–7 GB of free memory.",
   settingsModelHeading: "Model",
   settingsModelDesc: "SD-Turbo (ONNX, fp16) is downloaded from Hugging Face after you explicitly start it. Stored in the local browser cache, outside your vault.",
