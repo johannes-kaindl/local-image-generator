@@ -51,9 +51,19 @@ export async function createOrtSession(buf: ArrayBuffer): Promise<Session> {
   const session = await ort.InferenceSession.create(buf, {
     executionProviders: ["webgpu"],
   });
+  // Deklarierte Eingabetypen aus den Session-Metadaten ziehen (ORT ≥1.21) —
+  // die Engine passt ihre Feed-Dtypes daran an (fp16-Gewichte ≠ fp16-Inputs).
+  const inputTypes: Record<string, string> = {};
+  const meta = (session as unknown as {
+    inputMetadata?: readonly { name: string; isTensor: boolean; type?: unknown }[];
+  }).inputMetadata;
+  for (const m of meta ?? []) {
+    if (m.isTensor && typeof m.type === "string") inputTypes[m.name] = m.type;
+  }
   return {
     inputNames: session.inputNames,
     outputNames: session.outputNames,
+    inputTypes,
     async run(
       feeds: Record<string, OrtValue>,
     ): Promise<Record<string, OrtValue>> {

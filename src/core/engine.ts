@@ -15,6 +15,11 @@ export interface OrtValue {
 export interface Session {
   inputNames: readonly string[];
   outputNames: readonly string[];
+  /** ONNX-Eingabetypen je Input-Name (z. B. "float32"|"float16"|"int32"|"int64").
+   *  Die Engine passt ihre Feeds daran an — fp16-GEWICHTE implizieren NICHT
+   *  fp16-EINGÄNGE (Smoke-Test-Befund 2026-07-16: schmuell/sd-turbo-ort-web
+   *  erwartet float32-Inputs). Fehlender Eintrag → float32/int32-Default. */
+  inputTypes: Readonly<Record<string, string>>;
   run(feeds: Record<string, OrtValue>): Promise<Record<string, OrtValue>>;
   release(): Promise<void>;
 }
@@ -48,6 +53,28 @@ function toF32(v: OrtValue): Float32Array {
   if (v.data instanceof Uint16Array) return f16ArrayToF32(v.data);
   if (v.data instanceof Float32Array) return v.data;
   throw new Error(`unexpected tensor dtype for ${v.dims.join("x")}`);
+}
+
+// Float-Feed passend zum deklarierten Eingabetyp der Session bauen.
+function floatFeed(session: Session, name: string, f32: Float32Array, dims: readonly number[]): OrtValue {
+  return session.inputTypes[name] === "float16"
+    ? { data: f32ArrayToF16(f32), dims }
+    : { data: f32, dims };
+}
+
+// Skalarer Timestep im deklarierten Typ (int64 | float32 | float16).
+function timestepFeed(session: Session, name: string, t: number): OrtValue {
+  const type = session.inputTypes[name] ?? "int64";
+  if (type === "float32") return { data: new Float32Array([t]), dims: [1] };
+  if (type === "float16") return { data: f32ArrayToF16(new Float32Array([t])), dims: [1] };
+  return { data: new BigInt64Array([BigInt(t)]), dims: [1] };
+}
+
+// Token-IDs im deklarierten Typ (int32 | int64).
+function idsFeed(session: Session, name: string, ids: Int32Array): OrtValue {
+  return session.inputTypes[name] === "int64"
+    ? { data: BigInt64Array.from(ids, (x) => BigInt(x)), dims: [1, ids.length] }
+    : { data: new Int32Array(ids), dims: [1, ids.length] };
 }
 
 function firstOutput(session: Session, outputs: Record<string, OrtValue>): OrtValue {
@@ -90,11 +117,12 @@ export class SdTurboEngine {
     try {
       const ids = tokenize(req.prompt, this.tokenizerData);
       const encOut = await this.sessions.textEncoder.run({
-        input_ids: { data: new Int32Array(ids), dims: [1, ids.length] },
+        input_ids: idsFeed(this.sessions.textEncoder, "input_ids", new Int32Array(ids)),
       });
       const hidden = firstOutput(this.sessions.textEncoder, encOut);
-      const hiddenF16: Uint16Array =
-        hidden.data instanceof Uint16Array ? hidden.data : f32ArrayToF16(hidden.data as Float32Array);
+      // Encoder-Output in f32 normalisieren; floatFeed konvertiert bei Bedarf
+      // zurück nach f16 — je nachdem, was das UNet deklariert.
+      const hiddenF32 = toF32(hidden);
 
       const n = LATENT.c * LATENT.h * LATENT.w;
       const schedule = makeSchedule(req.steps);
@@ -105,9 +133,9 @@ export class SdTurboEngine {
         const sigma = schedule.sigmas[i]!;
         const scaled = scaleInput(latents, sigma);
         const unetOut = await this.sessions.unet.run({
-          sample: { data: f32ArrayToF16(scaled), dims: [1, LATENT.c, LATENT.h, LATENT.w] },
-          timestep: { data: new BigInt64Array([BigInt(schedule.timesteps[i]!)]), dims: [1] },
-          encoder_hidden_states: { data: hiddenF16, dims: hidden.dims },
+          sample: floatFeed(this.sessions.unet, "sample", scaled, [1, LATENT.c, LATENT.h, LATENT.w]),
+          timestep: timestepFeed(this.sessions.unet, "timestep", schedule.timesteps[i]!),
+          encoder_hidden_states: floatFeed(this.sessions.unet, "encoder_hidden_states", hiddenF32, hidden.dims),
         });
         const noisePred = toF32(firstOutput(this.sessions.unet, unetOut));
         const stepNoise = gaussianArray(req.seed + 1000 + i, n); // Ancestral-Noise, seed-abgeleitet
@@ -118,7 +146,7 @@ export class SdTurboEngine {
       const scaledLatents = new Float32Array(n);
       for (let i = 0; i < n; i++) scaledLatents[i] = latents[i]! / VAE_SCALING;
       const vaeOut = await this.sessions.vaeDecoder.run({
-        latent_sample: { data: f32ArrayToF16(scaledLatents), dims: [1, LATENT.c, LATENT.h, LATENT.w] },
+        latent_sample: floatFeed(this.sessions.vaeDecoder, "latent_sample", scaledLatents, [1, LATENT.c, LATENT.h, LATENT.w]),
       });
       const imageChw = toF32(firstOutput(this.sessions.vaeDecoder, vaeOut));
       return { rgba: chwToRgba(imageChw, IMAGE_SIZE, IMAGE_SIZE), width: IMAGE_SIZE, height: IMAGE_SIZE, seed: req.seed };

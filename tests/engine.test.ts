@@ -4,10 +4,13 @@ import type { TokenizerData } from "../src/core/pipeline/tokenizer";
 
 const tokData: TokenizerData = { vocab: { "cat</w>": 1 }, merges: [] };
 
+// Default-Fakes deklarieren fp16-Inputs (wie ein fp16-Export mit f16-Graph-IO);
+// der f32-Fall (realer schmuell-Export) hat unten einen eigenen Test.
 function fakeSessions(log: string[]) {
   const textEncoder: Session = {
     inputNames: ["input_ids"],
     outputNames: ["last_hidden_state"],
+    inputTypes: { input_ids: "int32" },
     run: async (feeds) => {
       log.push("text_encoder");
       expect(feeds["input_ids"]!.dims).toEqual([1, 77]);
@@ -19,6 +22,7 @@ function fakeSessions(log: string[]) {
   const unet: Session = {
     inputNames: ["sample", "timestep", "encoder_hidden_states"],
     outputNames: ["out_sample"],
+    inputTypes: { sample: "float16", timestep: "int64", encoder_hidden_states: "float16" },
     run: async (feeds) => {
       log.push("unet");
       expect(feeds["sample"]!.dims).toEqual([1, 4, 64, 64]);
@@ -32,6 +36,7 @@ function fakeSessions(log: string[]) {
   const vaeDecoder: Session = {
     inputNames: ["latent_sample"],
     outputNames: ["sample"],
+    inputTypes: { latent_sample: "float16" },
     run: async (feeds) => {
       log.push("vae");
       expect(feeds["latent_sample"]!.dims).toEqual([1, 4, 64, 64]);
@@ -66,7 +71,7 @@ describe("SdTurboEngine", () => {
   });
   it("Fehler in Session: busy wird zurückgesetzt, Fehler propagiert", async () => {
     const sessions = fakeSessions([]);
-    sessions.unet = { inputNames: ["sample", "timestep", "encoder_hidden_states"], outputNames: ["out_sample"], run: async () => { throw new Error("OOM"); }, release: async () => {} };
+    sessions.unet = { inputNames: ["sample", "timestep", "encoder_hidden_states"], outputNames: ["out_sample"], inputTypes: {}, run: async () => { throw new Error("OOM"); }, release: async () => {} };
     const engine = new SdTurboEngine(sessions, tokData);
     await expect(engine.generate({ prompt: "cat", steps: 1, seed: 1 })).rejects.toThrow("OOM");
     expect(engine.busy).toBe(false);
@@ -76,6 +81,7 @@ describe("SdTurboEngine", () => {
     const capture = (): Session => ({
       inputNames: ["sample", "timestep", "encoder_hidden_states"],
       outputNames: ["out_sample"],
+      inputTypes: { sample: "float16", timestep: "int64", encoder_hidden_states: "float16" },
       run: async (feeds) => {
         seen.push(Array.from((feeds["sample"]!.data as Uint16Array).slice(0, 8)));
         return { out_sample: { data: new Uint16Array(4 * 64 * 64), dims: [1, 4, 64, 64] } };
@@ -98,6 +104,7 @@ describe("SdTurboEngine", () => {
       return {
         inputNames: ["sample", "timestep", "encoder_hidden_states"],
         outputNames: ["out_sample"],
+        inputTypes: { sample: "float16", timestep: "int64", encoder_hidden_states: "float16" },
         run: async (feeds) => {
           if (step === 1) secondStepFeeds.push(Array.from(feeds["sample"]!.data as Uint16Array));
           step++;
@@ -113,6 +120,46 @@ describe("SdTurboEngine", () => {
     }
     expect(secondStepFeeds).toHaveLength(2);
     expect(secondStepFeeds[0]).toEqual(secondStepFeeds[1]);
+  });
+  it("float32-Modell (realer schmuell-Export): Feeds als Float32Array, ids als int64", async () => {
+    // Regressionstest für den Smoke-Test-Fehler 2026-07-16: "Unexpected input
+    // data type. Actual: (tensor(float16)), expected: (tensor(float))" — die
+    // Engine muss sich nach den deklarierten Input-Typen richten.
+    const textEncoder: Session = {
+      inputNames: ["input_ids"],
+      outputNames: ["last_hidden_state"],
+      inputTypes: { input_ids: "int64" },
+      run: async (feeds) => {
+        expect(feeds["input_ids"]!.data).toBeInstanceOf(BigInt64Array);
+        return { last_hidden_state: { data: new Float32Array(77 * 1024), dims: [1, 77, 1024] } };
+      },
+      release: async () => {},
+    };
+    const unet: Session = {
+      inputNames: ["sample", "timestep", "encoder_hidden_states"],
+      outputNames: ["out_sample"],
+      inputTypes: { sample: "float32", timestep: "int64", encoder_hidden_states: "float32" },
+      run: async (feeds) => {
+        expect(feeds["sample"]!.data).toBeInstanceOf(Float32Array);
+        expect(feeds["encoder_hidden_states"]!.data).toBeInstanceOf(Float32Array);
+        expect(feeds["timestep"]!.data).toBeInstanceOf(BigInt64Array);
+        return { out_sample: { data: new Float32Array(4 * 64 * 64), dims: [1, 4, 64, 64] } };
+      },
+      release: async () => {},
+    };
+    const vaeDecoder: Session = {
+      inputNames: ["latent_sample"],
+      outputNames: ["sample"],
+      inputTypes: { latent_sample: "float32" },
+      run: async (feeds) => {
+        expect(feeds["latent_sample"]!.data).toBeInstanceOf(Float32Array);
+        return { sample: { data: new Float32Array(3 * 512 * 512), dims: [1, 3, 512, 512] } };
+      },
+      release: async () => {},
+    };
+    const engine = new SdTurboEngine({ textEncoder, unet, vaeDecoder }, tokData);
+    const res = await engine.generate({ prompt: "cat", steps: 1, seed: 3 });
+    expect(res.rgba.length).toBe(512 * 512 * 4);
   });
   it("dispose ruft release auf allen drei Sessions (idempotent)", async () => {
     const released: string[] = [];
