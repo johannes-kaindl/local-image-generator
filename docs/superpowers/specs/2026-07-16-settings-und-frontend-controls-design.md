@@ -98,7 +98,8 @@ export interface LigSettings {
   defaultSteps: number;            // 1..4, Default 4
   createMode: "image" | "note";    // Default "image" (0.1-Verhalten bleibt Default)
   presets: StylePreset[];
-  promptHistory: string[];         // MRU, neueste zuerst
+  promptHistory: string[];            // MRU, neueste zuerst
+  sectionsCollapsed: Record<string, boolean>;  // Auf-/Zu-Zustand der Settings-Sektionen
 }
 ```
 
@@ -222,9 +223,9 @@ Werte kommen aus den eingefrorenen `GenParams` (§5.2). Wikilinks werden gequote
 
 **Notiz-Dateiname:** `buildNoteFilename(prompt, seed)` → Prompt-Slug (max 60 Zeichen) +
 ` - ` + Seed, nach Jays handgebautem Vorbild: `Apple - Sumi-e painting - 199801046.md`.
-Slug entfernt die in Obsidian verbotenen Zeichen (`[ ] # ^ | / \ :`) und kollabiert
-Whitespace. Leerer Slug → Fallback auf den Bild-Stem. Kollisionen über die vorhandene
-`dedupeFilename` (`filename.ts:11`).
+Slug entfernt die in Obsidian/Dateisystemen verbotenen Zeichen (`[ ] # ^ | / \ : * ? " < >`),
+kollabiert Whitespace und streift führende Punkte (sonst versteckte Datei). Leerer Slug →
+Fallback `lig-<seed>`. Kollisionen über die vorhandene `dedupeFilename` (`filename.ts:11`).
 
 **Notiz-Ort:** `noteFolder`, leer = neben dem Bild. Eigenes Feld, weil das Bild in den
 Anhang-Ordner darf, die Notiz aber in den Inbox gehört.
