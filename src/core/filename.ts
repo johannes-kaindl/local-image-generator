@@ -18,3 +18,33 @@ export function dedupeFilename(base: string, exists: (p: string) => boolean): st
     if (!exists(candidate)) return candidate;
   }
 }
+
+// Notiz-Dateiname (Spec §7.4): "<Prompt-Slug, max 60> - <seed>.md", nach Jays
+// handgebautem Vorbild aus dem Smoke-Test ("Apple - Sumi-e painting - 199801046.md").
+const FORBIDDEN = /[[\]#^|/\\:*?"<>]/g;
+const SLUG_MAX = 60;
+
+export function buildNoteFilename(prompt: string, seed: number): string {
+  const slug = prompt
+    .replace(FORBIDDEN, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, SLUG_MAX)
+    .replace(/^\.+/, "") // führender Punkt = versteckte Datei
+    .trim();
+  return slug === "" ? `lig-${seed}.md` : `${slug} - ${seed}.md`;
+}
+
+// Verzeichnis eines Vault-Pfads; "" im Root. Pure — kein Vault-Zugriff.
+export function dirOf(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "" : path.slice(0, slash);
+}
+
+// Lokaler ISO-8601-Zeitstempel ohne Zeitzone für das Frontmatter-Feld `created`.
+// Bewusst lokal, nicht UTC: die Notiz dokumentiert, wann JAY das Bild gemacht hat.
+export function isoStamp(d: Date): string {
+  const p = (n: number): string => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return `${date}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
