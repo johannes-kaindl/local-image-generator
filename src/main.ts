@@ -2,7 +2,7 @@
 // View, Lazy-Init der Engine (GPU-Check → Cache-Buffers → ORT-Sessions).
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
-import { buildImageFilename } from "./core/filename";
+import { buildImageFilename, dedupeFilename } from "./core/filename";
 import { DEFAULT_SETTINGS, type LigSettings } from "./core/settings";
 import { STRINGS } from "./core/strings";
 import type { PanelState } from "./core/viewmodel";
@@ -102,7 +102,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
+  onunload(): void {
+    // Sessions beim Entladen freigeben (Spec §8: GPU-Speicher-Leak vermeiden).
+    void this.engine?.dispose().catch(() => {});
+    this.engine = null;
+  }
+
   onModelDeleted(): void {
+    // Erst die Sessions freigeben, dann verwerfen (fire-and-forget: onModelDeleted
+    // ist synchron, der Release muss den UI-Refresh nicht blockieren; Spec §8).
+    void this.engine?.dispose().catch(() => {});
     this.engine = null;
     this.state.model = { kind: "missing" };
     this.refreshView();
@@ -138,7 +147,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.state.run = { kind: "error", message: msg };
-      this.engine = null; // Sessions verwerfen, nächster Lauf lädt neu (Spec §8)
+      // Sessions freigeben und verwerfen, nächster Lauf lädt neu (Spec §8).
+      // Fire-and-forget: der Fehlerpfad soll den UI-Refresh nicht blockieren.
+      void this.engine?.dispose().catch(() => {});
+      this.engine = null;
       new Notice(STRINGS.oomHint);
     } finally {
       this.refreshView();
@@ -156,21 +168,31 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     if (!(this.app.vault.getAbstractFileByPath(folder) instanceof TFolder)) {
       await this.app.vault.createFolder(folder).catch(() => undefined);
     }
-    return normalizePath(`${folder}/${filename}`);
+    // Kollisions-Dedup: getAvailablePathForAttachment übernimmt das im leeren-Ordner-
+    // Fall; für einen expliziten outputFolder müssen wir selbst -2, -3, … anhängen.
+    return dedupeFilename(
+      normalizePath(`${folder}/${filename}`),
+      (p) => this.app.vault.getAbstractFileByPath(p) !== null,
+    );
   }
 
   private async saveImage(mode: "create" | "insert"): Promise<void> {
     const img = this.state.image;
     if (!img) return;
-    const path = await this.resolveImagePath(buildImageFilename(new Date(), img.seed));
-    const file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
-    if (mode === "insert") {
-      const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
-      if (editor) editor.replaceSelection(`![[${file.path}]]`);
-      else new Notice(STRINGS.insertNeedsEditor);
-    } else if (file instanceof TFile) {
-      await this.app.workspace.getLeaf(true).openFile(file);
+    try {
+      const path = await this.resolveImagePath(buildImageFilename(new Date(), img.seed));
+      const file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
+      if (mode === "insert") {
+        const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+        if (editor) editor.replaceSelection(`![[${file.path}]]`);
+        else new Notice(STRINGS.insertNeedsEditor);
+      } else if (file instanceof TFile) {
+        await this.app.workspace.getLeaf(true).openFile(file);
+      }
+      new Notice(`Saved: ${file.path}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      new Notice(STRINGS.saveFailed(msg));
     }
-    new Notice(`Saved: ${file.path}`);
   }
 }

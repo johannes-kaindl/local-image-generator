@@ -16,6 +16,7 @@ export interface Session {
   inputNames: readonly string[];
   outputNames: readonly string[];
   run(feeds: Record<string, OrtValue>): Promise<Record<string, OrtValue>>;
+  release(): Promise<void>;
 }
 
 export interface EngineSessions {
@@ -58,6 +59,7 @@ function firstOutput(session: Session, outputs: Record<string, OrtValue>): OrtVa
 
 export class SdTurboEngine {
   private _busy = false;
+  private _disposed = false;
 
   constructor(
     private readonly sessions: EngineSessions,
@@ -66,6 +68,20 @@ export class SdTurboEngine {
 
   get busy(): boolean {
     return this._busy;
+  }
+
+  // Gibt die drei ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden).
+  // Idempotent — mehrfaches dispose ruft release nur einmal. Einzelne
+  // release-Fehler werden geschluckt, damit ein fehlschlagender Session-Release
+  // die anderen beiden nicht blockiert (Best-Effort-Cleanup).
+  async dispose(): Promise<void> {
+    if (this._disposed) return;
+    this._disposed = true;
+    await Promise.all(
+      [this.sessions.textEncoder, this.sessions.unet, this.sessions.vaeDecoder].map((s) =>
+        s.release().catch(() => {}),
+      ),
+    );
   }
 
   async generate(req: GenerateRequest, onProgress?: ProgressFn): Promise<GenerateResult> {

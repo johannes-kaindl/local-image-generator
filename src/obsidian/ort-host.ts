@@ -61,9 +61,32 @@ export async function createOrtSession(buf: ArrayBuffer): Promise<Session> {
       const out = await session.run(ortFeeds);
       const result: Record<string, OrtValue> = {};
       for (const [name, t] of Object.entries(out)) {
-        result[name] = { data: t.data as OrtValue["data"], dims: t.dims };
+        result[name] = { data: toOrtData(name, t.data), dims: t.dims };
       }
       return result;
     },
+    release: () => session.release(),
   };
+}
+
+// Validiert, dass ein ORT-Output-Tensor eines der vier OrtValue-Dtypes trägt.
+// Sonderfall Float16Array: künftige ORT-Versionen könnten fp16-Outputs als
+// echtes Float16Array liefern — dessen Buffer als Uint16Array re-wrappen, damit
+// die pure Pipeline (die fp16 als Uint16Array-Rohbits erwartet) unverändert läuft.
+function toOrtData(name: string, data: unknown): OrtValue["data"] {
+  if (
+    data instanceof Float32Array ||
+    data instanceof Uint16Array ||
+    data instanceof Int32Array ||
+    data instanceof BigInt64Array
+  ) {
+    return data;
+  }
+  const F16 = (globalThis as { Float16Array?: new (...a: never[]) => ArrayBufferView }).Float16Array;
+  if (F16 && data instanceof F16) {
+    const t = data as ArrayBufferView & { length: number };
+    return new Uint16Array(t.buffer, t.byteOffset, t.length);
+  }
+  const ctor = (data as { constructor?: { name?: string } })?.constructor?.name ?? typeof data;
+  throw new Error(`unexpected output dtype for "${name}": ${ctor}`);
 }
