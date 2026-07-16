@@ -1,0 +1,3 @@
+/* local-image-generator — Präfix: lig- · nur Obsidian-Theme-Variablen (UI-STANDARD §3) */
+.lig-panel { padding: var(--size-4-4); background: var(--background-primary); }
+.lig-row { display: flex; align-items: center; gap: var(--size-4-2); }
