@@ -54,6 +54,11 @@ export class ModelStore {
       const expected = contentLength === null ? null : Number(contentLength);
       const [progressBranch, cacheBranch] = res.body.tee();
       const putDone = cache.put(file.url, new Response(cacheBranch, { headers: res.headers }));
+      // Separater No-op-Catch: putDone läuft NEBEN der Leseschleife an; scheitert
+      // der cacheBranch-Reader mitten im Stream, während noch niemand putDone
+      // awaited, gäbe es sonst eine unhandledrejection. Das echte Ergebnis wird
+      // weiterhin unten via `await putDone` gesehen (dieser Catch ändert es nicht).
+      putDone.catch(() => {});
       let received = 0;
       const reader = progressBranch.getReader();
       // WICHTIG: reader.read()-Schleife läuft NEBEN putDone, nicht danach.

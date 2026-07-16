@@ -15,6 +15,8 @@ as the inference engine.
 There is no img2img, no LoRA/ControlNet, and no model catalog in this version —
 just one curated model (SD-Turbo) for fast local text-to-image generation.
 
+Output resolution is fixed at **512×512** in 0.1.
+
 ## Requirements
 
 - **Obsidian desktop only** (`isDesktopOnly: true` — this plugin does not run
@@ -49,13 +51,13 @@ happens.
 **Network — only on explicit user action ("Download" in settings).** The
 plugin fetches five files, once, from Hugging Face:
 
-| File | Source | Approx. size |
-| --- | --- | --- |
-| `text_encoder/model.onnx` | huggingface.co/schmuell/sd-turbo-ort-web | ~681 MB |
-| `unet/model.onnx` | huggingface.co/schmuell/sd-turbo-ort-web | ~1.73 GB |
-| `vae_decoder/model.onnx` | huggingface.co/schmuell/sd-turbo-ort-web | ~99 MB |
-| `tokenizer/vocab.json` | huggingface.co/stabilityai/sd-turbo | ~1.1 MB |
-| `tokenizer/merges.txt` | huggingface.co/stabilityai/sd-turbo | ~0.5 MB |
+| URL | Approx. size |
+| --- | --- |
+| `https://huggingface.co/schmuell/sd-turbo-ort-web/resolve/main/text_encoder/model.onnx` | ~681 MB |
+| `https://huggingface.co/schmuell/sd-turbo-ort-web/resolve/main/unet/model.onnx` | ~1.73 GB |
+| `https://huggingface.co/schmuell/sd-turbo-ort-web/resolve/main/vae_decoder/model.onnx` | ~99 MB |
+| `https://huggingface.co/stabilityai/sd-turbo/resolve/main/tokenizer/vocab.json` | ~1.1 MB |
+| `https://huggingface.co/stabilityai/sd-turbo/resolve/main/tokenizer/merges.txt` | ~0.5 MB |
 
 Total download: **~2.5 GB**. This download only happens when you click
 **Download** in settings — the plugin makes no network requests at startup,
