@@ -1,0 +1,106 @@
+# Local image generator
+
+Generate images locally inside Obsidian — no cloud, no external app, no API key.
+The plugin runs [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo) entirely
+on your own GPU via WebGPU, using [onnxruntime-web](https://github.com/microsoft/onnxruntime)
+as the inference engine.
+
+## What it does
+
+- Open the generator from the ribbon icon or the **Open generator** command.
+- Type a prompt, adjust steps/seed if you like, and press **Generate**.
+- **Create** saves the image as a new attachment and opens it, or **Insert**
+  saves it and embeds it at your cursor in the current note.
+
+There is no img2img, no LoRA/ControlNet, and no model catalog in this version —
+just one curated model (SD-Turbo) for fast local text-to-image generation.
+
+## Requirements
+
+- **Obsidian desktop only** (`isDesktopOnly: true` — this plugin does not run
+  on Obsidian Mobile).
+- **WebGPU with `shader-f16` support.** This generally works on macOS and
+  Windows with a reasonably modern GPU; on Linux it depends on your graphics
+  driver. If your system doesn't qualify, the plugin's status area tells you
+  so instead of generating.
+- **~2.5 GB of disk space** for the model download (see below).
+- **Roughly 4–7 GB of free memory** while an image is generating. If
+  generation fails, try closing other apps first.
+
+## Install & first steps
+
+1. Install and enable the plugin.
+2. Open **Settings → Local image generator** and click **Download**
+   (~2.5 GB). This is a one-time download; nothing happens automatically.
+3. Once the download finishes, open the generator (ribbon icon or the
+   **Open generator** command), enter a prompt, and press **Generate**.
+4. Use **Create** to save the image as a new note attachment and open it, or
+   **Insert** to save it and embed it at your cursor.
+
+You can re-download or delete the model at any time from the same settings
+page.
+
+## How network and storage are used
+
+This section is here so you know exactly what the plugin does over the
+network and what it writes to disk — nothing beyond what's listed here
+happens.
+
+**Network — only on explicit user action ("Download" in settings).** The
+plugin fetches five files, once, from Hugging Face:
+
+| File | Source | Approx. size |
+| --- | --- | --- |
+| `text_encoder/model.onnx` | huggingface.co/schmuell/sd-turbo-ort-web | ~681 MB |
+| `unet/model.onnx` | huggingface.co/schmuell/sd-turbo-ort-web | ~1.73 GB |
+| `vae_decoder/model.onnx` | huggingface.co/schmuell/sd-turbo-ort-web | ~99 MB |
+| `tokenizer/vocab.json` | huggingface.co/stabilityai/sd-turbo | ~1.1 MB |
+| `tokenizer/merges.txt` | huggingface.co/stabilityai/sd-turbo | ~0.5 MB |
+
+Total download: **~2.5 GB**. This download only happens when you click
+**Download** in settings — the plugin makes no network requests at startup,
+during editing, or at any other time. Files that are already present are
+skipped, and each file's integrity is checked against its expected size.
+After the download, image generation itself is fully offline: your prompts
+never leave your machine, and no image data is ever sent anywhere.
+
+**Storage.** Downloaded model files are written to the browser's
+[Cache API](https://developer.mozilla.org/en-US/docs/Web/API/Cache) inside
+Obsidian's Electron profile — **not** into your vault, and not synced by
+Obsidian Sync or any vault sync tool. You can delete the cached model files
+at any time via **Settings → Local image generator → Delete model**.
+Generated images, by contrast, are saved as normal attachments inside your
+vault, exactly like any image you'd add yourself.
+
+The WebAssembly runtime (onnxruntime-web) is bundled inline with the plugin;
+no plugin code is loaded from the network at runtime.
+
+## Privacy
+
+- **No telemetry.** The plugin does not collect, transmit, or phone home any
+  usage data, prompts, or images.
+- **No network access** other than the one-time, user-initiated model
+  download described above. Once the model is downloaded, generation runs
+  entirely on your GPU, offline.
+
+## Model & licenses
+
+- **Plugin code:** MIT license (see `LICENSE`).
+- **Model weights:** [stabilityai/sd-turbo](https://huggingface.co/stabilityai/sd-turbo)
+  — subject to Stability AI's model license. Please review the terms on the
+  model card before using generated images, especially for commercial
+  purposes.
+- **ONNX export used by this plugin:** [schmuell/sd-turbo-ort-web](https://huggingface.co/schmuell/sd-turbo-ort-web),
+  the reference export used by Microsoft's WebGPU demo for onnxruntime-web.
+- **Inference engine:** [onnxruntime-web](https://github.com/microsoft/onnxruntime).
+
+This plugin only distributes code; the model weights are downloaded directly
+from Hugging Face by the user, on demand.
+
+## Roadmap
+
+0.1 ships a single generator view with one curated model. A future release is
+planned to expose a small provider API so other community plugins can request
+locally-generated images without duplicating this infrastructure. Additional
+backends (e.g. ComfyUI/DrawThings), img2img, LoRA/ControlNet, and a model
+catalog are explicitly out of scope for now.
