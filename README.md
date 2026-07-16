@@ -106,3 +106,8 @@ planned to expose a small provider API so other community plugins can request
 locally-generated images without duplicating this infrastructure. Additional
 backends (e.g. ComfyUI/DrawThings), img2img, LoRA/ControlNet, and a model
 catalog are explicitly out of scope for now.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Model weights have their own license terms
+(see Model & licenses above).
