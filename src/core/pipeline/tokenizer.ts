@@ -1,6 +1,9 @@
 // CLIP-BPE-Tokenizer (Spec §5) — Algorithmus wie openai/CLIP simple_tokenizer:
 // bytes_to_unicode (GPT-2-Tabelle), Wort-Regex, BPE-Merges nach Rang, "</w>"-Wortende.
 // vocab.json/merges.txt werden zur Laufzeit geladen und hier injiziert (pure).
+// Pad-Default ist 0, nicht EOS (49407): MS-Demo onnxruntime-inference-examples
+// js/sd-turbo/index.js L256 setzt pad_token_id = 0 — SD-2.x folgt der
+// OpenCLIP-Konvention (Pad = Token 0 = "!"), nicht EOS-Padding. opts.pad bleibt Override.
 export interface TokenizerData {
   vocab: Record<string, number>;
   merges: string[]; // Zeilen wie "a b", Reihenfolge = Priorität
@@ -16,6 +19,7 @@ export interface TokenizerOpts {
 export const TOKEN_LEN = 77;
 export const BOS = 49406;
 export const EOS = 49407;
+export const PAD = 0;
 
 function bytesToUnicode(): Map<number, string> {
   const bs: number[] = [];
@@ -75,7 +79,7 @@ export function tokenize(text: string, data: TokenizerData, opts: TokenizerOpts 
   const maxLen = opts.maxLen ?? TOKEN_LEN;
   const bos = opts.bos ?? BOS;
   const eos = opts.eos ?? EOS;
-  const pad = opts.pad ?? EOS; // sd-turbo/MS-Demo: Padding mit EOS
+  const pad = opts.pad ?? PAD; // sd-turbo/MS-Demo: Padding mit 0 (siehe Modul-Kommentar), opts.pad bleibt Override
   const ranks = new Map<string, number>(data.merges.map((m, i) => [m, i]));
   const cache = new Map<string, string[]>();
 

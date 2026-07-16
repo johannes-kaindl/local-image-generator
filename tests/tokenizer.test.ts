@@ -36,4 +36,9 @@ describe("CLIP-BPE-Tokenizer", () => {
     // Pair (a, b</w>) darf NICHT über die Regel "a b" gemerged werden → Tokens a, b</w>
     expect(Array.from(ids)).toEqual([100, 1, 2, 101, 101, 101]);
   });
+  it("Default-Padding ist 0 (OpenCLIP/sd-turbo-Referenz), nicht EOS", () => {
+    const d: TokenizerData = { vocab: { "a</w>": 1 }, merges: [] };
+    const ids = tokenize("a", d, { maxLen: 5, bos: 100, eos: 101 });
+    expect(Array.from(ids)).toEqual([100, 1, 101, 0, 0]);
+  });
 });
