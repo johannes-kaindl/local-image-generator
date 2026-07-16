@@ -1,0 +1,27 @@
+{
+  "name": "local-image-generator",
+  "version": "0.1.0",
+  "description": "Generate images locally inside Obsidian — SD-Turbo via WebGPU, no external software, no cloud.",
+  "type": "module",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit && node esbuild.config.mjs --production",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "check:pure": "node scripts/check-pure.mjs",
+    "gate": "npm run typecheck && npm test && npm run check:pure && npm run build",
+    "deploy": "npm run build && cp main.js manifest.json styles.css \"${OBSIDIAN_PLUGIN_DIR:?set OBSIDIAN_PLUGIN_DIR}\"/"
+  },
+  "author": "Johannes Kaindl",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20",
+    "esbuild": "^0.23",
+    "obsidian": "latest",
+    "typescript": "^5.5",
+    "vitest": "^2"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.22"
+  }
+}
