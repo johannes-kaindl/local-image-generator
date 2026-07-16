@@ -39,16 +39,13 @@ function bytesToUnicode(): Map<number, string> {
 const BYTE_ENCODER = bytesToUnicode();
 const WORD_RE = /'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+/gu;
 
-// Rang einer Merge-Regel für ein Paar benachbarter Teile. Exaktes Match zuerst (so sind reale
-// merges.txt-Zeilen wie "e r</w>" — das "</w>" ist dort oft wörtlich Teil der Regel, vgl. das
-// echte sd-turbo-Vocab — unverändert korrekt). Nur wenn kein exaktes Match existiert, zusätzlich
-// mit von "</w>" befreitem zweiten Teil versuchen (deckt Merge-Notationen ohne "</w>"-Suffix am
-// Wortende ab, z. B. im synthetischen Test-Vocab). Der Fallback kann eine bestehende exakte
-// Regel nie verdrängen, weil er nur greift, wenn der exakte Lookup für dasselbe Paar leer war.
+// Rang einer Merge-Regel für ein Paar benachbarter Teile. Reale CLIP-BPE-Daten (openai
+// simple_tokenizer, vgl. stabilityai/sd-turbo merges.txt) matchen ausschließlich exakt:
+// "a b" und "a b</w>" sind zwei unterschiedliche Regeln. Kein Fallback — ein
+// "</w>"-Strip-Fallback würde wortfinale Paare mergen, für die nur die nicht-finale Regel
+// existiert, und damit von der Referenz-Tokenisierung abweichen.
 function pairRank(a: string, b: string, ranks: Map<string, number>): number | undefined {
-  const exact = ranks.get(a + " " + b);
-  if (exact !== undefined) return exact;
-  return b.endsWith("</w>") ? ranks.get(a + " " + b.slice(0, -4)) : undefined;
+  return ranks.get(a + " " + b);
 }
 
 function bpe(word: string, ranks: Map<string, number>, cache: Map<string, string[]>): string[] {
