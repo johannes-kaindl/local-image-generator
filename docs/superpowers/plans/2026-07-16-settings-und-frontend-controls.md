@@ -483,9 +483,22 @@ describe("serializeFrontmatter", () => {
     expect(ser({ a: "foo: bar" }, ["a"])).toBe("---\na: \"foo: bar\"\n---\n");
   });
 
-  it("escapt Anführungszeichen und Backslashes", () => {
-    expect(ser({ a: 'he said "hi"' }, ["a"])).toBe('---\na: "he said \\"hi\\""\n---\n');
-    expect(ser({ a: 'back\\slash "q"' }, ["a"])).toBe('---\na: "back\\\\slash \\"q\\""\n---\n');
+  // Anführungszeichen/Backslashes MITTEN im Wert lösen KEIN Quoting aus — ein
+  // YAML-Plain-Scalar darf sie enthalten, und das Original von vault-rag lässt sie
+  // deshalb bewusst stehen. (Ein führendes " triggert NEEDS_QUOTE_LEADING sehr wohl.)
+  it("lässt Anführungszeichen und Backslashes in der Mitte ungequotet", () => {
+    expect(ser({ a: 'he said "hi"' }, ["a"])).toBe('---\na: he said "hi"\n---\n');
+    expect(ser({ a: 'back\\slash "q"' }, ["a"])).toBe('---\na: back\\slash "q"\n---\n');
+  });
+
+  it("escapt Anführungszeichen und Backslashes, wenn ein anderer Grund Quoting auslöst", () => {
+    // Das Komma erzwingt Quoting — erst dann greift das Escaping in quoteScalar.
+    expect(ser({ a: 'x, he said "hi"' }, ["a"])).toBe('---\na: "x, he said \\"hi\\""\n---\n');
+    expect(ser({ a: 'x, back\\slash' }, ["a"])).toBe('---\na: "x, back\\\\slash"\n---\n');
+  });
+
+  it("quotet ein führendes Anführungszeichen", () => {
+    expect(ser({ a: '"quoted" start' }, ["a"])).toBe('---\na: "\\"quoted\\" start"\n---\n');
   });
 
   it("quotet Hash, Kommas und führende Sonderzeichen", () => {
@@ -605,7 +618,13 @@ export function serializeFrontmatter(data: Record<string, FmValue>, order: strin
 - [ ] **Step 4: Test + Pure-Gate laufen lassen**
 
 Run: `npx vitest run tests/frontmatter.test.ts && npm run check:pure`
-Expected: PASS (15 Tests) und `check:pure OK`
+Expected: PASS (17 Tests) und `check:pure OK`
+
+> **Nicht „reparieren", was die Tests scheinbar verlangen:** `needsQuoting` darf **nicht** um
+> `v.includes('"')`/`v.includes("\\")` erweitert werden. Anführungszeichen und Backslashes
+> mitten im Wert sind in einem YAML-Plain-Scalar legal und parsen sauber zurück — das
+> Original lässt sie deshalb absichtlich stehen. Eine solche Erweiterung wäre eine zweite,
+> undokumentierte Abweichung vom Original und erschwert den Sync ohne Korrektheitsgewinn.
 
 - [ ] **Step 5: Commit**
 
