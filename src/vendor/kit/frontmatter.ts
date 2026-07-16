@@ -38,7 +38,6 @@ function needsQuoting(v: string): boolean {
   if (v.includes(" #") || v.includes("#")) return true;
   if (v.includes("[[") || v.includes("]]")) return true;
   if (v.includes(",")) return true; // Komma würde den Inline-List-Tokenizer spalten
-  if (v.includes("\\") || v.includes('"')) return true; // Backslash und Anführungszeichen
   if (NEEDS_QUOTE_LEADING.test(v)) return true;
   if (startsWithEmoji(v)) return true;
   if (/^(true|false|null|yes|no|on|off|~)$/i.test(v)) return true;
