@@ -47,7 +47,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 function sanitizePresets(raw: unknown): StylePreset[] {
-  if (!Array.isArray(raw)) return DEFAULT_PRESETS;
+  if (!Array.isArray(raw)) return DEFAULT_PRESETS.map((p) => ({ ...p }));
   return raw.filter(
     (p): p is StylePreset =>
       isPlainObject(p) && typeof p["id"] === "string" && typeof p["label"] === "string" && typeof p["suffix"] === "string",

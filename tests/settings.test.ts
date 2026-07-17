@@ -60,6 +60,13 @@ describe("sanitizeSettings (Spec §8)", () => {
     expect(sanitizeSettings(s).presets).toEqual(DEFAULT_PRESETS);
   });
 
+  it("presets: non-array-Fallback teilt keine Referenzen mit DEFAULT_PRESETS", () => {
+    const s = { ...DEFAULT_SETTINGS, presets: "nope" as unknown as LigSettings["presets"] };
+    const sanitized = sanitizeSettings(s).presets;
+    expect(sanitized).not.toBe(DEFAULT_PRESETS);
+    sanitized.forEach((p, i) => expect(p).not.toBe(DEFAULT_PRESETS[i]));
+  });
+
   it("ein Preset ohne suffix wird aus der Liste entfernt", () => {
     const s: LigSettings = {
       ...DEFAULT_SETTINGS,
