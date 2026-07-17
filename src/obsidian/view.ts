@@ -1,7 +1,6 @@
 // Die EINE View des Plugins (UI-STANDARD §1/§4, Mount-once: Prompt/Preview überleben
 // Refreshes). Kennt weder Plugin noch Engine — nur den schmalen ViewHost.
-import { ItemView, Menu, setIcon, setTooltip, WorkspaceLeaf } from "obsidian";
-import { historyLabel } from "../core/history";
+import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
 import type { LigSettings } from "../core/settings";
 import { STRINGS } from "../core/strings";
@@ -69,29 +68,6 @@ export class GeneratorView extends ItemView {
     this.promptEl = promptRow.createEl("textarea", {
       cls: "lig-prompt",
       attr: { placeholder: STRINGS.promptPlaceholder, rows: "3" },
-    });
-    const histBtn = promptRow.createEl("button", { cls: "clickable-icon lig-history" });
-    histBtn.setAttribute("type", "button");
-    setIcon(histBtn, "history");
-    setTooltip(histBtn, STRINGS.history);
-    histBtn.setAttribute("aria-label", STRINGS.history);
-    histBtn.addEventListener("click", (evt) => {
-      const menu = new Menu();
-      const items = this.host.getSettings().promptHistory;
-      if (items.length === 0) {
-        menu.addItem((i) => i.setTitle(STRINGS.historyEmpty).setDisabled(true));
-      } else {
-        for (const p of items) {
-          menu.addItem((i) =>
-            i.setTitle(historyLabel(p)).onClick(() => {
-              this.promptEl.value = p;
-              this.host.setPrompt(p);
-              this.refresh();
-            }),
-          );
-        }
-      }
-      menu.showAtMouseEvent(evt);
     });
     this.promptEl.addEventListener("input", () => {
       this.host.setPrompt(this.promptEl.value);

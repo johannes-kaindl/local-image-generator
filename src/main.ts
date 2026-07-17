@@ -172,8 +172,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // erfolgreich befüllte Engine verwerfen. Erst bei Erfolg aufnehmen — sonst füllt
     // sich die Liste mit Halbsätzen und Fehlversuchen. saveSettings bewusst
     // fire-and-forget: ein langsamer Schreibvorgang darf das fertige Bild nicht aufhalten.
-    if (succeeded) {
-      this.settings.promptHistory = pushHistory(this.settings.promptHistory, prompt);
+    if (succeeded && this.state.image) {
+      // Volles Rezept aus dem beim Erfolg eingefrorenen img.params (kein "jetzt"-Nachziehen).
+      const p = this.state.image.params;
+      this.settings.history = pushHistory(this.settings.history, {
+        prompt: p.prompt,
+        seed: p.seed,
+        steps: p.steps,
+        model: p.model,
+        created: p.date,
+      });
       void this.saveSettings();
     }
   }
