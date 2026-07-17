@@ -143,6 +143,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const prompt = this.state.prompt;
     this.state.run = { kind: "running", step: 0, total: steps };
     this.refreshViews();
+    let succeeded = false;
     try {
       const engine = await this.ensureEngine();
       const result = await engine.generate({ prompt, steps, seed }, (step, total) => {
@@ -154,11 +155,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         params: { prompt, seed: result.seed, steps, model: MODEL_ID, date: isoStamp(new Date()) },
       };
       this.state.run = { kind: "idle" };
-      // Erst bei Erfolg aufnehmen — sonst füllt sich die Liste mit Halbsätzen und
-      // Fehlversuchen. saveSettings bewusst fire-and-forget: ein langsamer Schreibvorgang
-      // darf das fertige Bild nicht aufhalten.
-      this.settings.promptHistory = pushHistory(this.settings.promptHistory, prompt);
-      void this.saveSettings();
+      succeeded = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.state.run = { kind: "error", message: msg };
@@ -169,6 +166,15 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       new Notice(STRINGS.oomHint);
     } finally {
       this.refreshViews();
+    }
+    // Bewusst AUSSERHALB des try/catch der Generierung: ein Fehler hier (z.B. defekte
+    // Historie) darf weder als Generierungsfehler gemeldet werden noch die bereits
+    // erfolgreich befüllte Engine verwerfen. Erst bei Erfolg aufnehmen — sonst füllt
+    // sich die Liste mit Halbsätzen und Fehlversuchen. saveSettings bewusst
+    // fire-and-forget: ein langsamer Schreibvorgang darf das fertige Bild nicht aufhalten.
+    if (succeeded) {
+      this.settings.promptHistory = pushHistory(this.settings.promptHistory, prompt);
+      void this.saveSettings();
     }
   }
 
