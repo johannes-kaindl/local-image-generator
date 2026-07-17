@@ -2,7 +2,8 @@
 // View, Lazy-Init der Engine (GPU-Check → Cache-Buffers → ORT-Sessions).
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
-import { buildImageFilename, dedupeFilename } from "./core/filename";
+import { buildImageFilename, dedupeFilename, isoStamp } from "./core/filename";
+import { MODEL_ID } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, type LigSettings } from "./core/settings";
 import { STRINGS } from "./core/strings";
 import type { PanelState } from "./core/viewmodel";
@@ -134,15 +135,21 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   private async generate(steps: number, seed: number): Promise<void> {
     if (this.state.run.kind === "running") return;
+    // Prompt HIER festhalten: zwischen Start und Ende kann der Nutzer weitertippen,
+    // und die Ergebnis-Notiz muss das Bild beschreiben, das entstanden ist.
+    const prompt = this.state.prompt;
     this.state.run = { kind: "running", step: 0, total: steps };
     this.refreshView();
     try {
       const engine = await this.ensureEngine();
-      const result = await engine.generate({ prompt: this.state.prompt, steps, seed }, (step, total) => {
+      const result = await engine.generate({ prompt, steps, seed }, (step, total) => {
         this.state.run = { kind: "running", step, total };
         this.refreshView();
       });
-      this.state.image = { seed: result.seed, dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height) };
+      this.state.image = {
+        dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height),
+        params: { prompt, seed: result.seed, steps, model: MODEL_ID, date: isoStamp(new Date()) },
+      };
       this.state.run = { kind: "idle" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -180,7 +187,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const img = this.state.image;
     if (!img) return;
     try {
-      const path = await this.resolveImagePath(buildImageFilename(new Date(), img.seed));
+      const path = await this.resolveImagePath(buildImageFilename(new Date(), img.params.seed));
       const file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
       if (mode === "insert") {
         const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
