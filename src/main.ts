@@ -207,6 +207,15 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return this.app.vault.create(path, buildImageNote(params, imagePath));
   }
 
+  // Das Öffnen ist Komfort, kein Ergebnis: schlägt es fehl, liegt die Datei trotzdem im
+  // Vault. Der Fehler wird deshalb geschluckt — die "Saved: <Pfad>"-Meldung des Aufrufers
+  // sagt, wo sie ist. Ein Öffnen-Fehler darf weder das Ergebnis entwerten (Nur-Bild-Pfad:
+  // gar keine Meldung) noch es falsch benennen (Notiz-Pfad: "note failed", obwohl die
+  // Notiz existiert).
+  private async revealFile(file: TFile): Promise<void> {
+    await this.app.workspace.getLeaf(true).openFile(file).catch(() => undefined);
+  }
+
   private async saveImage(mode: "create" | "insert"): Promise<void> {
     const img = this.state.image;
     if (!img) return;
@@ -228,19 +237,23 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
 
     if (this.settings.createMode !== "note") {
-      await this.app.workspace.getLeaf(true).openFile(file);
+      await this.revealFile(file);
       new Notice(STRINGS.saved(file.path));
       return;
     }
 
     // Ab hier ist das Bild bereits geschrieben. Ein Fehler in der Notiz darf es NICHT
     // entwerten — deshalb eigener try und eine Meldung, die beides benennt.
+    let note: TFile;
     try {
-      const note = await this.createNote(img.params, file.path);
-      await this.app.workspace.getLeaf(true).openFile(note);
-      new Notice(STRINGS.saved(note.path));
+      note = await this.createNote(img.params, file.path);
     } catch (e) {
       new Notice(STRINGS.noteFailed(e instanceof Error ? e.message : String(e), file.path));
+      return;
     }
+    // Öffnen erst NACH dem try: scheitert nur das Öffnen, ist die Notiz trotzdem da —
+    // sie hier mit "note failed" zu melden wäre schlicht gelogen.
+    await this.revealFile(note);
+    new Notice(STRINGS.saved(note.path));
   }
 }
