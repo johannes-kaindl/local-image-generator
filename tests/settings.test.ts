@@ -25,7 +25,8 @@ describe("settings", () => {
     expect(merged.noteFolder).toBe("");
     expect(merged.defaultSteps).toBe(4);
     expect(merged.createMode).toBe("image");
-    expect(merged.promptHistory).toEqual([]);
+    expect(merged.history).toEqual([]);
+    expect(merged.historyView).toBe("recent");
     expect(merged.presets).toHaveLength(DEFAULT_PRESETS.length);
     expect(merged.sectionsCollapsed).toEqual({});
   });
@@ -44,7 +45,8 @@ describe("sanitizeSettings (Spec §8)", () => {
       defaultSteps: 2,
       createMode: "note",
       presets: [{ id: "a", label: "A", suffix: "a-suffix" }],
-      promptHistory: ["a prompt"],
+      history: [{ prompt: "a prompt", seed: 1, steps: 4, model: "sd-turbo", created: "2026-07-17T10:00:00" }],
+      historyView: "grouped",
       sectionsCollapsed: { model: true },
     };
     expect(sanitizeSettings(healthy)).toEqual(healthy);
@@ -84,16 +86,6 @@ describe("sanitizeSettings (Spec §8)", () => {
       presets: [null, { id: "ok", label: "OK", suffix: "ok-suffix" }] as unknown as LigSettings["presets"],
     };
     expect(sanitizeSettings(s).presets).toEqual([{ id: "ok", label: "OK", suffix: "ok-suffix" }]);
-  });
-
-  it("promptHistory: null wird zu []", () => {
-    const s = { ...DEFAULT_SETTINGS, promptHistory: null as unknown as string[] };
-    expect(sanitizeSettings(s).promptHistory).toEqual([]);
-  });
-
-  it("promptHistory mit einer Zahl drin verliert nur den defekten Eintrag", () => {
-    const s = { ...DEFAULT_SETTINGS, promptHistory: ["ok", 5 as unknown as string, "also ok"] };
-    expect(sanitizeSettings(s).promptHistory).toEqual(["ok", "also ok"]);
   });
 
   it("sectionsCollapsed: null wird zu {}", () => {
@@ -137,5 +129,30 @@ describe("sanitizeSettings (Spec §8)", () => {
     const sanitized = sanitizeSettings(s);
     expect(sanitized.outputFolder).toBe("");
     expect(sanitized.noteFolder).toBe("");
+  });
+});
+
+describe("Historie-Migration", () => {
+  it("verwirft eine alte promptHistory (string[]) und startet leer", () => {
+    const s = sanitizeSettings({ promptHistory: ["a", "b", "c"] });
+    expect(s.history).toEqual([]);
+    expect((s as unknown as Record<string, unknown>)["promptHistory"]).toBeUndefined();
+  });
+
+  it("behält eine gültige history und defaultet historyView auf recent", () => {
+    const entry = { prompt: "a", seed: 1, steps: 4, model: "sd-turbo", created: "2026-07-17T10:00:00" };
+    const s = sanitizeSettings({ history: [entry] });
+    expect(s.history).toEqual([entry]);
+    expect(s.historyView).toBe("recent");
+  });
+
+  it("wirft kaputte history-Einträge weg", () => {
+    const s = sanitizeSettings({ history: [{ prompt: "a" }, 42, null] });
+    expect(s.history).toEqual([]);
+  });
+
+  it("übernimmt historyView='grouped'", () => {
+    expect(sanitizeSettings({ historyView: "grouped" }).historyView).toBe("grouped");
+    expect(sanitizeSettings({ historyView: "quatsch" }).historyView).toBe("recent");
   });
 });

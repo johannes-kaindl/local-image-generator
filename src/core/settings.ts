@@ -11,6 +11,16 @@ export interface StylePreset {
   suffix: string;
 }
 
+/** Ein aufgezeichnetes Rezept in der Historie (volle Reproduktion). */
+export interface HistoryEntry {
+  prompt: string;
+  seed: number;
+  steps: number;
+  model: string;
+  /** Lokaler ISO-8601-Stempel, beim Generier-Erfolg eingefroren (siehe isoStamp). */
+  created: string;
+}
+
 export interface LigSettings {
   outputFolder: string;
   noteFolder: string;
@@ -19,8 +29,10 @@ export interface LigSettings {
   /** Was der Create-Button tut: nur Bild (0.1-Verhalten) oder Bild + Notiz. */
   createMode: "image" | "note";
   presets: StylePreset[];
-  /** MRU, neueste zuerst. Zustand, kein Regler — data.json ist der einzige Speicher. */
-  promptHistory: string[];
+  /** MRU, neueste zuerst — volle Rezepte. Zustand, kein Regler. */
+  history: HistoryEntry[];
+  /** Ansicht des Historie-Tabs. */
+  historyView: "recent" | "grouped";
   /** Auf-/Zu-Zustand der Settings-Sektionen, Key → collapsed. */
   sectionsCollapsed: Record<string, boolean>;
 }
@@ -38,7 +50,8 @@ export const DEFAULT_SETTINGS: LigSettings = {
   defaultSteps: 4,
   createMode: "image",
   presets: DEFAULT_PRESETS,
-  promptHistory: [],
+  history: [],
+  historyView: "recent",
   sectionsCollapsed: {},
 };
 
@@ -54,9 +67,21 @@ function sanitizePresets(raw: unknown): StylePreset[] {
   );
 }
 
-function sanitizePromptHistory(raw: unknown): string[] {
+function sanitizeHistory(raw: unknown): HistoryEntry[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((p): p is string => typeof p === "string");
+  return raw.filter(
+    (h): h is HistoryEntry =>
+      isPlainObject(h) &&
+      typeof h["prompt"] === "string" &&
+      typeof h["seed"] === "number" &&
+      typeof h["steps"] === "number" &&
+      typeof h["model"] === "string" &&
+      typeof h["created"] === "string",
+  );
+}
+
+function sanitizeHistoryView(raw: unknown): "recent" | "grouped" {
+  return raw === "grouped" ? "grouped" : "recent";
 }
 
 function sanitizeSectionsCollapsed(raw: unknown): Record<string, boolean> {
@@ -80,14 +105,18 @@ function sanitizeFolder(raw: unknown): string {
  *  Collapsible-Storage, Historie-Push) auf falsche Formannahmen treffen. Fällt Feld für
  *  Feld auf den Default zurück, statt das ganze Objekt zu verwerfen. Pure — einmal beim
  *  Laden aufgerufen, direkt nach `mergeSettings`. */
-export function sanitizeSettings(s: LigSettings): LigSettings {
+export function sanitizeSettings(raw: unknown): LigSettings {
+  // Roh und untypisiert lesen: der Sinn dieser Funktion ist gerade, korruptem/handeditiertem
+  // Input zu misstrauen — die Feld-Sanitizer erwarten daher alle `unknown`.
+  const s = (raw ?? {}) as Record<string, unknown>;
   return {
     outputFolder: sanitizeFolder(s.outputFolder),
     noteFolder: sanitizeFolder(s.noteFolder),
     defaultSteps: sanitizeDefaultSteps(s.defaultSteps),
     createMode: sanitizeCreateMode(s.createMode),
     presets: sanitizePresets(s.presets),
-    promptHistory: sanitizePromptHistory(s.promptHistory),
+    history: sanitizeHistory(s.history),
+    historyView: sanitizeHistoryView(s.historyView),
     sectionsCollapsed: sanitizeSectionsCollapsed(s.sectionsCollapsed),
   };
 }
