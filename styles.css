@@ -49,3 +49,20 @@
 .okit-collapsible-body.is-collapsed { display: none; }
 
 .lig-preset-suffix { flex: 1 1 14em; }
+
+/* History-Tab: Kopf (Umschalter + Clear), Zeilen, Gruppen */
+.lig-hist-head { display: flex; align-items: center; gap: 8px; padding: 8px; }
+.lig-hist-seg { display: flex; border: 1px solid var(--background-modifier-border); border-radius: var(--radius-s); overflow: hidden; }
+.lig-hist-seg button { padding: 3px 10px; background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: var(--font-smaller); }
+.lig-hist-seg button.is-active { background: var(--background-modifier-hover); color: var(--text-normal); }
+.lig-hist-clear { margin-left: auto; font-size: var(--font-smaller); color: var(--text-muted); background: none; border: none; cursor: pointer; }
+.lig-hist-row, .lig-hist-var { border-top: 1px solid var(--background-modifier-border); padding: 7px 9px; cursor: pointer; }
+.lig-hist-row:hover, .lig-hist-var:hover { background: var(--background-modifier-hover); }
+.lig-hist-var { padding-left: 22px; }
+.lig-hist-prompt { line-height: 1.25; margin-bottom: 3px; }
+.lig-hist-meta { display: flex; align-items: center; font-size: var(--font-smaller); color: var(--text-muted); }
+.lig-hist-meta .clickable-icon { margin-left: auto; }
+.lig-hist-group { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border-top: 1px solid var(--background-modifier-border); font-weight: 600; cursor: pointer; }
+.lig-hist-group .lig-hist-count { font-weight: 400; color: var(--text-muted); font-size: var(--font-smaller); }
+.lig-hist-chevron { display: inline-flex; color: var(--text-muted); }
+.lig-hist-empty { padding: 16px 9px; color: var(--text-muted); }

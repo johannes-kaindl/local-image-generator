@@ -145,6 +145,17 @@ export class GeneratePanel implements HubPanel {
     }
   }
 
+  /** Ein Rezept aus der Historie in die DOM-Felder schreiben. Der Host wechselt danach
+   *  auf den Generate-Tab; refresh() zieht Chips/Aktiv-Zustand nach. */
+  applyRecipe(prompt: string, seed: number, steps: number): void {
+    this.promptEl.value = prompt;
+    this.host.setPrompt(prompt);
+    this.seedEl.value = String(seed);
+    this.stepsEl.value = String(steps);
+    this.stepsValueEl.setText(String(steps));
+    this.refresh();
+  }
+
   refresh(): void {
     const state = this.host.getPanelState();
     this.renderChips();

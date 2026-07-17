@@ -3,12 +3,13 @@
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
 import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
-import { pushHistory } from "./core/history";
+import { deleteEntry, pushHistory } from "./core/history";
 import { MODEL_ID } from "./core/model-manifest";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import { STRINGS } from "./core/strings";
 import type { GenParams, PanelState } from "./core/viewmodel";
+import { ConfirmModal } from "./obsidian/confirm-modal";
 import { ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession } from "./obsidian/ort-host";
 import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
@@ -48,6 +49,40 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
         setting.open();
         setting.openTabById("local-image-generator");
+      },
+      restoreRecipe: (entry) => {
+        // Rezept direkt in die DOM-Felder des Generate-Panels füllen und dorthin wechseln —
+        // ohne neuen globalen Zustand (die Panels halten ihre eigenen Felder).
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+          const view = leaf.view;
+          if (view instanceof GeneratorView) {
+            view.applyRecipe(entry.prompt, entry.seed, entry.steps);
+            view.showTab("generate");
+          }
+        }
+      },
+      deleteHistoryEntry: (entry) => {
+        this.settings.history = deleteEntry(this.settings.history, entry);
+        void this.saveSettings();
+        this.refreshViews();
+      },
+      clearHistory: () => {
+        new ConfirmModal(this.app, STRINGS.historyClearConfirm, STRINGS.historyClear, () => {
+          this.settings.history = [];
+          void this.saveSettings();
+          this.refreshViews();
+        }).open();
+      },
+      setHistoryView: (v) => {
+        this.settings.historyView = v;
+        void this.saveSettings();
+        this.refreshViews();
+      },
+      showTab: (id) => {
+        for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
+          const view = leaf.view;
+          if (view instanceof GeneratorView) view.showTab(id);
+        }
       },
     };
 
