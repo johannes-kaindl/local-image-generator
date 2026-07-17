@@ -65,10 +65,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   private async initStatus(): Promise<void> {
     this.state.gpu = await checkGpu();
     this.state.model = (await this.modelStore.isComplete()) ? { kind: "ready" } : { kind: "missing" };
-    this.refreshView();
+    this.refreshViews();
   }
 
-  private refreshView(): void {
+  refreshViews(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
       const view = leaf.view;
       if (view instanceof GeneratorView) view.refresh();
@@ -90,19 +90,19 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   async downloadModel(onProgress: (pct: number) => void): Promise<void> {
     this.state.model = { kind: "downloading", pct: 0 };
-    this.refreshView();
+    this.refreshViews();
     try {
       await this.modelStore.download((pct) => {
         this.state.model = { kind: "downloading", pct };
         onProgress(pct);
-        this.refreshView();
+        this.refreshViews();
       });
       this.state.model = { kind: "ready" };
     } catch (e) {
       this.state.model = { kind: "missing" };
       throw e;
     } finally {
-      this.refreshView();
+      this.refreshViews();
     }
   }
 
@@ -118,7 +118,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     void this.engine?.dispose().catch(() => {});
     this.engine = null;
     this.state.model = { kind: "missing" };
-    this.refreshView();
+    this.refreshViews();
   }
 
   private async ensureEngine(): Promise<SdTurboEngine> {
@@ -142,12 +142,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // und die Ergebnis-Notiz muss das Bild beschreiben, das entstanden ist.
     const prompt = this.state.prompt;
     this.state.run = { kind: "running", step: 0, total: steps };
-    this.refreshView();
+    this.refreshViews();
     try {
       const engine = await this.ensureEngine();
       const result = await engine.generate({ prompt, steps, seed }, (step, total) => {
         this.state.run = { kind: "running", step, total };
-        this.refreshView();
+        this.refreshViews();
       });
       this.state.image = {
         dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height),
@@ -168,7 +168,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.engine = null;
       new Notice(STRINGS.oomHint);
     } finally {
-      this.refreshView();
+      this.refreshViews();
     }
   }
 

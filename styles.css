@@ -40,3 +40,5 @@
 .okit-collapsible-chevron { display: inline-flex; color: var(--text-muted); }
 .okit-collapsible-body { padding-top: var(--size-4-2); }
 .okit-collapsible-body.is-collapsed { display: none; }
+
+.lig-preset-suffix { flex: 1 1 14em; }
