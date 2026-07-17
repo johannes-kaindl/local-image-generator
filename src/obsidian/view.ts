@@ -172,7 +172,10 @@ export class GeneratorView extends ItemView {
   }
 
   private renderChips(): void {
-    const presets = this.host.getSettings().presets;
+    // Ein frisch angelegtes, noch nicht befülltes Preset ({label: "", suffix: ""},
+    // preset-editor.ts) bleibt außen vor: ein leeres Label wäre ein unsichtbarer Chip,
+    // ein leerer Suffix ein Chip, der togglePresetInPrompt zufolge nichts tut (Finding 5).
+    const presets = this.host.getSettings().presets.filter((p) => p.label !== "" && p.suffix !== "");
     // Signatur deckt id, label und suffix ab: der Klick-Handler und die Aktiv-Prüfung
     // schließen jeweils über p.suffix, daher muss jede Änderung an Label ODER Suffix
     // (nicht nur an der Anzahl/Reihenfolge der Presets) einen Rebuild auslösen.
