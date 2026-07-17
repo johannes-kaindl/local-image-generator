@@ -2,12 +2,13 @@
 // View, Lazy-Init der Engine (GPU-Check → Cache-Buffers → ORT-Sessions).
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
-import { buildImageFilename, dedupeFilename, isoStamp } from "./core/filename";
+import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
 import { pushHistory } from "./core/history";
 import { MODEL_ID } from "./core/model-manifest";
+import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, type LigSettings } from "./core/settings";
 import { STRINGS } from "./core/strings";
-import type { PanelState } from "./core/viewmodel";
+import type { GenParams, PanelState } from "./core/viewmodel";
 import { ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession } from "./obsidian/ort-host";
 import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
@@ -190,23 +191,56 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     );
   }
 
+  // Ergebnis-Notiz neben/statt dem Bild anlegen. Spiegelt resolveImagePath: fehlender
+  // Zielordner wird angelegt, Kollisionen bekommen -2, -3, … angehängt.
+  private async createNote(params: GenParams, imagePath: string): Promise<TFile> {
+    const configured = this.settings.noteFolder.trim();
+    const folder = configured === "" ? dirOf(imagePath) : normalizePath(configured);
+    if (folder !== "" && !(this.app.vault.getAbstractFileByPath(folder) instanceof TFolder)) {
+      await this.app.vault.createFolder(folder).catch(() => undefined);
+    }
+    const name = buildNoteFilename(params.prompt, params.seed);
+    const path = dedupeFilename(
+      folder === "" ? name : normalizePath(`${folder}/${name}`),
+      (p) => this.app.vault.getAbstractFileByPath(p) !== null,
+    );
+    return this.app.vault.create(path, buildImageNote(params, imagePath));
+  }
+
   private async saveImage(mode: "create" | "insert"): Promise<void> {
     const img = this.state.image;
     if (!img) return;
+    let file: TFile;
     try {
       const path = await this.resolveImagePath(buildImageFilename(new Date(), img.params.seed));
-      const file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
-      if (mode === "insert") {
-        const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
-        if (editor) editor.replaceSelection(`![[${file.path}]]`);
-        else new Notice(STRINGS.insertNeedsEditor);
-      } else if (file instanceof TFile) {
-        await this.app.workspace.getLeaf(true).openFile(file);
-      }
-      new Notice(`Saved: ${file.path}`);
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      new Notice(STRINGS.saveFailed(msg));
+      new Notice(STRINGS.saveFailed(e instanceof Error ? e.message : String(e)));
+      return;
+    }
+
+    if (mode === "insert") {
+      const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+      if (editor) editor.replaceSelection(`![[${file.path}]]`);
+      else new Notice(STRINGS.insertNeedsEditor);
+      new Notice(STRINGS.saved(file.path));
+      return;
+    }
+
+    if (this.settings.createMode !== "note") {
+      await this.app.workspace.getLeaf(true).openFile(file);
+      new Notice(STRINGS.saved(file.path));
+      return;
+    }
+
+    // Ab hier ist das Bild bereits geschrieben. Ein Fehler in der Notiz darf es NICHT
+    // entwerten — deshalb eigener try und eine Meldung, die beides benennt.
+    try {
+      const note = await this.createNote(img.params, file.path);
+      await this.app.workspace.getLeaf(true).openFile(note);
+      new Notice(STRINGS.saved(note.path));
+    } catch (e) {
+      new Notice(STRINGS.noteFailed(e instanceof Error ? e.message : String(e), file.path));
     }
   }
 }
