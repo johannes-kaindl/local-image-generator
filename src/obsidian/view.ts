@@ -1,6 +1,7 @@
 // Die EINE View des Plugins (UI-STANDARD §1/§4, Mount-once: Prompt/Preview überleben
 // Refreshes). Kennt weder Plugin noch Engine — nur den schmalen ViewHost.
 import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from "obsidian";
+import type { LigSettings } from "../core/settings";
 import { STRINGS } from "../core/strings";
 import { buildViewModel, type PanelState } from "../core/viewmodel";
 
@@ -8,6 +9,7 @@ export const VIEW_TYPE = "local-image-generator";
 
 export interface ViewHost {
   getPanelState(): PanelState;
+  getSettings(): LigSettings;
   setPrompt(p: string): void;
   generate(steps: number, seed: number): void;
   saveImage(mode: "create" | "insert"): void;
@@ -34,6 +36,7 @@ export class GeneratorView extends ItemView {
   private insertBtn!: HTMLButtonElement;
   private statusIconEl!: HTMLElement;
   private statusTextEl!: HTMLElement;
+  private seedLocked = false;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -68,11 +71,14 @@ export class GeneratorView extends ItemView {
 
     const controls = root.createDiv({ cls: "lig-row" });
     controls.createSpan({ text: STRINGS.steps, cls: "lig-label" });
+    // Startwert aus den Settings — danach gehört der Slider dem Nutzer, wir schreiben
+    // nichts zurück (die Einstellung ist ein Startwert, kein Zwang).
+    const startSteps = String(this.host.getSettings().defaultSteps);
     this.stepsEl = controls.createEl("input", {
       cls: "lig-steps",
-      attr: { type: "range", min: "1", max: "4", step: "1", value: "1" },
+      attr: { type: "range", min: "1", max: "4", step: "1", value: startSteps },
     });
-    this.stepsValueEl = controls.createSpan({ text: "1", cls: "lig-steps-value" });
+    this.stepsValueEl = controls.createSpan({ text: startSteps, cls: "lig-steps-value" });
     this.stepsEl.addEventListener("input", () => {
       this.stepsValueEl.setText(this.stepsEl.value);
     });
@@ -87,6 +93,20 @@ export class GeneratorView extends ItemView {
     dice.setAttribute("aria-label", STRINGS.randomSeed);
     dice.addEventListener("click", () => {
       this.seedEl.value = String(randomSeed());
+    });
+    const lock = controls.createEl("button", { cls: "clickable-icon lig-lock" });
+    const applyLock = (): void => {
+      setIcon(lock, this.seedLocked ? "lock" : "unlock");
+      const label = this.seedLocked ? STRINGS.seedUnlock : STRINGS.seedLock;
+      setTooltip(lock, this.seedLocked ? STRINGS.seedLockedTooltip : label);
+      lock.setAttribute("aria-label", label);
+      lock.setAttribute("aria-pressed", String(this.seedLocked));
+      lock.toggleClass("is-active", this.seedLocked);
+    };
+    applyLock();
+    lock.addEventListener("click", () => {
+      this.seedLocked = !this.seedLocked;
+      applyLock();
     });
 
     this.generateBtn = root.createEl("button", { text: STRINGS.generate, cls: "mod-cta lig-generate" });
@@ -104,7 +124,9 @@ export class GeneratorView extends ItemView {
     const actions = this.imageCard.createDiv({ cls: "lig-row lig-actions" });
     this.regenBtn = actions.createEl("button", { text: STRINGS.regenerate });
     this.regenBtn.addEventListener("click", () => {
-      this.seedEl.value = String(randomSeed());
+      // Gesperrt = denselben Seed behalten, damit man den Prompt variieren und die
+      // Wirkung der Worte sehen kann. Der Würfel bleibt davon unberührt.
+      if (!this.seedLocked) this.seedEl.value = String(randomSeed());
       this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value));
     });
     this.createBtn = actions.createEl("button", { text: STRINGS.create, cls: "mod-cta" });

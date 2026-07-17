@@ -36,6 +36,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         this.state.editorActive = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor !== undefined;
         return this.state;
       },
+      getSettings: () => this.settings,
       setPrompt: (p) => {
         this.state.prompt = p;
       },

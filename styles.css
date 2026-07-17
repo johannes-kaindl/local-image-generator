@@ -16,3 +16,4 @@
 .lig-status-icon.is-checking svg { animation: lig-spin 1.5s linear infinite; }
 @keyframes lig-spin { to { transform: rotate(360deg); } }
 .is-hidden { display: none; }
+.lig-lock.is-active { color: var(--text-accent); }
