@@ -3,7 +3,7 @@
 // Kennt weder Plugin noch Engine — nur den schmalen ViewHost.
 import { ItemView, WorkspaceLeaf, type ViewStateResult } from "obsidian";
 import type { HistoryEntry, LigSettings } from "../core/settings";
-import { STRINGS } from "../core/strings";
+import { t } from "../vendor/kit/i18n";
 import type { PanelState } from "../core/viewmodel";
 import { GeneratePanel } from "./generate-panel";
 import { HistoryPanel } from "./history-panel";
@@ -44,7 +44,7 @@ export class GeneratorView extends ItemView {
   }
 
   getDisplayText(): string {
-    return STRINGS.viewTitle;
+    return t("view.title");
   }
 
   getIcon(): string {
