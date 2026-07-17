@@ -234,8 +234,9 @@ export const HISTORY_LIMIT = 20;
 
 function recipeKey(e: HistoryEntry): string {
   // Modell NICHT im Schlüssel: einmodellig, und ein späterer Modellwechsel soll ein
-  // identisches Rezept nicht künstlich verdoppeln.
-  return `${e.prompt.trim()} ${e.seed} ${e.steps}`;
+  // identisches Rezept nicht künstlich verdoppeln. JSON-Tupel als Schlüssel, damit ein
+  // Prompt mit Ziffern/Leerzeichen keine falsche Kollision mit Seed/Steps erzeugt.
+  return JSON.stringify([e.prompt.trim(), e.seed, e.steps]);
 }
 
 /** Nimmt ein Rezept vorn auf; identisches Rezept wandert nach vorn statt zu doppeln.
