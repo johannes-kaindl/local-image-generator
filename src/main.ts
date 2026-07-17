@@ -3,6 +3,7 @@
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
 import { buildImageFilename, dedupeFilename, isoStamp } from "./core/filename";
+import { pushHistory } from "./core/history";
 import { MODEL_ID } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, type LigSettings } from "./core/settings";
 import { STRINGS } from "./core/strings";
@@ -152,6 +153,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         params: { prompt, seed: result.seed, steps, model: MODEL_ID, date: isoStamp(new Date()) },
       };
       this.state.run = { kind: "idle" };
+      // Erst bei Erfolg aufnehmen — sonst füllt sich die Liste mit Halbsätzen und
+      // Fehlversuchen. saveSettings bewusst fire-and-forget: ein langsamer Schreibvorgang
+      // darf das fertige Bild nicht aufhalten.
+      this.settings.promptHistory = pushHistory(this.settings.promptHistory, prompt);
+      void this.saveSettings();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.state.run = { kind: "error", message: msg };

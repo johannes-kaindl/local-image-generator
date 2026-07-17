@@ -21,3 +21,5 @@
 .lig-chip { padding: var(--size-2-1) var(--size-4-2); border-radius: var(--radius-l); font-size: var(--font-ui-smaller); background: var(--background-modifier-hover); color: var(--text-muted); border: 1px solid transparent; cursor: pointer; }
 .lig-chip:hover { color: var(--text-normal); }
 .lig-chip.is-active { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); }
+.lig-prompt-row { display: flex; align-items: flex-start; gap: var(--size-4-1); }
+.lig-prompt-row .lig-prompt { flex: 1 1 auto; }
