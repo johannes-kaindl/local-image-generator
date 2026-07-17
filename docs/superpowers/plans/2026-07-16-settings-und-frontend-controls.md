@@ -1298,7 +1298,7 @@ Als neue private Methode in der Klasse (z. B. direkt vor `refresh`):
 ```ts
   private renderChips(): void {
     const presets = this.host.getSettings().presets;
-    const sig = presets.map((p) => `${p.id} ${p.label} ${p.suffix}`).join("");
+    const sig = presets.map((p) => `${p.id}:${p.label}:${p.suffix}`).join("|");
     if (sig !== this.presetSig) {
       // Nur neu bauen, wenn sich die Liste wirklich geändert hat — refresh() läuft
       // bei jedem Tastendruck, ein Rebuild pro Zeichen wäre unnötiger DOM-Churn.
