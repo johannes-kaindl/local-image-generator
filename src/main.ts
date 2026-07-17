@@ -6,7 +6,7 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp 
 import { pushHistory } from "./core/history";
 import { MODEL_ID } from "./core/model-manifest";
 import { buildImageNote } from "./core/note";
-import { DEFAULT_SETTINGS, type LigSettings } from "./core/settings";
+import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import { STRINGS } from "./core/strings";
 import type { GenParams, PanelState } from "./core/viewmodel";
 import { ModelStore } from "./obsidian/model-store";
@@ -30,7 +30,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   };
 
   async onload(): Promise<void> {
-    this.settings = mergeSettings(DEFAULT_SETTINGS, await this.loadData());
+    this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, await this.loadData()));
     this.addSettingTab(new LigSettingTab(this.app, this));
 
     const host: ViewHost = {

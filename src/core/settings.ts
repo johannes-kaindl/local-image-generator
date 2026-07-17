@@ -41,3 +41,53 @@ export const DEFAULT_SETTINGS: LigSettings = {
   promptHistory: [],
   sectionsCollapsed: {},
 };
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+function sanitizePresets(raw: unknown): StylePreset[] {
+  if (!Array.isArray(raw)) return DEFAULT_PRESETS;
+  return raw.filter(
+    (p): p is StylePreset =>
+      isPlainObject(p) && typeof p["id"] === "string" && typeof p["label"] === "string" && typeof p["suffix"] === "string",
+  );
+}
+
+function sanitizePromptHistory(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((p): p is string => typeof p === "string");
+}
+
+function sanitizeSectionsCollapsed(raw: unknown): Record<string, boolean> {
+  return isPlainObject(raw) ? (raw as Record<string, boolean>) : {};
+}
+
+function sanitizeDefaultSteps(raw: unknown): number {
+  return typeof raw === "number" && Number.isInteger(raw) && raw >= 1 && raw <= 4 ? raw : DEFAULT_SETTINGS.defaultSteps;
+}
+
+function sanitizeCreateMode(raw: unknown): "image" | "note" {
+  return raw === "note" ? "note" : "image";
+}
+
+function sanitizeFolder(raw: unknown): string {
+  return typeof raw === "string" ? raw : "";
+}
+
+/** Bereinigt einen geladenen Settings-Stand (Spec §8): handeditierte oder korrupte
+ *  `data.json` darf nicht in vier verschiedenen Renderstellen (Chips, Preset-Editor,
+ *  Collapsible-Storage, Historie-Push) auf falsche Formannahmen treffen. Fällt Feld für
+ *  Feld auf den Default zurück, statt das ganze Objekt zu verwerfen. Pure — einmal beim
+ *  Laden aufgerufen, direkt nach `mergeSettings`. */
+export function sanitizeSettings(s: LigSettings): LigSettings {
+  return {
+    outputFolder: sanitizeFolder(s.outputFolder),
+    noteFolder: sanitizeFolder(s.noteFolder),
+    defaultSteps: sanitizeDefaultSteps(s.defaultSteps),
+    createMode: sanitizeCreateMode(s.createMode),
+    presets: sanitizePresets(s.presets),
+    promptHistory: sanitizePromptHistory(s.promptHistory),
+    sectionsCollapsed: sanitizeSectionsCollapsed(s.sectionsCollapsed),
+  };
+}
