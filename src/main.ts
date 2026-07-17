@@ -227,7 +227,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     if (!img) return;
     let file: TFile;
     try {
-      const path = await this.resolveImagePath(buildImageFilename(new Date(), img.params.seed));
+      // Aus dem beim Generieren eingefrorenen Zeitstempel ableiten, nicht aus "jetzt":
+      // sonst laufen Dateiname und Notiz-`created` (params.date) auseinander, wenn
+      // zwischen Generieren und Create Zeit vergeht (Spec §7.4, Finding 4). isoStamp
+      // liefert lokale Zeit ohne Offset — new Date() parst das als lokale Zeit zurück,
+      // der Round-Trip ist verlustfrei.
+      const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
       file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
     } catch (e) {
       new Notice(STRINGS.saveFailed(e instanceof Error ? e.message : String(e)));
