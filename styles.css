@@ -17,3 +17,7 @@
 @keyframes lig-spin { to { transform: rotate(360deg); } }
 .is-hidden { display: none; }
 .lig-lock.is-active { color: var(--text-accent); }
+.lig-chips { gap: var(--size-4-1); }
+.lig-chip { padding: var(--size-2-1) var(--size-4-2); border-radius: var(--radius-l); font-size: var(--font-ui-smaller); background: var(--background-modifier-hover); color: var(--text-muted); border: 1px solid transparent; cursor: pointer; }
+.lig-chip:hover { color: var(--text-normal); }
+.lig-chip.is-active { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); }

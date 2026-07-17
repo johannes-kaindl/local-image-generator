@@ -1,6 +1,7 @@
 // Die EINE View des Plugins (UI-STANDARD §1/§4, Mount-once: Prompt/Preview überleben
 // Refreshes). Kennt weder Plugin noch Engine — nur den schmalen ViewHost.
 import { ItemView, setIcon, setTooltip, WorkspaceLeaf } from "obsidian";
+import { presetActive, togglePresetInPrompt } from "../core/presets";
 import type { LigSettings } from "../core/settings";
 import { STRINGS } from "../core/strings";
 import { buildViewModel, type PanelState } from "../core/viewmodel";
@@ -37,6 +38,9 @@ export class GeneratorView extends ItemView {
   private statusIconEl!: HTMLElement;
   private statusTextEl!: HTMLElement;
   private seedLocked = false;
+  private chipsEl!: HTMLElement;
+  private chipEls: { suffix: string; el: HTMLElement }[] = [];
+  private presetSig = "";
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -68,6 +72,7 @@ export class GeneratorView extends ItemView {
       this.host.setPrompt(this.promptEl.value);
       this.refresh();
     });
+    this.chipsEl = root.createDiv({ cls: "lig-row lig-chips" });
 
     const controls = root.createDiv({ cls: "lig-row" });
     controls.createSpan({ text: STRINGS.steps, cls: "lig-label" });
@@ -141,8 +146,42 @@ export class GeneratorView extends ItemView {
     this.refresh();
   }
 
+  private renderChips(): void {
+    const presets = this.host.getSettings().presets;
+    // Signatur deckt id, label und suffix ab: der Klick-Handler und die Aktiv-Prüfung
+    // schließen jeweils über p.suffix, daher muss jede Änderung an Label ODER Suffix
+    // (nicht nur an der Anzahl/Reihenfolge der Presets) einen Rebuild auslösen.
+    const sig = presets.map((p) => `${p.id}:${p.label}:${p.suffix}`).join("|");
+    if (sig !== this.presetSig) {
+      // Nur neu bauen, wenn sich die Liste wirklich geändert hat — refresh() läuft
+      // bei jedem Tastendruck, ein Rebuild pro Zeichen wäre unnötiger DOM-Churn.
+      this.presetSig = sig;
+      this.chipsEl.empty();
+      this.chipEls = [];
+      if (presets.length > 0) this.chipsEl.createSpan({ text: STRINGS.presetsLabel, cls: "lig-label" });
+      for (const p of presets) {
+        const el = this.chipsEl.createEl("button", { text: p.label, cls: "lig-chip" });
+        el.setAttribute("type", "button");
+        el.addEventListener("click", () => {
+          const next = togglePresetInPrompt(this.promptEl.value, p.suffix);
+          this.promptEl.value = next;
+          this.host.setPrompt(next);
+          this.refresh();
+        });
+        this.chipEls.push({ suffix: p.suffix, el });
+      }
+    }
+    // Aktiv-Zustand IMMER aus dem Textfeld ableiten — es ist die einzige Wahrheit.
+    for (const chip of this.chipEls) {
+      const active = presetActive(this.promptEl.value, chip.suffix);
+      chip.el.toggleClass("is-active", active);
+      chip.el.setAttribute("aria-pressed", String(active));
+    }
+  }
+
   refresh(): void {
     const state = this.host.getPanelState();
+    this.renderChips();
     const vm = buildViewModel(state);
 
     this.generateBtn.disabled = !vm.generateEnabled;
