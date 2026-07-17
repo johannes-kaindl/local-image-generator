@@ -74,6 +74,7 @@ export class GeneratorView extends ItemView {
 
   showTab(id: TabId): void {
     this.ctrl?.setTab(id);
+    this.restoreTab = id;
   }
 
   getState(): Record<string, unknown> {
