@@ -1,6 +1,7 @@
 // Alle UI-Texte zentral (Spec §4) — Englisch, sentence case. i18n-Ausbau später.
 export const STRINGS = {
   viewTitle: "Local image generator",
+  tabGenerate: "Generate",
   openCommand: "Open generator",
   promptPlaceholder: "Describe the image…",
   generate: "Generate",
