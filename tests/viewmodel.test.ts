@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { registerI18n } from "../src/i18n/strings";
+import { setLang } from "../src/vendor/kit/i18n";
 import { buildViewModel, type PanelState } from "../src/core/viewmodel";
+
+beforeEach(() => {
+  registerI18n();
+  setLang("en");
+});
 
 const base: PanelState = {
   gpu: "ok",
