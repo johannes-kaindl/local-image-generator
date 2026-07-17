@@ -1561,29 +1561,48 @@ Ersetze `saveImage` vollständig:
     }
 
     if (this.settings.createMode !== "note") {
-      await this.app.workspace.getLeaf(true).openFile(file);
+      await this.revealFile(file);
       new Notice(STRINGS.saved(file.path));
       return;
     }
 
     // Ab hier ist das Bild bereits geschrieben. Ein Fehler in der Notiz darf es NICHT
     // entwerten — deshalb eigener try und eine Meldung, die beides benennt.
+    let note: TFile;
     try {
-      const note = await this.createNote(img.params, file.path);
-      await this.app.workspace.getLeaf(true).openFile(note);
-      new Notice(STRINGS.saved(note.path));
+      note = await this.createNote(img.params, file.path);
     } catch (e) {
       new Notice(STRINGS.noteFailed(e instanceof Error ? e.message : String(e), file.path));
+      return;
     }
+    // Öffnen erst NACH dem try: scheitert nur das Öffnen, ist die Notiz trotzdem da —
+    // sie hier mit "note failed" zu melden wäre schlicht gelogen.
+    await this.revealFile(note);
+    new Notice(STRINGS.saved(note.path));
   }
 ```
 
-- [ ] **Step 4: Gate laufen lassen**
+- [ ] **Step 4: `revealFile` ergänzen**
+
+Als neue private Methode direkt **vor** `saveImage`:
+
+```ts
+  // Das Öffnen ist Komfort, kein Ergebnis: schlägt es fehl, liegt die Datei trotzdem im
+  // Vault. Der Fehler wird deshalb geschluckt — die "Saved: <Pfad>"-Meldung des Aufrufers
+  // sagt, wo sie ist. Ein Öffnen-Fehler darf weder das Ergebnis entwerten (Nur-Bild-Pfad:
+  // gar keine Meldung) noch es falsch benennen (Notiz-Pfad: "note failed", obwohl die
+  // Notiz existiert).
+  private async revealFile(file: TFile): Promise<void> {
+    await this.app.workspace.getLeaf(true).openFile(file).catch(() => undefined);
+  }
+```
+
+- [ ] **Step 5: Gate laufen lassen**
 
 Run: `npm run gate`
-Expected: PASS. Meldet der Typecheck `file` als möglicherweise nicht zugewiesen, prüfe, dass der erste `catch`-Zweig mit `return` endet.
+Expected: PASS. Meldet der Typecheck `file` oder `note` als möglicherweise nicht zugewiesen, prüfe, dass der jeweilige `catch`-Zweig mit `return` endet.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/main.ts
