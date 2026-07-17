@@ -37,7 +37,6 @@ export class GeneratorView extends ItemView {
   private insertBtn!: HTMLButtonElement;
   private statusIconEl!: HTMLElement;
   private statusTextEl!: HTMLElement;
-  private seedLocked = false;
   private chipsEl!: HTMLElement;
   private chipEls: { suffix: string; el: HTMLElement }[] = [];
   private presetSig = "";
@@ -100,20 +99,6 @@ export class GeneratorView extends ItemView {
     dice.addEventListener("click", () => {
       this.seedEl.value = String(randomSeed());
     });
-    const lock = controls.createEl("button", { cls: "clickable-icon lig-lock" });
-    const applyLock = (): void => {
-      setIcon(lock, this.seedLocked ? "lock" : "unlock");
-      const label = this.seedLocked ? STRINGS.seedUnlock : STRINGS.seedLock;
-      setTooltip(lock, this.seedLocked ? STRINGS.seedLockedTooltip : label);
-      lock.setAttribute("aria-label", label);
-      lock.setAttribute("aria-pressed", String(this.seedLocked));
-      lock.toggleClass("is-active", this.seedLocked);
-    };
-    applyLock();
-    lock.addEventListener("click", () => {
-      this.seedLocked = !this.seedLocked;
-      applyLock();
-    });
 
     this.generateBtn = root.createEl("button", { text: STRINGS.generate, cls: "mod-cta lig-generate" });
     this.generateBtn.addEventListener("click", () => {
@@ -128,11 +113,11 @@ export class GeneratorView extends ItemView {
     this.imageCard = root.createDiv({ cls: "lig-card" });
     this.imgEl = this.imageCard.createEl("img", { cls: "lig-image" });
     const actions = this.imageCard.createDiv({ cls: "lig-row lig-actions" });
-    this.regenBtn = actions.createEl("button", { text: STRINGS.regenerate });
+    this.regenBtn = actions.createEl("button", { text: STRINGS.reroll });
     this.regenBtn.addEventListener("click", () => {
-      // Gesperrt = denselben Seed behalten, damit man den Prompt variieren und die
-      // Wirkung der Worte sehen kann. Der Würfel bleibt davon unberührt.
-      if (!this.seedLocked) this.seedEl.value = String(randomSeed());
+      // Reroll = neuer Zufalls-Seed + generieren. Der obere "Generate"-Knopf nimmt den
+      // Seed aus dem Feld und würfelt nie — so sagt jeder Knopf, was er tut.
+      this.seedEl.value = String(randomSeed());
       this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value));
     });
     this.createBtn = actions.createEl("button", { text: STRINGS.create, cls: "mod-cta" });
