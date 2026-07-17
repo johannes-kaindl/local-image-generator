@@ -1,7 +1,7 @@
 // Preset-Editor für den Settings-Tab (Spec §7.5).
 import { Notice, Setting } from "obsidian";
 import type { StylePreset } from "../core/settings";
-import { STRINGS } from "../core/strings";
+import { t } from "../vendor/kit/i18n";
 
 export interface PresetEditorHost {
   getPresets(): StylePreset[];
@@ -20,7 +20,7 @@ async function apply(host: PresetEditorHost, next: StylePreset[], rerender: bool
     await host.setPresets(next);
     if (rerender) host.rerender();
   } catch (e) {
-    new Notice(STRINGS.saveFailed(e instanceof Error ? e.message : String(e)));
+    new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
     host.rerender();
   }
 }
@@ -35,30 +35,30 @@ export function renderPresetEditor(containerEl: HTMLElement, host: PresetEditorH
   for (const preset of host.getPresets()) {
     const setting = new Setting(containerEl);
 
-    setting.addText((t) => {
-      t.setPlaceholder(STRINGS.settingsPresetLabel).setValue(preset.label);
-      t.inputEl.setAttribute("aria-label", STRINGS.settingsPresetLabel);
+    setting.addText((tf) => {
+      tf.setPlaceholder(t("settings.presets.label")).setValue(preset.label);
+      tf.inputEl.setAttribute("aria-label", t("settings.presets.label"));
       // Commit auf blur, NICHT über onChange: onChange feuert pro Tastendruck; speichern
       // und neu rendern je Zeichen würde den Fokus nach jedem Buchstaben verlieren
       // (Lesson vim-dojo 0.5.0). Hier bewusst KEIN rerender.
-      t.inputEl.addEventListener("blur", () => {
-        void patch(host, preset.id, { label: t.getValue().trim() });
+      tf.inputEl.addEventListener("blur", () => {
+        void patch(host, preset.id, { label: tf.getValue().trim() });
       });
     });
 
-    setting.addText((t) => {
-      t.setPlaceholder(STRINGS.settingsPresetSuffix).setValue(preset.suffix);
-      t.inputEl.setAttribute("aria-label", STRINGS.settingsPresetSuffix);
-      t.inputEl.addClass("lig-preset-suffix");
-      t.inputEl.addEventListener("blur", () => {
-        void patch(host, preset.id, { suffix: t.getValue().trim() });
+    setting.addText((tf) => {
+      tf.setPlaceholder(t("settings.presets.suffix")).setValue(preset.suffix);
+      tf.inputEl.setAttribute("aria-label", t("settings.presets.suffix"));
+      tf.inputEl.addClass("lig-preset-suffix");
+      tf.inputEl.addEventListener("blur", () => {
+        void patch(host, preset.id, { suffix: tf.getValue().trim() });
       });
     });
 
     setting.addExtraButton((b) =>
       b
         .setIcon("trash")
-        .setTooltip(STRINGS.settingsPresetDelete)
+        .setTooltip(t("settings.presets.delete"))
         .onClick(() => {
           void apply(host, host.getPresets().filter((p) => p.id !== preset.id), true);
         }),
@@ -66,7 +66,7 @@ export function renderPresetEditor(containerEl: HTMLElement, host: PresetEditorH
   }
 
   new Setting(containerEl).addButton((b) =>
-    b.setButtonText(STRINGS.settingsPresetAdd).onClick(() => {
+    b.setButtonText(t("settings.presets.add")).onClick(() => {
       const fresh: StylePreset = { id: crypto.randomUUID(), label: "", suffix: "" };
       void apply(host, [...host.getPresets(), fresh], true);
     }),
