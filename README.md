@@ -11,9 +11,12 @@ as the inference engine.
 - Type a prompt, adjust steps/seed if you like, and press **Generate**. Click
   a style chip (Sumi-e, Watercolor, Photo, Oil — edit or add your own in
   settings) to append its look to the prompt; click again to remove it.
-- Lock the seed (padlock icon) to keep it fixed while **Regenerate** varies
-  the prompt, or leave it unlocked to get a fresh seed each time. The clock
-  icon next to the prompt field holds your recent prompts.
+- **Generate** uses the seed from the field (it never rerolls); **Reroll**
+  rolls a fresh seed and generates a new variation. Use the dice icon to reroll
+  the seed by hand.
+- Switch to the **History** tab to see your past generations as full recipes
+  (prompt · seed · steps · time) — group them by prompt, click one to load its
+  recipe back into Generate, delete single entries, or clear all.
 - **Create** saves the image as a new attachment. By default that's all it
   does (it also opens the image) — set the **Create button** dropdown in
   settings to **Image + note** to have it also create a note with the
