@@ -2,7 +2,7 @@
 // Refreshes). Kennt weder Plugin noch Engine — nur den schmalen ViewHost.
 import { setIcon, setTooltip } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
-import { STRINGS } from "../core/strings";
+import { t } from "../vendor/kit/i18n";
 import { buildViewModel } from "../core/viewmodel";
 import type { HubPanel, TabId } from "./hub";
 import type { ViewHost } from "./view";
@@ -13,7 +13,7 @@ function randomSeed(): number {
 
 export class GeneratePanel implements HubPanel {
   readonly id: TabId = "generate";
-  readonly label = STRINGS.tabGenerate;
+  readonly label = t("view.tabGenerate");
   readonly icon = "image-plus";
 
   private promptEl!: HTMLTextAreaElement;
@@ -43,7 +43,7 @@ export class GeneratePanel implements HubPanel {
     const promptRow = root.createDiv({ cls: "lig-prompt-row" });
     this.promptEl = promptRow.createEl("textarea", {
       cls: "lig-prompt",
-      attr: { placeholder: STRINGS.promptPlaceholder, rows: "3" },
+      attr: { placeholder: t("generate.promptPlaceholder"), rows: "3" },
     });
     this.promptEl.addEventListener("input", () => {
       this.host.setPrompt(this.promptEl.value);
@@ -52,7 +52,7 @@ export class GeneratePanel implements HubPanel {
     this.chipsEl = root.createDiv({ cls: "lig-row lig-chips" });
 
     const controls = root.createDiv({ cls: "lig-row" });
-    controls.createSpan({ text: STRINGS.steps, cls: "lig-label" });
+    controls.createSpan({ text: t("generate.steps"), cls: "lig-label" });
     // Startwert aus den Settings — danach gehört der Slider dem Nutzer, wir schreiben
     // nichts zurück (die Einstellung ist ein Startwert, kein Zwang).
     const startSteps = String(this.host.getSettings().defaultSteps);
@@ -64,20 +64,20 @@ export class GeneratePanel implements HubPanel {
     this.stepsEl.addEventListener("input", () => {
       this.stepsValueEl.setText(this.stepsEl.value);
     });
-    controls.createSpan({ text: STRINGS.seed, cls: "lig-label" });
+    controls.createSpan({ text: t("generate.seed"), cls: "lig-label" });
     this.seedEl = controls.createEl("input", {
       cls: "lig-seed",
       attr: { type: "number", value: String(randomSeed()) },
     });
     const dice = controls.createEl("button", { cls: "clickable-icon" });
     setIcon(dice, "dices");
-    setTooltip(dice, STRINGS.randomSeed);
-    dice.setAttribute("aria-label", STRINGS.randomSeed);
+    setTooltip(dice, t("generate.randomSeed"));
+    dice.setAttribute("aria-label", t("generate.randomSeed"));
     dice.addEventListener("click", () => {
       this.seedEl.value = String(randomSeed());
     });
 
-    this.generateBtn = root.createEl("button", { text: STRINGS.generate, cls: "mod-cta lig-generate" });
+    this.generateBtn = root.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
     this.generateBtn.addEventListener("click", () => {
       this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value));
     });
@@ -90,16 +90,16 @@ export class GeneratePanel implements HubPanel {
     this.imageCard = root.createDiv({ cls: "lig-card" });
     this.imgEl = this.imageCard.createEl("img", { cls: "lig-image" });
     const actions = this.imageCard.createDiv({ cls: "lig-row lig-actions" });
-    this.regenBtn = actions.createEl("button", { text: STRINGS.reroll });
+    this.regenBtn = actions.createEl("button", { text: t("generate.button.reroll") });
     this.regenBtn.addEventListener("click", () => {
       // Reroll = neuer Zufalls-Seed + generieren. Der obere "Generate"-Knopf nimmt den
       // Seed aus dem Feld und würfelt nie — so sagt jeder Knopf, was er tut.
       this.seedEl.value = String(randomSeed());
       this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value));
     });
-    this.createBtn = actions.createEl("button", { text: STRINGS.create, cls: "mod-cta" });
+    this.createBtn = actions.createEl("button", { text: t("generate.button.create"), cls: "mod-cta" });
     this.createBtn.addEventListener("click", () => this.host.saveImage("create"));
-    this.insertBtn = actions.createEl("button", { text: STRINGS.insert, cls: "mod-cta" });
+    this.insertBtn = actions.createEl("button", { text: t("generate.button.insert"), cls: "mod-cta" });
     this.insertBtn.addEventListener("click", () => this.host.saveImage("insert"));
 
     const status = root.createDiv({ cls: "lig-row lig-status" });
@@ -124,7 +124,7 @@ export class GeneratePanel implements HubPanel {
       this.presetSig = sig;
       this.chipsEl.empty();
       this.chipEls = [];
-      if (presets.length > 0) this.chipsEl.createSpan({ text: STRINGS.presetsLabel, cls: "lig-label" });
+      if (presets.length > 0) this.chipsEl.createSpan({ text: t("generate.presetsLabel"), cls: "lig-label" });
       for (const p of presets) {
         const el = this.chipsEl.createEl("button", { text: p.label, cls: "lig-chip" });
         el.setAttribute("type", "button");
@@ -171,7 +171,7 @@ export class GeneratePanel implements HubPanel {
     this.imageCard.toggleClass("is-hidden", !vm.showImage);
     if (state.image) this.imgEl.src = state.image.dataUrl;
     this.insertBtn.disabled = !vm.insertEnabled;
-    setTooltip(this.insertBtn, vm.insertEnabled ? "" : STRINGS.insertNeedsEditor);
+    setTooltip(this.insertBtn, vm.insertEnabled ? "" : t("generate.insertNeedsEditor"));
 
     this.statusIconEl.className = `lig-status-icon ${vm.status.cls}`;
     setIcon(this.statusIconEl, vm.status.icon);

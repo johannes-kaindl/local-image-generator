@@ -6,7 +6,7 @@
 import { setIcon, setTooltip } from "obsidian";
 import { groupByPrompt, historyLabel } from "../core/history";
 import type { HistoryEntry } from "../core/settings";
-import { STRINGS } from "../core/strings";
+import { t } from "../vendor/kit/i18n";
 import type { HubPanel, TabId } from "./hub";
 import type { ViewHost } from "./view";
 
@@ -16,7 +16,7 @@ function formatTime(created: string): string {
 
 export class HistoryPanel implements HubPanel {
   readonly id: TabId = "history";
-  readonly label = STRINGS.tabHistory;
+  readonly label = t("view.tabHistory");
   readonly icon = "history";
 
   private segRecentEl!: HTMLButtonElement;
@@ -32,12 +32,12 @@ export class HistoryPanel implements HubPanel {
 
     const head = root.createDiv({ cls: "lig-hist-head" });
     const seg = head.createDiv({ cls: "lig-hist-seg" });
-    this.segRecentEl = seg.createEl("button", { text: STRINGS.historyViewRecent });
+    this.segRecentEl = seg.createEl("button", { text: t("history.viewRecent") });
     this.segRecentEl.addEventListener("click", () => this.host.setHistoryView("recent"));
-    this.segGroupedEl = seg.createEl("button", { text: STRINGS.historyViewGrouped });
+    this.segGroupedEl = seg.createEl("button", { text: t("history.viewGrouped") });
     this.segGroupedEl.addEventListener("click", () => this.host.setHistoryView("grouped"));
 
-    const clear = head.createEl("button", { text: STRINGS.historyClear, cls: "lig-hist-clear" });
+    const clear = head.createEl("button", { text: t("history.clear"), cls: "lig-hist-clear" });
     clear.addEventListener("click", () => this.host.clearHistory());
 
     this.listEl = root.createDiv({ cls: "lig-hist-list" });
@@ -54,7 +54,7 @@ export class HistoryPanel implements HubPanel {
     this.listEl.empty();
     const history = settings.history;
     if (history.length === 0) {
-      this.listEl.createDiv({ cls: "lig-hist-empty", text: STRINGS.historyEmpty });
+      this.listEl.createDiv({ cls: "lig-hist-empty", text: t("history.empty") });
       return;
     }
 
@@ -78,7 +78,10 @@ export class HistoryPanel implements HubPanel {
       const chevron = header.createSpan({ cls: "lig-hist-chevron" });
       setIcon(chevron, isCollapsed ? "chevron-right" : "chevron-down");
       header.createSpan({ text: historyLabel(group.prompt) });
-      header.createSpan({ cls: "lig-hist-count", text: STRINGS.historyVariations(group.entries.length) });
+      header.createSpan({
+        cls: "lig-hist-count",
+        text: group.entries.length === 1 ? t("history.variations.one") : t("history.variations.other", group.entries.length),
+      });
       header.addEventListener("click", () => {
         if (this.collapsed.has(group.prompt)) this.collapsed.delete(group.prompt);
         else this.collapsed.add(group.prompt);
@@ -97,11 +100,11 @@ export class HistoryPanel implements HubPanel {
    *  den Papierkorb nicht auch als Zeilen-Klick (Restore) gelesen wird. */
   private buildMeta(row: HTMLElement, entry: HistoryEntry): void {
     const meta = row.createDiv({ cls: "lig-hist-meta" });
-    meta.createSpan({ text: STRINGS.historyRecipe(entry.seed, entry.steps, formatTime(entry.created)) });
+    meta.createSpan({ text: t("history.recipe", entry.seed, entry.steps, formatTime(entry.created)) });
     const del = meta.createEl("button", { cls: "clickable-icon" });
     setIcon(del, "trash-2");
-    setTooltip(del, STRINGS.historyDelete);
-    del.setAttribute("aria-label", STRINGS.historyDelete);
+    setTooltip(del, t("history.delete"));
+    del.setAttribute("aria-label", t("history.delete"));
     del.addEventListener("click", (e) => {
       e.stopPropagation();
       this.host.deleteHistoryEntry(entry);

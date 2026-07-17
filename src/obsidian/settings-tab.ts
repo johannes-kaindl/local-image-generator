@@ -1,7 +1,7 @@
 // Settings (UI-STANDARD §5): Modell zuerst, Ausgabe, Presets, Gefährliches ans Ende.
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { totalApproxBytes, MODEL_FILES } from "../core/model-manifest";
-import { STRINGS } from "../core/strings";
+import { t } from "../vendor/kit/i18n";
 import { collapsibleSection, type CollapsibleStorage } from "./collapsible";
 import { ConfirmModal } from "./confirm-modal";
 import { FolderSuggest } from "./folder-suggest";
@@ -30,26 +30,26 @@ export class LigSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     this.renderModel(collapsibleSection(containerEl, {
-      title: STRINGS.settingsModelHeading,
+      title: t("settings.model.heading"),
       key: "model",
       defaultCollapsed: false,
       storage: this.storage,
     }));
 
     this.renderOutput(collapsibleSection(containerEl, {
-      title: STRINGS.settingsOutputHeading,
+      title: t("settings.output.heading"),
       key: "output",
       defaultCollapsed: false,
       storage: this.storage,
     }));
 
     const presets = collapsibleSection(containerEl, {
-      title: STRINGS.settingsPresetsHeading,
+      title: t("settings.presets.heading"),
       key: "presets",
       defaultCollapsed: true,
       storage: this.storage,
     });
-    presets.createEl("p", { text: STRINGS.settingsPresetsDesc, cls: "setting-item-description" });
+    presets.createEl("p", { text: t("settings.presets.desc"), cls: "setting-item-description" });
     renderPresetEditor(presets, {
       getPresets: () => this.plugin.settings.presets,
       setPresets: async (next) => {
@@ -61,7 +61,7 @@ export class LigSettingTab extends PluginSettingTab {
     });
 
     this.renderDanger(collapsibleSection(containerEl, {
-      title: STRINGS.settingsDangerHeading,
+      title: t("settings.danger.heading"),
       key: "danger",
       defaultCollapsed: true,
       storage: this.storage,
@@ -72,20 +72,20 @@ export class LigSettingTab extends PluginSettingTab {
     const gb = (totalApproxBytes(MODEL_FILES) / 1e9).toFixed(1);
     const modelSetting = new Setting(el)
       .setName("SD-Turbo (ONNX, fp16)")
-      .setDesc(STRINGS.settingsModelDesc);
+      .setDesc(t("settings.model.desc"));
     void this.plugin.modelStore.isComplete().then((complete) => {
       if (complete) {
-        modelSetting.addExtraButton((b) => b.setIcon("circle-check").setTooltip("Downloaded"));
+        modelSetting.addExtraButton((b) => b.setIcon("circle-check").setTooltip(t("settings.model.downloadedTooltip")));
       } else {
         modelSetting.addButton((b) =>
           b
-            .setButtonText(`${STRINGS.settingsDownload} (~${gb} GB)`)
+            .setButtonText(t("settings.model.download", gb))
             .setCta()
             .onClick(async () => {
               b.setDisabled(true);
               try {
                 await this.plugin.downloadModel((pct) => b.setButtonText(`${pct}%`));
-                new Notice("Model downloaded");
+                new Notice(t("notice.modelDownloaded"));
               } catch (e) {
                 new Notice(String(e instanceof Error ? e.message : e));
               }
@@ -98,33 +98,33 @@ export class LigSettingTab extends PluginSettingTab {
 
   private renderOutput(el: HTMLElement): void {
     new Setting(el)
-      .setName(STRINGS.settingsOutputFolder)
-      .setDesc(STRINGS.settingsOutputFolderDesc)
-      .addText((t) => {
-        new FolderSuggest(this.app, t.inputEl);
-        t.setValue(this.plugin.settings.outputFolder).onChange(async (v) => {
+      .setName(t("settings.output.folder"))
+      .setDesc(t("settings.output.folderDesc"))
+      .addText((tf) => {
+        new FolderSuggest(this.app, tf.inputEl);
+        tf.setValue(this.plugin.settings.outputFolder).onChange(async (v) => {
           this.plugin.settings.outputFolder = v.trim();
           await this.plugin.saveSettings();
         });
       });
 
     new Setting(el)
-      .setName(STRINGS.settingsNoteFolder)
-      .setDesc(STRINGS.settingsNoteFolderDesc)
-      .addText((t) => {
-        new FolderSuggest(this.app, t.inputEl);
-        t.setValue(this.plugin.settings.noteFolder).onChange(async (v) => {
+      .setName(t("settings.noteFolder"))
+      .setDesc(t("settings.noteFolderDesc"))
+      .addText((tf) => {
+        new FolderSuggest(this.app, tf.inputEl);
+        tf.setValue(this.plugin.settings.noteFolder).onChange(async (v) => {
           this.plugin.settings.noteFolder = v.trim();
           await this.plugin.saveSettings();
         });
       });
 
     new Setting(el)
-      .setName(STRINGS.settingsCreateMode)
-      .setDesc(STRINGS.settingsCreateModeDesc)
+      .setName(t("settings.createMode"))
+      .setDesc(t("settings.createModeDesc"))
       .addDropdown((d) => {
-        d.addOption("image", STRINGS.settingsCreateModeImage);
-        d.addOption("note", STRINGS.settingsCreateModeNote);
+        d.addOption("image", t("settings.createModeImage"));
+        d.addOption("note", t("settings.createModeNote"));
         d.setValue(this.plugin.settings.createMode).onChange(async (v) => {
           this.plugin.settings.createMode = v === "note" ? "note" : "image";
           await this.plugin.saveSettings();
@@ -132,8 +132,8 @@ export class LigSettingTab extends PluginSettingTab {
       });
 
     new Setting(el)
-      .setName(STRINGS.settingsDefaultSteps)
-      .setDesc(STRINGS.settingsDefaultStepsDesc)
+      .setName(t("settings.defaultSteps"))
+      .setDesc(t("settings.defaultStepsDesc"))
       .addSlider((s) =>
         s
           .setLimits(1, 4, 1)
@@ -147,12 +147,12 @@ export class LigSettingTab extends PluginSettingTab {
   }
 
   private renderDanger(el: HTMLElement): void {
-    new Setting(el).setName(STRINGS.settingsDelete).addButton((b) =>
+    new Setting(el).setName(t("settings.model.delete")).addButton((b) =>
       b
-        .setButtonText(STRINGS.settingsDelete)
+        .setButtonText(t("settings.model.delete"))
         .setWarning()
         .onClick(() => {
-          new ConfirmModal(this.app, STRINGS.settingsDeleteConfirm, STRINGS.confirm, async () => {
+          new ConfirmModal(this.app, t("settings.model.deleteConfirm"), t("modal.confirm"), async () => {
             await this.plugin.modelStore.deleteAll();
             this.plugin.onModelDeleted();
             this.display();

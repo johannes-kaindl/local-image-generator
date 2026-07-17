@@ -1,13 +1,16 @@
 // Wiring (Spec §4): EIN registerView, Command + Ribbon, Host-Implementierung für die
 // View, Lazy-Init der Engine (GPU-Check → Cache-Buffers → ORT-Sessions).
-import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
+// i18n (docs/superpowers/specs/2026-07-17-i18n-design.md §2): registerI18n() + setLang()
+// laufen ZUERST im onload, vor addSettingTab/registerView/addRibbonIcon/addCommand — sonst
+// rendern die ersten t()-Aufrufe rohe Keys.
+import { getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
 import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
+import { registerI18n } from "./i18n/strings";
 import { MODEL_ID } from "./core/model-manifest";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
-import { STRINGS } from "./core/strings";
 import type { GenParams, PanelState } from "./core/viewmodel";
 import { ConfirmModal } from "./obsidian/confirm-modal";
 import { ModelStore } from "./obsidian/model-store";
@@ -16,6 +19,7 @@ import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { GeneratorView, VIEW_TYPE, type ViewHost } from "./obsidian/view";
 import { mergeSettings } from "./vendor/kit/settings";
+import { pickLang, setLang, t } from "./vendor/kit/i18n";
 
 export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
@@ -32,6 +36,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   async onload(): Promise<void> {
     this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, await this.loadData()));
+
+    registerI18n();
+    setLang(pickLang(getLanguage()));
+
     this.addSettingTab(new LigSettingTab(this.app, this));
 
     const host: ViewHost = {
@@ -67,7 +75,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         this.refreshViews();
       },
       clearHistory: () => {
-        new ConfirmModal(this.app, STRINGS.historyClearConfirm, STRINGS.historyClear, () => {
+        new ConfirmModal(this.app, t("history.clearConfirm"), t("history.clear"), () => {
           this.settings.history = [];
           void this.saveSettings();
           this.refreshViews();
@@ -87,8 +95,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     };
 
     this.registerView(VIEW_TYPE, (leaf) => new GeneratorView(leaf, host));
-    this.addRibbonIcon("image-plus", STRINGS.viewTitle, () => void this.activateView());
-    this.addCommand({ id: "open", name: STRINGS.openCommand, callback: () => void this.activateView() });
+    this.addRibbonIcon("image-plus", t("view.title"), () => void this.activateView());
+    this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
     void this.initStatus();
   }
@@ -198,7 +206,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // Fire-and-forget: der Fehlerpfad soll den UI-Refresh nicht blockieren.
       void this.engine?.dispose().catch(() => {});
       this.engine = null;
-      new Notice(STRINGS.oomHint);
+      new Notice(t("notice.oomHint"));
     } finally {
       this.refreshViews();
     }
@@ -278,21 +286,21 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
       file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
     } catch (e) {
-      new Notice(STRINGS.saveFailed(e instanceof Error ? e.message : String(e)));
+      new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
       return;
     }
 
     if (mode === "insert") {
       const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
       if (editor) editor.replaceSelection(`![[${file.path}]]`);
-      else new Notice(STRINGS.insertNeedsEditor);
-      new Notice(STRINGS.saved(file.path));
+      else new Notice(t("generate.insertNeedsEditor"));
+      new Notice(t("notice.saved", file.path));
       return;
     }
 
     if (this.settings.createMode !== "note") {
       await this.revealFile(file);
-      new Notice(STRINGS.saved(file.path));
+      new Notice(t("notice.saved", file.path));
       return;
     }
 
@@ -302,12 +310,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     try {
       note = await this.createNote(img.params, file.path);
     } catch (e) {
-      new Notice(STRINGS.noteFailed(e instanceof Error ? e.message : String(e), file.path));
+      new Notice(t("notice.noteFailed", file.path, e instanceof Error ? e.message : String(e)));
       return;
     }
     // Öffnen erst NACH dem try: scheitert nur das Öffnen, ist die Notiz trotzdem da —
     // sie hier mit "note failed" zu melden wäre schlicht gelogen.
     await this.revealFile(note);
-    new Notice(STRINGS.saved(note.path));
+    new Notice(t("notice.saved", note.path));
   }
 }
