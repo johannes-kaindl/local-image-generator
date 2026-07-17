@@ -262,9 +262,22 @@ darunter „Preset hinzufügen".
 - **`noteFolder` existiert nicht:** anlegen (wie `resolveImagePath` es für `outputFolder`
   tut, `main.ts:169`).
 - **Historie/Presets in `data.json` beschädigt** (handeditiert, falscher Typ):
-  `mergeSettings` macht einen Shallow-Merge ohne Formprüfung. Presets werden beim Rendern
-  defensiv gefiltert (`typeof label === "string"` etc.), damit ein kaputter Eintrag nicht
-  den ganzen Settings-Tab reißt.
+  `mergeSettings` macht einen Shallow-Merge **ohne jede Formprüfung** — `Object.assign`
+  reicht `presets: null` unverändert durch. Deshalb bereinigt eine pure
+  `sanitizeSettings()` den geladenen Stand **einmal beim Laden** (in `main.ts` direkt nach
+  `mergeSettings`), statt an jeder Renderstelle zu filtern: es gibt vier Stellen, die auf
+  die Form vertrauen (Chips, Preset-Editor, Collapsible-Storage, Historie-Push), und eine
+  Quelle abzusichern ist testbar, vier Renderstellen zu flicken nicht.
+
+  **Warum das scharf ist:** `renderChips()` ist die erste Zeile von `refresh()`, und
+  `refresh()` läuft bei jedem Tastendruck. Wirft `presetActive` an einem Preset ohne
+  `suffix`, ist das Panel nicht degradiert, sondern tot — jeder weitere Tastendruck läuft
+  in denselben Wurf. Analog reißt ein `presets: null` den Settings-Tab ins Leere, weil
+  `display()` sein `containerEl.empty()` schon hinter sich hat.
+
+  `sanitizeSettings` coerct: `presets` → Array, nur Einträge mit `id`/`label`/`suffix` als
+  String · `promptHistory` → `string[]` · `sectionsCollapsed` → Plain-Object ·
+  `defaultSteps` → 1..4 · `createMode` → Union.
 - **Create ohne Bild:** unverändert No-op (`main.ts:181`).
 
 ## 9. Tests

@@ -33,3 +33,6 @@ export function totalApproxBytes(files: ModelFile[]): number {
 export function isDownloadComplete(received: number, contentLength: number | null): boolean {
   return contentLength === null ? received > 0 : received === contentLength;
 }
+
+/** Modell-Kennung für das Frontmatter der Ergebnis-Notiz. */
+export const MODEL_ID = "sd-turbo";

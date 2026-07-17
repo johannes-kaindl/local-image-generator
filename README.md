@@ -8,14 +8,24 @@ as the inference engine.
 ## What it does
 
 - Open the generator from the ribbon icon or the **Open generator** command.
-- Type a prompt, adjust steps/seed if you like, and press **Generate**.
-- **Create** saves the image as a new attachment and opens it, or **Insert**
-  saves it and embeds it at your cursor in the current note.
+- Type a prompt, adjust steps/seed if you like, and press **Generate**. Click
+  a style chip (Sumi-e, Watercolor, Photo, Oil — edit or add your own in
+  settings) to append its look to the prompt; click again to remove it.
+- Lock the seed (padlock icon) to keep it fixed while **Regenerate** varies
+  the prompt, or leave it unlocked to get a fresh seed each time. The clock
+  icon next to the prompt field holds your recent prompts.
+- **Create** saves the image as a new attachment. By default that's all it
+  does (it also opens the image) — set the **Create button** dropdown in
+  settings to **Image + note** to have it also create a note with the
+  generation's prompt, seed, steps and date in its frontmatter and the image
+  embedded, and open that note instead. **Insert** always just saves the
+  image and embeds it at your cursor in the current note.
 
 There is no img2img, no LoRA/ControlNet, and no model catalog in this version —
 just one curated model (SD-Turbo) for fast local text-to-image generation.
 
-Output resolution is fixed at **512×512** in 0.1.
+Output resolution is fixed at **512×512**: SD-Turbo is distilled for exactly
+that resolution and 1–4 steps, so there's no slider for it.
 
 ## Requirements
 
@@ -36,11 +46,27 @@ Output resolution is fixed at **512×512** in 0.1.
    (~2.5 GB). This is a one-time download; nothing happens automatically.
 3. Once the download finishes, open the generator (ribbon icon or the
    **Open generator** command), enter a prompt, and press **Generate**.
-4. Use **Create** to save the image as a new note attachment and open it, or
-   **Insert** to save it and embed it at your cursor.
+4. Use **Create** to save the image as a new attachment and open it, or
+   **Insert** to save it and embed it at your cursor. Set the **Create
+   button** dropdown to **Image + note** in settings first if you also want
+   a note with the generation's details.
 
 You can re-download or delete the model at any time from the same settings
 page.
+
+## Settings
+
+**Settings → Local image generator** is grouped into collapsible sections:
+
+- **Model** — download the SD-Turbo model files.
+- **Output** — the image folder (leave empty to use Obsidian's attachment
+  folder, with autocomplete for existing folders), the note folder used when
+  Create makes a note (leave empty to put the note next to the image), the
+  **Create button** dropdown (Image only or Image + note), and the starting
+  value of the steps slider.
+- **Styles** — the same style presets shown as chips under the prompt field.
+  Edit a preset's label or prompt text, delete it, or add a new one.
+- **Danger zone** — delete the downloaded model files.
 
 ## How network and storage are used
 
@@ -101,11 +127,11 @@ from Hugging Face by the user, on demand.
 
 ## Roadmap
 
-0.1 ships a single generator view with one curated model. A future release is
-planned to expose a small provider API so other community plugins can request
-locally-generated images without duplicating this infrastructure. Additional
-backends (e.g. ComfyUI/DrawThings), img2img, LoRA/ControlNet, and a model
-catalog are explicitly out of scope for now.
+This plugin currently offers a single generator view with one curated model.
+A future release is planned to expose a small provider API so other
+community plugins can request locally-generated images without duplicating
+this infrastructure. Additional backends (e.g. ComfyUI/DrawThings), img2img,
+LoRA/ControlNet, and a model catalog are explicitly out of scope for now.
 
 ## License
 

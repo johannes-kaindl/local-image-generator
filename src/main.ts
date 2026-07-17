@@ -2,10 +2,13 @@
 // View, Lazy-Init der Engine (GPU-Check → Cache-Buffers → ORT-Sessions).
 import { MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
-import { buildImageFilename, dedupeFilename } from "./core/filename";
-import { DEFAULT_SETTINGS, type LigSettings } from "./core/settings";
+import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
+import { pushHistory } from "./core/history";
+import { MODEL_ID } from "./core/model-manifest";
+import { buildImageNote } from "./core/note";
+import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import { STRINGS } from "./core/strings";
-import type { PanelState } from "./core/viewmodel";
+import type { GenParams, PanelState } from "./core/viewmodel";
 import { ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession } from "./obsidian/ort-host";
 import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
@@ -27,7 +30,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   };
 
   async onload(): Promise<void> {
-    this.settings = mergeSettings(DEFAULT_SETTINGS, await this.loadData());
+    this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, await this.loadData()));
     this.addSettingTab(new LigSettingTab(this.app, this));
 
     const host: ViewHost = {
@@ -35,6 +38,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         this.state.editorActive = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor !== undefined;
         return this.state;
       },
+      getSettings: () => this.settings,
       setPrompt: (p) => {
         this.state.prompt = p;
       },
@@ -61,10 +65,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   private async initStatus(): Promise<void> {
     this.state.gpu = await checkGpu();
     this.state.model = (await this.modelStore.isComplete()) ? { kind: "ready" } : { kind: "missing" };
-    this.refreshView();
+    this.refreshViews();
   }
 
-  private refreshView(): void {
+  refreshViews(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
       const view = leaf.view;
       if (view instanceof GeneratorView) view.refresh();
@@ -86,19 +90,19 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   async downloadModel(onProgress: (pct: number) => void): Promise<void> {
     this.state.model = { kind: "downloading", pct: 0 };
-    this.refreshView();
+    this.refreshViews();
     try {
       await this.modelStore.download((pct) => {
         this.state.model = { kind: "downloading", pct };
         onProgress(pct);
-        this.refreshView();
+        this.refreshViews();
       });
       this.state.model = { kind: "ready" };
     } catch (e) {
       this.state.model = { kind: "missing" };
       throw e;
     } finally {
-      this.refreshView();
+      this.refreshViews();
     }
   }
 
@@ -114,7 +118,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     void this.engine?.dispose().catch(() => {});
     this.engine = null;
     this.state.model = { kind: "missing" };
-    this.refreshView();
+    this.refreshViews();
   }
 
   private async ensureEngine(): Promise<SdTurboEngine> {
@@ -134,16 +138,24 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   private async generate(steps: number, seed: number): Promise<void> {
     if (this.state.run.kind === "running") return;
+    // Prompt HIER festhalten: zwischen Start und Ende kann der Nutzer weitertippen,
+    // und die Ergebnis-Notiz muss das Bild beschreiben, das entstanden ist.
+    const prompt = this.state.prompt;
     this.state.run = { kind: "running", step: 0, total: steps };
-    this.refreshView();
+    this.refreshViews();
+    let succeeded = false;
     try {
       const engine = await this.ensureEngine();
-      const result = await engine.generate({ prompt: this.state.prompt, steps, seed }, (step, total) => {
+      const result = await engine.generate({ prompt, steps, seed }, (step, total) => {
         this.state.run = { kind: "running", step, total };
-        this.refreshView();
+        this.refreshViews();
       });
-      this.state.image = { seed: result.seed, dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height) };
+      this.state.image = {
+        dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height),
+        params: { prompt, seed: result.seed, steps, model: MODEL_ID, date: isoStamp(new Date()) },
+      };
       this.state.run = { kind: "idle" };
+      succeeded = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.state.run = { kind: "error", message: msg };
@@ -153,7 +165,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.engine = null;
       new Notice(STRINGS.oomHint);
     } finally {
-      this.refreshView();
+      this.refreshViews();
+    }
+    // Bewusst AUSSERHALB des try/catch der Generierung: ein Fehler hier (z.B. defekte
+    // Historie) darf weder als Generierungsfehler gemeldet werden noch die bereits
+    // erfolgreich befüllte Engine verwerfen. Erst bei Erfolg aufnehmen — sonst füllt
+    // sich die Liste mit Halbsätzen und Fehlversuchen. saveSettings bewusst
+    // fire-and-forget: ein langsamer Schreibvorgang darf das fertige Bild nicht aufhalten.
+    if (succeeded) {
+      this.settings.promptHistory = pushHistory(this.settings.promptHistory, prompt);
+      void this.saveSettings();
     }
   }
 
@@ -176,23 +197,74 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     );
   }
 
+  // Ergebnis-Notiz neben/statt dem Bild anlegen. Spiegelt resolveImagePath: fehlender
+  // Zielordner wird angelegt, Kollisionen bekommen -2, -3, … angehängt.
+  private async createNote(params: GenParams, imagePath: string): Promise<TFile> {
+    const configured = this.settings.noteFolder.trim();
+    const folder = configured === "" ? dirOf(imagePath) : normalizePath(configured);
+    if (folder !== "" && !(this.app.vault.getAbstractFileByPath(folder) instanceof TFolder)) {
+      await this.app.vault.createFolder(folder).catch(() => undefined);
+    }
+    const name = buildNoteFilename(params.prompt, params.seed);
+    const path = dedupeFilename(
+      folder === "" ? name : normalizePath(`${folder}/${name}`),
+      (p) => this.app.vault.getAbstractFileByPath(p) !== null,
+    );
+    return this.app.vault.create(path, buildImageNote(params, imagePath));
+  }
+
+  // Das Öffnen ist Komfort, kein Ergebnis: schlägt es fehl, liegt die Datei trotzdem im
+  // Vault. Der Fehler wird deshalb geschluckt — die "Saved: <Pfad>"-Meldung des Aufrufers
+  // sagt, wo sie ist. Ein Öffnen-Fehler darf weder das Ergebnis entwerten (Nur-Bild-Pfad:
+  // gar keine Meldung) noch es falsch benennen (Notiz-Pfad: "note failed", obwohl die
+  // Notiz existiert).
+  private async revealFile(file: TFile): Promise<void> {
+    await this.app.workspace.getLeaf(true).openFile(file).catch(() => undefined);
+  }
+
   private async saveImage(mode: "create" | "insert"): Promise<void> {
     const img = this.state.image;
     if (!img) return;
+    let file: TFile;
     try {
-      const path = await this.resolveImagePath(buildImageFilename(new Date(), img.seed));
-      const file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
-      if (mode === "insert") {
-        const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
-        if (editor) editor.replaceSelection(`![[${file.path}]]`);
-        else new Notice(STRINGS.insertNeedsEditor);
-      } else if (file instanceof TFile) {
-        await this.app.workspace.getLeaf(true).openFile(file);
-      }
-      new Notice(`Saved: ${file.path}`);
+      // Aus dem beim Generieren eingefrorenen Zeitstempel ableiten, nicht aus "jetzt":
+      // sonst laufen Dateiname und Notiz-`created` (params.date) auseinander, wenn
+      // zwischen Generieren und Create Zeit vergeht (Spec §7.4, Finding 4). isoStamp
+      // liefert lokale Zeit ohne Offset — new Date() parst das als lokale Zeit zurück,
+      // der Round-Trip ist verlustfrei.
+      const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      new Notice(STRINGS.saveFailed(msg));
+      new Notice(STRINGS.saveFailed(e instanceof Error ? e.message : String(e)));
+      return;
     }
+
+    if (mode === "insert") {
+      const editor = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+      if (editor) editor.replaceSelection(`![[${file.path}]]`);
+      else new Notice(STRINGS.insertNeedsEditor);
+      new Notice(STRINGS.saved(file.path));
+      return;
+    }
+
+    if (this.settings.createMode !== "note") {
+      await this.revealFile(file);
+      new Notice(STRINGS.saved(file.path));
+      return;
+    }
+
+    // Ab hier ist das Bild bereits geschrieben. Ein Fehler in der Notiz darf es NICHT
+    // entwerten — deshalb eigener try und eine Meldung, die beides benennt.
+    let note: TFile;
+    try {
+      note = await this.createNote(img.params, file.path);
+    } catch (e) {
+      new Notice(STRINGS.noteFailed(e instanceof Error ? e.message : String(e), file.path));
+      return;
+    }
+    // Öffnen erst NACH dem try: scheitert nur das Öffnen, ist die Notiz trotzdem da —
+    // sie hier mit "note failed" zu melden wäre schlicht gelogen.
+    await this.revealFile(note);
+    new Notice(STRINGS.saved(note.path));
   }
 }

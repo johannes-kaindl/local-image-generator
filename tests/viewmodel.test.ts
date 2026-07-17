@@ -45,7 +45,13 @@ describe("buildViewModel", () => {
     expect(buildViewModel({ ...base, prompt: "  " }).generateEnabled).toBe(false);
   });
   it("Bild da: showImage, Insert nur mit aktivem Editor", () => {
-    const withImg = { ...base, image: { seed: 1, dataUrl: "data:" } };
+    const withImg = {
+      ...base,
+      image: {
+        dataUrl: "data:",
+        params: { prompt: "p", seed: 1, steps: 4, model: "sd-turbo", date: "2026-07-16T21:52:43" },
+      },
+    };
     expect(buildViewModel(withImg).showImage).toBe(true);
     expect(buildViewModel(withImg).insertEnabled).toBe(true);
     expect(buildViewModel({ ...withImg, editorActive: false }).insertEnabled).toBe(false);

@@ -9,11 +9,23 @@ export type RunState =
   | { kind: "running"; step: number; total: number }
   | { kind: "error"; message: string };
 
+/** Die Parameter, aus denen ein Bild entstanden ist — beim Generieren eingefroren, damit
+ *  die Ergebnis-Notiz das Bild beschreibt, das man sieht (und nicht den inzwischen
+ *  weitergetippten Prompt). */
+export interface GenParams {
+  prompt: string;
+  seed: number;
+  steps: number;
+  model: string;
+  /** Lokaler ISO-8601-Stempel, siehe isoStamp() in filename.ts. */
+  date: string;
+}
+
 export interface PanelState {
   gpu: GpuState;
   model: ModelState;
   run: RunState;
-  image: { seed: number; dataUrl: string } | null;
+  image: { dataUrl: string; params: GenParams } | null;
   editorActive: boolean;
   prompt: string;
 }

@@ -483,9 +483,22 @@ describe("serializeFrontmatter", () => {
     expect(ser({ a: "foo: bar" }, ["a"])).toBe("---\na: \"foo: bar\"\n---\n");
   });
 
-  it("escapt Anführungszeichen und Backslashes", () => {
-    expect(ser({ a: 'he said "hi"' }, ["a"])).toBe('---\na: "he said \\"hi\\""\n---\n');
-    expect(ser({ a: 'back\\slash "q"' }, ["a"])).toBe('---\na: "back\\\\slash \\"q\\""\n---\n');
+  // Anführungszeichen/Backslashes MITTEN im Wert lösen KEIN Quoting aus — ein
+  // YAML-Plain-Scalar darf sie enthalten, und das Original von vault-rag lässt sie
+  // deshalb bewusst stehen. (Ein führendes " triggert NEEDS_QUOTE_LEADING sehr wohl.)
+  it("lässt Anführungszeichen und Backslashes in der Mitte ungequotet", () => {
+    expect(ser({ a: 'he said "hi"' }, ["a"])).toBe('---\na: he said "hi"\n---\n');
+    expect(ser({ a: 'back\\slash "q"' }, ["a"])).toBe('---\na: back\\slash "q"\n---\n');
+  });
+
+  it("escapt Anführungszeichen und Backslashes, wenn ein anderer Grund Quoting auslöst", () => {
+    // Das Komma erzwingt Quoting — erst dann greift das Escaping in quoteScalar.
+    expect(ser({ a: 'x, he said "hi"' }, ["a"])).toBe('---\na: "x, he said \\"hi\\""\n---\n');
+    expect(ser({ a: 'x, back\\slash' }, ["a"])).toBe('---\na: "x, back\\\\slash"\n---\n');
+  });
+
+  it("quotet ein führendes Anführungszeichen", () => {
+    expect(ser({ a: '"quoted" start' }, ["a"])).toBe('---\na: "\\"quoted\\" start"\n---\n');
   });
 
   it("quotet Hash, Kommas und führende Sonderzeichen", () => {
@@ -605,7 +618,13 @@ export function serializeFrontmatter(data: Record<string, FmValue>, order: strin
 - [ ] **Step 4: Test + Pure-Gate laufen lassen**
 
 Run: `npx vitest run tests/frontmatter.test.ts && npm run check:pure`
-Expected: PASS (15 Tests) und `check:pure OK`
+Expected: PASS (17 Tests) und `check:pure OK`
+
+> **Nicht „reparieren", was die Tests scheinbar verlangen:** `needsQuoting` darf **nicht** um
+> `v.includes('"')`/`v.includes("\\")` erweitert werden. Anführungszeichen und Backslashes
+> mitten im Wert sind in einem YAML-Plain-Scalar legal und parsen sauber zurück — das
+> Original lässt sie deshalb absichtlich stehen. Eine solche Erweiterung wäre eine zweite,
+> undokumentierte Abweichung vom Original und erschwert den Sync ohne Korrektheitsgewinn.
 
 - [ ] **Step 5: Commit**
 
@@ -829,8 +848,11 @@ describe("buildImageNote", () => {
     expect(buildImageNote(params({ prompt: "see [[note]]" }), "x.png")).toContain('prompt: "see [[note]]"');
   });
 
-  it("escapt Anführungszeichen im Prompt", () => {
-    expect(buildImageNote(params({ prompt: 'an "apple"' }), "x.png")).toContain('prompt: "an \\"apple\\""');
+  // Ein Anführungszeichen MITTEN im Wert löst bewusst KEIN Quoting aus — gültiger
+  // YAML-Plain-Scalar, siehe Task 4 ("lässt Anführungszeichen und Backslashes in der
+  // Mitte ungequotet"). note.ts delegiert das Quoting vollständig an den Serializer.
+  it("lässt Anführungszeichen im Prompt ungequotet (gültiger YAML-Plain-Scalar)", () => {
+    expect(buildImageNote(params({ prompt: 'an "apple"' }), "x.png")).toContain('prompt: an "apple"');
   });
 
   it("quotet einen Prompt mit Komma", () => {
@@ -1276,7 +1298,7 @@ Als neue private Methode in der Klasse (z. B. direkt vor `refresh`):
 ```ts
   private renderChips(): void {
     const presets = this.host.getSettings().presets;
-    const sig = presets.map((p) => `${p.id} ${p.label} ${p.suffix}`).join("");
+    const sig = presets.map((p) => `${p.id}:${p.label}:${p.suffix}`).join("|");
     if (sig !== this.presetSig) {
       // Nur neu bauen, wenn sich die Liste wirklich geändert hat — refresh() läuft
       // bei jedem Tastendruck, ein Rebuild pro Zeichen wäre unnötiger DOM-Churn.
@@ -1539,29 +1561,48 @@ Ersetze `saveImage` vollständig:
     }
 
     if (this.settings.createMode !== "note") {
-      await this.app.workspace.getLeaf(true).openFile(file);
+      await this.revealFile(file);
       new Notice(STRINGS.saved(file.path));
       return;
     }
 
     // Ab hier ist das Bild bereits geschrieben. Ein Fehler in der Notiz darf es NICHT
     // entwerten — deshalb eigener try und eine Meldung, die beides benennt.
+    let note: TFile;
     try {
-      const note = await this.createNote(img.params, file.path);
-      await this.app.workspace.getLeaf(true).openFile(note);
-      new Notice(STRINGS.saved(note.path));
+      note = await this.createNote(img.params, file.path);
     } catch (e) {
       new Notice(STRINGS.noteFailed(e instanceof Error ? e.message : String(e), file.path));
+      return;
     }
+    // Öffnen erst NACH dem try: scheitert nur das Öffnen, ist die Notiz trotzdem da —
+    // sie hier mit "note failed" zu melden wäre schlicht gelogen.
+    await this.revealFile(note);
+    new Notice(STRINGS.saved(note.path));
   }
 ```
 
-- [ ] **Step 4: Gate laufen lassen**
+- [ ] **Step 4: `revealFile` ergänzen**
+
+Als neue private Methode direkt **vor** `saveImage`:
+
+```ts
+  // Das Öffnen ist Komfort, kein Ergebnis: schlägt es fehl, liegt die Datei trotzdem im
+  // Vault. Der Fehler wird deshalb geschluckt — die "Saved: <Pfad>"-Meldung des Aufrufers
+  // sagt, wo sie ist. Ein Öffnen-Fehler darf weder das Ergebnis entwerten (Nur-Bild-Pfad:
+  // gar keine Meldung) noch es falsch benennen (Notiz-Pfad: "note failed", obwohl die
+  // Notiz existiert).
+  private async revealFile(file: TFile): Promise<void> {
+    await this.app.workspace.getLeaf(true).openFile(file).catch(() => undefined);
+  }
+```
+
+- [ ] **Step 5: Gate laufen lassen**
 
 Run: `npm run gate`
-Expected: PASS. Meldet der Typecheck `file` als möglicherweise nicht zugewiesen, prüfe, dass der erste `catch`-Zweig mit `return` endet.
+Expected: PASS. Meldet der Typecheck `file` oder `note` als möglicherweise nicht zugewiesen, prüfe, dass der jeweilige `catch`-Zweig mit `return` endet.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/main.ts
@@ -1791,7 +1832,7 @@ Erzeuge `src/obsidian/preset-editor.ts`:
 
 ```ts
 // Preset-Editor für den Settings-Tab (Spec §7.5).
-import { Setting } from "obsidian";
+import { Notice, Setting } from "obsidian";
 import type { StylePreset } from "../core/settings";
 import { STRINGS } from "../core/strings";
 
@@ -1802,10 +1843,25 @@ export interface PresetEditorHost {
   rerender(): void;
 }
 
+/** Übernimmt einen neuen Preset-Stand. Scheitert das Speichern (Platte voll, Rechte),
+ *  steht der Stand zwar im Speicher, aber nicht auf der Platte — ohne Meldung wäre die
+ *  Änderung beim nächsten Obsidian-Start still weg. Das rerender() im catch bringt die
+ *  Oberfläche auf den tatsächlichen Speicherstand, die Notice sagt, dass er flüchtig ist.
+ *  Nach demselben Muster wie der Download-Button im Settings-Tab. */
+async function apply(host: PresetEditorHost, next: StylePreset[], rerender: boolean): Promise<void> {
+  try {
+    await host.setPresets(next);
+    if (rerender) host.rerender();
+  } catch (e) {
+    new Notice(STRINGS.saveFailed(e instanceof Error ? e.message : String(e)));
+    host.rerender();
+  }
+}
+
 // Immer immutabel ersetzen, nie in-place mutieren: mergeSettings klont Arrays nur flach,
 // die Preset-Objekte können also noch DEFAULT_PRESETS aus src/core/settings.ts sein.
 async function patch(host: PresetEditorHost, id: string, change: Partial<StylePreset>): Promise<void> {
-  await host.setPresets(host.getPresets().map((p) => (p.id === id ? { ...p, ...change } : p)));
+  await apply(host, host.getPresets().map((p) => (p.id === id ? { ...p, ...change } : p)), false);
 }
 
 export function renderPresetEditor(containerEl: HTMLElement, host: PresetEditorHost): void {
@@ -1837,21 +1893,15 @@ export function renderPresetEditor(containerEl: HTMLElement, host: PresetEditorH
         .setIcon("trash")
         .setTooltip(STRINGS.settingsPresetDelete)
         .onClick(() => {
-          void (async () => {
-            await host.setPresets(host.getPresets().filter((p) => p.id !== preset.id));
-            host.rerender();
-          })();
+          void apply(host, host.getPresets().filter((p) => p.id !== preset.id), true);
         }),
     );
   }
 
   new Setting(containerEl).addButton((b) =>
     b.setButtonText(STRINGS.settingsPresetAdd).onClick(() => {
-      void (async () => {
-        const fresh: StylePreset = { id: crypto.randomUUID(), label: "", suffix: "" };
-        await host.setPresets([...host.getPresets(), fresh]);
-        host.rerender();
-      })();
+      const fresh: StylePreset = { id: crypto.randomUUID(), label: "", suffix: "" };
+      void apply(host, [...host.getPresets(), fresh], true);
     }),
   );
 }

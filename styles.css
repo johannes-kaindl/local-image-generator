@@ -16,3 +16,29 @@
 .lig-status-icon.is-checking svg { animation: lig-spin 1.5s linear infinite; }
 @keyframes lig-spin { to { transform: rotate(360deg); } }
 .is-hidden { display: none; }
+.lig-lock.is-active { color: var(--text-accent); }
+.lig-chips { gap: var(--size-4-1); }
+.lig-chip { padding: var(--size-2-1) var(--size-4-2); border-radius: var(--radius-l); font-size: var(--font-ui-smaller); background: var(--background-modifier-hover); color: var(--text-muted); border: 1px solid transparent; cursor: pointer; }
+.lig-chip:hover { color: var(--text-normal); }
+.lig-chip.is-active { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); }
+.lig-prompt-row { display: flex; align-items: flex-start; gap: var(--size-4-1); }
+.lig-prompt-row .lig-prompt { flex: 1 1 auto; }
+
+/* vendored aus obsidian-kit COLLAPSIBLE_CSS (das Kit injiziert bewusst kein CSS selbst) */
+.okit-collapsible-header {
+  display: flex; align-items: center; gap: var(--size-4-2);
+  cursor: pointer; padding: var(--size-4-2) 0;
+  font-weight: var(--font-semibold); color: var(--text-normal);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.okit-collapsible-header:hover { color: var(--text-accent); }
+.okit-collapsible-header:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-s);
+}
+.okit-collapsible-chevron { display: inline-flex; color: var(--text-muted); }
+.okit-collapsible-body { padding-top: var(--size-4-2); }
+.okit-collapsible-body.is-collapsed { display: none; }
+
+.lig-preset-suffix { flex: 1 1 14em; }
