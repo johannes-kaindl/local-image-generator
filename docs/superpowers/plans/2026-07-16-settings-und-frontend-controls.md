@@ -848,8 +848,11 @@ describe("buildImageNote", () => {
     expect(buildImageNote(params({ prompt: "see [[note]]" }), "x.png")).toContain('prompt: "see [[note]]"');
   });
 
-  it("escapt Anführungszeichen im Prompt", () => {
-    expect(buildImageNote(params({ prompt: 'an "apple"' }), "x.png")).toContain('prompt: "an \\"apple\\""');
+  // Ein Anführungszeichen MITTEN im Wert löst bewusst KEIN Quoting aus — gültiger
+  // YAML-Plain-Scalar, siehe Task 4 ("lässt Anführungszeichen und Backslashes in der
+  // Mitte ungequotet"). note.ts delegiert das Quoting vollständig an den Serializer.
+  it("lässt Anführungszeichen im Prompt ungequotet (gültiger YAML-Plain-Scalar)", () => {
+    expect(buildImageNote(params({ prompt: 'an "apple"' }), "x.png")).toContain('prompt: an "apple"');
   });
 
   it("quotet einen Prompt mit Komma", () => {
