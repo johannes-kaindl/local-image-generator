@@ -45,8 +45,13 @@ describe("sanitizeSettings (Spec §8)", () => {
       defaultSteps: 2,
       createMode: "note",
       presets: [{ id: "a", label: "A", suffix: "a-suffix" }],
-      history: [{ prompt: "a prompt", seed: 1, steps: 4, model: "sd-turbo", created: "2026-07-17T10:00:00" }],
+      history: [
+        { prompt: "a prompt", seed: 1, steps: 4, model: "sd-turbo", width: 512, height: 512, created: "2026-07-17T10:00:00" },
+      ],
       historyView: "grouped",
+      selectedModel: "sd-turbo",
+      mfluxPath: "/path/to/mflux",
+      modelsDir: "/path/to/models",
       sectionsCollapsed: { model: true },
     };
     expect(sanitizeSettings(healthy)).toEqual(healthy);
@@ -140,7 +145,15 @@ describe("Historie-Migration", () => {
   });
 
   it("behält eine gültige history und defaultet historyView auf recent", () => {
-    const entry = { prompt: "a", seed: 1, steps: 4, model: "sd-turbo", created: "2026-07-17T10:00:00" };
+    const entry = {
+      prompt: "a",
+      seed: 1,
+      steps: 4,
+      model: "sd-turbo",
+      width: 512,
+      height: 512,
+      created: "2026-07-17T10:00:00",
+    };
     const s = sanitizeSettings({ history: [entry] });
     expect(s.history).toEqual([entry]);
     expect(s.historyView).toBe("recent");
@@ -154,5 +167,33 @@ describe("Historie-Migration", () => {
   it("übernimmt historyView='grouped'", () => {
     expect(sanitizeSettings({ historyView: "grouped" }).historyView).toBe("grouped");
     expect(sanitizeSettings({ historyView: "quatsch" }).historyView).toBe("recent");
+  });
+});
+
+describe("sanitizeSettings 0.4 (multi-model)", () => {
+  it("Defaults: selectedModel sd-turbo, Pfade leer", () => {
+    const s = sanitizeSettings({});
+    expect(s.selectedModel).toBe("sd-turbo");
+    expect(s.mfluxPath).toBe("");
+    expect(s.modelsDir).toBe("");
+  });
+  it("unbekannte selectedModel fällt auf sd-turbo zurück", () => {
+    expect(sanitizeSettings({ selectedModel: "flux99" }).selectedModel).toBe("sd-turbo");
+    expect(sanitizeSettings({ selectedModel: 7 }).selectedModel).toBe("sd-turbo");
+  });
+  it("gültige selectedModel bleibt erhalten", () => {
+    expect(sanitizeSettings({ selectedModel: "flux2-klein-4b" }).selectedModel).toBe("flux2-klein-4b");
+  });
+  it("Nicht-String-Pfade werden leer", () => {
+    const s = sanitizeSettings({ mfluxPath: 42, modelsDir: null });
+    expect(s.mfluxPath).toBe("");
+    expect(s.modelsDir).toBe("");
+  });
+});
+
+describe("Historie-Migration 0.4 (width/height)", () => {
+  it("sanitizeHistory migriert Alt-Einträge ohne width/height auf 512", () => {
+    const s = sanitizeSettings({ history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", created: "x" }] });
+    expect(s.history[0]).toMatchObject({ width: 512, height: 512 });
   });
 });

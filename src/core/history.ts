@@ -6,10 +6,11 @@ import type { HistoryEntry } from "./settings";
 export const HISTORY_LIMIT = 20;
 
 function recipeKey(e: HistoryEntry): string {
-  // Modell NICHT im Schlüssel: einmodellig, und ein späterer Modellwechsel soll ein
-  // identisches Rezept nicht künstlich verdoppeln. JSON-Tupel als Schlüssel, damit ein
-  // Prompt mit Ziffern/Leerzeichen keine falsche Kollision mit Seed/Steps erzeugt.
-  return JSON.stringify([e.prompt.trim(), e.seed, e.steps]);
+  // Seit 0.4 mehrmodellig: model + Größe gehören zum Rezept — dasselbe Prompt-Tupel auf
+  // anderem Modell/Format ist ein anderes Ergebnis und darf nicht kollabieren (Spec §8).
+  // JSON-Tupel als Schlüssel, damit ein Prompt mit Ziffern/Leerzeichen keine falsche
+  // Kollision mit Seed/Steps erzeugt.
+  return JSON.stringify([e.prompt.trim(), e.seed, e.steps, e.model, e.width, e.height]);
 }
 
 /** Nimmt ein Rezept vorn auf; identisches Rezept wandert nach vorn statt zu doppeln.
@@ -44,7 +45,15 @@ export function groupByPrompt(list: readonly HistoryEntry[]): { prompt: string; 
 export function deleteEntry(list: readonly HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
   return list.filter(
     (e) =>
-      !(e.prompt === entry.prompt && e.seed === entry.seed && e.steps === entry.steps && e.created === entry.created),
+      !(
+        e.prompt === entry.prompt &&
+        e.seed === entry.seed &&
+        e.steps === entry.steps &&
+        e.model === entry.model &&
+        e.width === entry.width &&
+        e.height === entry.height &&
+        e.created === entry.created
+      ),
   );
 }
 

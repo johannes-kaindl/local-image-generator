@@ -5,7 +5,7 @@
 import { serializeFrontmatter, type FmValue } from "../vendor/kit/frontmatter";
 import type { GenParams } from "./viewmodel";
 
-const FM_ORDER = ["prompt", "seed", "steps", "model", "created", "image"];
+const FM_ORDER = ["prompt", "seed", "steps", "model", "width", "height", "created", "image"];
 
 /** @param imageLink Vault-Pfad des Bildes, so wie er in `![[…]]` stehen soll. */
 export function buildImageNote(params: GenParams, imageLink: string): string {
@@ -14,6 +14,8 @@ export function buildImageNote(params: GenParams, imageLink: string): string {
     seed: params.seed,
     steps: params.steps,
     model: params.model,
+    width: params.width,
+    height: params.height,
     created: params.date,
     // Der Serializer quotet das selbst (needsQuoting kennt "[["), aber der Link muss als
     // Wikilink im Wert stehen — unquoted bräche "[[" das YAML.

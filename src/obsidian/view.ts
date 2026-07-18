@@ -15,7 +15,8 @@ export interface ViewHost {
   getPanelState(): PanelState;
   getSettings(): LigSettings;
   setPrompt(p: string): void;
-  generate(steps: number, seed: number): void;
+  generate(steps: number, seed: number, width: number, height: number): void;
+  setSelectedModel(id: string): void;
   saveImage(mode: "create" | "insert"): void;
   openSettings(): void;
   restoreRecipe(entry: HistoryEntry): void;
@@ -68,8 +69,8 @@ export class GeneratorView extends ItemView {
   }
 
   /** Rezept aus der Historie ins Generate-Panel füllen (kein neuer globaler Zustand). */
-  applyRecipe(prompt: string, seed: number, steps: number): void {
-    this.generatePanel?.applyRecipe(prompt, seed, steps);
+  applyRecipe(entry: HistoryEntry): void {
+    this.generatePanel?.applyRecipe(entry);
   }
 
   showTab(id: TabId): void {

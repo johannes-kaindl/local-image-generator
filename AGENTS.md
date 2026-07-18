@@ -38,3 +38,8 @@ one curated model, weights downloaded on explicit opt-in into the Cache API
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
   Provider-API 0.2 und die spätere Kindprozess-Engine (Flux) rasten darauf ein.
 - **Referenz:** microsoft/onnxruntime-inference-examples `js/sd-turbo/index.js` (nicht main.js).
+- **mflux-Kindprozess (0.4):** FLUX.2 klein läuft über `mflux-generate-flux2` (User-
+  installiert, Auto-Detect in mflux-detect.ts (core, Kandidatenliste + Begründung),
+  IO-Bindung in mflux-host.ts — Electron erbt keinen Shell-PATH). tqdm
+  schreibt Fortschritt auf **stderr mit `\r`** — splitChunks/parseMfluxLine (core) sind
+  die einzige Stelle, die das Format kennt. Quantisierung fest `--quantize 8`.

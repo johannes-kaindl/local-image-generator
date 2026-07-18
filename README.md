@@ -109,13 +109,24 @@ vault, exactly like any image you'd add yourself.
 The WebAssembly runtime (onnxruntime-web) is bundled inline with the plugin;
 no plugin code is loaded from the network at runtime.
 
+### FLUX.2 klein 4B (optional second model)
+
+- Runs via [mflux](https://github.com/filipstrand/mflux), a local CLI tool **you install
+  yourself** (`uv tool install mflux`). The plugin never downloads or executes code on
+  its own — it only detects and runs the tool you installed, as a local child process.
+- Model weights (~8 GB, `black-forest-labs/FLUX.2-klein-4B`) are downloaded from
+  Hugging Face only after you explicitly start the download in the settings. They are
+  stored in the Hugging Face cache (`~/.cache/huggingface` or a folder you choose),
+  outside your vault, and are shared with other Hugging Face tools.
+- No telemetry, no other network use.
+
 ## Privacy
 
 - **No telemetry.** The plugin does not collect, transmit, or phone home any
   usage data, prompts, or images.
 - **No network access** other than the one-time, user-initiated model
-  download described above. Once the model is downloaded, generation runs
-  entirely on your GPU, offline.
+  downloads described above. Once a model is downloaded, generation runs
+  entirely on your device, offline.
 
 ## Model & licenses
 

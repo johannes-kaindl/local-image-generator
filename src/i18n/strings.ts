@@ -19,6 +19,8 @@ export const EN: Record<string, string> = {
   "generate.button.reroll": "Reroll",
   "generate.button.create": "Create",
   "generate.button.insert": "Insert",
+  "generate.model": "Model",
+  "generate.size": "Size",
   "generate.steps": "Steps",
   "generate.seed": "Seed",
   "generate.randomSeed": "Randomize seed",
@@ -36,10 +38,16 @@ export const EN: Record<string, string> = {
   "status.loadingGpu": "Loading model into GPU… ({0})",
   "status.engineLoadFailed":
     "Loading the model into the GPU is taking unusually long or failed silently. Click Generate to try again.",
+  "status.loadingMflux": "Loading FLUX model… ({0})",
+  "status.mfluxMissing": "mflux is not set up yet",
 
   "empty.noModel": "The model (~2.5 GB) is not downloaded yet.",
   "empty.noModelCta": "Download model (~2.5 GB)",
   "empty.noImage": "Enter a prompt and press Generate.",
+  "empty.fluxNeedsMflux": "FLUX.2 runs via the local mflux tool, which is not installed or not found.",
+  "empty.fluxNeedsMfluxCta": "Open setup",
+  "empty.fluxNoModel": "The FLUX.2 weights (~8 GB) are not downloaded yet.",
+  "empty.fluxNoModelCta": "Open settings",
 
   "notice.saveFailed": "Save failed: {0}",
   "notice.oomHint":
@@ -56,6 +64,20 @@ export const EN: Record<string, string> = {
   "settings.model.delete": "Delete model",
   "settings.model.deleteConfirm":
     "Delete the downloaded model files (~2.5 GB)? You can download them again anytime.",
+
+  "settings.mflux.binary": "mflux runtime",
+  "settings.mflux.found": "Found: {0}",
+  "settings.mflux.notFound":
+    "Not found. Install with `uv tool install mflux`, then reopen this tab — or enter the path to mflux-generate-flux2 below.",
+  "settings.mflux.binaryPlaceholder": "Path to mflux-generate-flux2 (optional)",
+  "settings.mflux.modelsDir": "Model storage location",
+  "settings.mflux.modelsDirDesc":
+    "Uses the shared Hugging Face cache — models already downloaded via Hugging Face are reused. ComfyUI checkpoints are a different format and cannot be linked. Empty = default (~/.cache/huggingface). Weights: ~8 GB.",
+  "settings.mflux.weights": "FLUX.2 weights",
+  "settings.mflux.weightsDesc": "Downloaded via the explicit download here (~8 GB, from Hugging Face).",
+  "settings.mflux.download": "Download (~8 GB)",
+
+  "notice.fluxDownloaded": "FLUX.2 weights downloaded",
 
   "settings.output.heading": "Output",
   "settings.output.folder": "Image folder",
@@ -109,6 +131,8 @@ export const DE: Record<string, string> = {
   "generate.button.reroll": "Neu würfeln",
   "generate.button.create": "Erstellen",
   "generate.button.insert": "Einfügen",
+  "generate.model": "Modell",
+  "generate.size": "Größe",
   "generate.steps": "Schritte",
   "generate.seed": "Seed",
   "generate.randomSeed": "Seed zufällig würfeln",
@@ -126,10 +150,16 @@ export const DE: Record<string, string> = {
   "status.loadingGpu": "Lädt Modell auf GPU… ({0})",
   "status.engineLoadFailed":
     "Das Laden des Modells auf die GPU dauert ungewöhnlich lange oder ist lautlos fehlgeschlagen. Klicke auf Generieren, um es erneut zu versuchen.",
+  "status.loadingMflux": "Lade FLUX-Modell… ({0})",
+  "status.mfluxMissing": "mflux ist noch nicht eingerichtet",
 
   "empty.noModel": "Das Modell (~2,5 GB) wurde noch nicht heruntergeladen.",
   "empty.noModelCta": "Modell herunterladen (~2,5 GB)",
   "empty.noImage": "Prompt eingeben und auf Generieren klicken.",
+  "empty.fluxNeedsMflux": "FLUX.2 läuft über das lokale Tool mflux, das nicht installiert oder nicht auffindbar ist.",
+  "empty.fluxNeedsMfluxCta": "Einrichtung öffnen",
+  "empty.fluxNoModel": "Die FLUX.2-Gewichte (~8 GB) sind noch nicht heruntergeladen.",
+  "empty.fluxNoModelCta": "Einstellungen öffnen",
 
   "notice.saveFailed": "Speichern fehlgeschlagen: {0}",
   "notice.oomHint":
@@ -146,6 +176,20 @@ export const DE: Record<string, string> = {
   "settings.model.delete": "Modell löschen",
   "settings.model.deleteConfirm":
     "Heruntergeladene Modelldateien löschen (~2,5 GB)? Du kannst sie jederzeit erneut herunterladen.",
+
+  "settings.mflux.binary": "mflux-Runtime",
+  "settings.mflux.found": "Gefunden: {0}",
+  "settings.mflux.notFound":
+    "Nicht gefunden. Mit `uv tool install mflux` installieren und diesen Tab neu öffnen — oder unten den Pfad zu mflux-generate-flux2 eintragen.",
+  "settings.mflux.binaryPlaceholder": "Pfad zu mflux-generate-flux2 (optional)",
+  "settings.mflux.modelsDir": "Modell-Speicherort",
+  "settings.mflux.modelsDirDesc":
+    "Nutzt den geteilten Hugging-Face-Cache — bereits via Hugging Face geladene Modelle werden wiederverwendet. ComfyUI-Checkpoints sind ein anderes Format und können nicht eingebunden werden. Leer = Standard (~/.cache/huggingface). Gewichte: ~8 GB.",
+  "settings.mflux.weights": "FLUX.2-Gewichte",
+  "settings.mflux.weightsDesc": "Werden beim expliziten Download hier geladen (~8 GB, von Hugging Face).",
+  "settings.mflux.download": "Herunterladen (~8 GB)",
+
+  "notice.fluxDownloaded": "FLUX.2-Gewichte heruntergeladen",
 
   "settings.output.heading": "Ausgabe",
   "settings.output.folder": "Bilderordner",

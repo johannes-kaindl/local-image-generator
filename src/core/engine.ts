@@ -30,6 +30,9 @@ export interface EngineSessions {
   vaeDecoder: Session;
 }
 
+/** Provider-Sicht (yijing-oracle, Spec 0.4 §10): model/width/height sind dort OPTIONAL
+ *  mit Default sd-turbo/512² — unabhängig vom UI-Dropdown. Die interne Pipeline hier
+ *  bleibt bewusst schmal (prompt/steps/seed); der Router in main.ts füllt die Defaults. */
 export interface GenerateRequest {
   prompt: string;
   steps: number;
@@ -38,8 +41,8 @@ export interface GenerateRequest {
 
 export interface GenerateResult {
   rgba: Uint8ClampedArray;
-  width: 512;
-  height: 512;
+  width: number;
+  height: number;
   seed: number;
 }
 

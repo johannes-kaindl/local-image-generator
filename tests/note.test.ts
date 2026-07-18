@@ -7,6 +7,8 @@ const params = (over: Partial<GenParams> = {}): GenParams => ({
   seed: 199801046,
   steps: 4,
   model: "sd-turbo",
+  width: 512,
+  height: 512,
   date: "2026-07-16T21:52:43",
   ...over,
 });
@@ -20,6 +22,8 @@ describe("buildImageNote", () => {
         "seed: 199801046",
         "steps: 4",
         "model: sd-turbo",
+        "width: 512",
+        "height: 512",
         "created: 2026-07-16T21:52:43",
         'image: "[[Art/lig-20260716-215243-s199801046.png]]"',
         "---",
@@ -60,5 +64,13 @@ describe("buildImageNote", () => {
 
   it("verkraftet einen leeren Prompt", () => {
     expect(buildImageNote(params({ prompt: "" }), "x.png")).toContain("\nprompt:\n");
+  });
+
+  it("Frontmatter enthält width/height zwischen model und created", () => {
+    const note = buildImageNote(
+      { prompt: "a", seed: 1, steps: 2, model: "flux2-klein-4b", width: 1024, height: 576, date: "2026-07-18T10:00:00" },
+      "img.png",
+    );
+    expect(note).toMatch(/model: flux2-klein-4b\nwidth: 1024\nheight: 576\ncreated:/);
   });
 });

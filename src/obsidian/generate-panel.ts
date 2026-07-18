@@ -4,6 +4,8 @@ import { setIcon, setTooltip } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
 import { t } from "../vendor/kit/i18n";
 import { buildViewModel } from "../core/viewmodel";
+import { getModel, MODELS, type ModelSpec, type SizeOption } from "../core/models";
+import type { HistoryEntry } from "../core/settings";
 import type { HubPanel, TabId } from "./hub";
 import type { ViewHost } from "./view";
 
@@ -16,6 +18,9 @@ export class GeneratePanel implements HubPanel {
   readonly label = t("view.tabGenerate");
   readonly icon = "image-plus";
 
+  private modelEl!: HTMLSelectElement;
+  private sizeRowEl!: HTMLElement; // Container in der controls-Zeile
+  private sizeEl: HTMLSelectElement | null = null;
   private promptEl!: HTMLTextAreaElement;
   private stepsEl!: HTMLInputElement;
   private stepsValueEl!: HTMLElement;
@@ -40,6 +45,16 @@ export class GeneratePanel implements HubPanel {
   mount(container: HTMLElement): void {
     const root = container.createDiv({ cls: "lig-panel" });
 
+    const modelRow = root.createDiv({ cls: "lig-row lig-model-row" });
+    modelRow.createSpan({ text: t("generate.model"), cls: "lig-label" });
+    this.modelEl = modelRow.createEl("select", { cls: "dropdown lig-model" });
+    for (const m of MODELS) this.modelEl.createEl("option", { text: m.label, attr: { value: m.id } });
+    this.modelEl.value = this.host.getSettings().selectedModel;
+    this.modelEl.addEventListener("change", () => {
+      this.applyModel(this.modelEl.value);
+      this.host.setSelectedModel(this.modelEl.value);
+    });
+
     const promptRow = root.createDiv({ cls: "lig-prompt-row" });
     this.promptEl = promptRow.createEl("textarea", {
       cls: "lig-prompt",
@@ -52,13 +67,23 @@ export class GeneratePanel implements HubPanel {
     this.chipsEl = root.createDiv({ cls: "lig-row lig-chips" });
 
     const controls = root.createDiv({ cls: "lig-row" });
+    this.sizeRowEl = controls.createSpan({ cls: "lig-size-slot" });
     controls.createSpan({ text: t("generate.steps"), cls: "lig-label" });
-    // Startwert aus den Settings — danach gehört der Slider dem Nutzer, wir schreiben
-    // nichts zurück (die Einstellung ist ein Startwert, kein Zwang).
-    const startSteps = String(this.host.getSettings().defaultSteps);
+    // Startwert: SD-Turbo behält den Settings-Startwert (Nutzer-Regler, kein Zwang),
+    // andere Modelle starten am Katalog-Default (Task 9 Brief).
+    const startSpec = getModel(this.host.getSettings().selectedModel);
+    const startSteps = String(
+      startSpec.id === "sd-turbo" ? this.host.getSettings().defaultSteps : startSpec.steps.default,
+    );
     this.stepsEl = controls.createEl("input", {
       cls: "lig-steps",
-      attr: { type: "range", min: "1", max: "4", step: "1", value: startSteps },
+      attr: {
+        type: "range",
+        min: String(startSpec.steps.min),
+        max: String(startSpec.steps.max),
+        step: "1",
+        value: startSteps,
+      },
     });
     this.stepsValueEl = controls.createSpan({ text: startSteps, cls: "lig-steps-value" });
     this.stepsEl.addEventListener("input", () => {
@@ -79,7 +104,8 @@ export class GeneratePanel implements HubPanel {
 
     this.generateBtn = root.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
     this.generateBtn.addEventListener("click", () => {
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value));
+      const { width, height } = this.currentSize();
+      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), width, height);
     });
 
     this.emptyEl = root.createDiv({ cls: "lig-empty" });
@@ -95,7 +121,8 @@ export class GeneratePanel implements HubPanel {
       // Reroll = neuer Zufalls-Seed + generieren. Der obere "Generate"-Knopf nimmt den
       // Seed aus dem Feld und würfelt nie — so sagt jeder Knopf, was er tut.
       this.seedEl.value = String(randomSeed());
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value));
+      const { width, height } = this.currentSize();
+      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), width, height);
     });
     this.createBtn = actions.createEl("button", { text: t("generate.button.create"), cls: "mod-cta" });
     this.createBtn.addEventListener("click", () => this.host.saveImage("create"));
@@ -106,6 +133,7 @@ export class GeneratePanel implements HubPanel {
     this.statusIconEl = status.createSpan({ cls: "lig-status-icon" });
     this.statusTextEl = status.createSpan({ cls: "lig-status-text" });
 
+    this.rebuildSizeDropdown(startSpec, null);
     this.refresh();
   }
 
@@ -145,12 +173,53 @@ export class GeneratePanel implements HubPanel {
     }
   }
 
+  /** Größen-Dropdown zum Modell aufbauen; preferred (aus applyRecipe) wird vorausgewählt,
+   *  wenn das Modell die Größe kennt. Bei nur einer Größe: kein Dropdown (Spec §5). */
+  private rebuildSizeDropdown(spec: ModelSpec, preferred: SizeOption | null): void {
+    this.sizeRowEl.empty();
+    this.sizeEl = null;
+    if (spec.sizes.length <= 1) return;
+    this.sizeRowEl.createSpan({ text: t("generate.size"), cls: "lig-label" });
+    this.sizeEl = this.sizeRowEl.createEl("select", { cls: "dropdown lig-size" });
+    for (const s of spec.sizes)
+      this.sizeEl.createEl("option", { text: `${s.width} × ${s.height}`, attr: { value: `${s.width}x${s.height}` } });
+    if (preferred && spec.sizes.some((s) => s.width === preferred.width && s.height === preferred.height))
+      this.sizeEl.value = `${preferred.width}x${preferred.height}`;
+  }
+
+  /** Aktive Größe: Dropdown-Wert oder die einzige Katalog-Größe. */
+  private currentSize(): SizeOption {
+    const spec = getModel(this.modelEl.value);
+    if (this.sizeEl) {
+      const [w, h] = this.sizeEl.value.split("x").map(Number);
+      return { width: w!, height: h! };
+    }
+    return spec.sizes[0]!;
+  }
+
+  /** Regler an ein Modell anpassen (Modellwechsel + applyRecipe). */
+  private applyModel(id: string, preferredSize: SizeOption | null = null): void {
+    const spec = getModel(id);
+    this.stepsEl.min = String(spec.steps.min);
+    this.stepsEl.max = String(spec.steps.max);
+    this.stepsEl.value = String(spec.steps.default);
+    this.stepsValueEl.setText(this.stepsEl.value);
+    this.rebuildSizeDropdown(spec, preferredSize);
+    this.refresh();
+  }
+
   /** Ein Rezept aus der Historie in die DOM-Felder schreiben. Der Host wechselt danach
    *  auf den Generate-Tab; refresh() zieht Chips/Aktiv-Zustand nach. */
-  applyRecipe(prompt: string, seed: number, steps: number): void {
-    this.promptEl.value = prompt;
-    this.host.setPrompt(prompt);
-    this.seedEl.value = String(seed);
+  applyRecipe(entry: HistoryEntry): void {
+    this.modelEl.value = getModel(entry.model).id; // getModel-Fallback fängt Alt-/Fremd-IDs
+    this.applyModel(this.modelEl.value, { width: entry.width, height: entry.height });
+    this.host.setSelectedModel(this.modelEl.value);
+    this.promptEl.value = entry.prompt;
+    this.host.setPrompt(entry.prompt);
+    this.seedEl.value = String(entry.seed);
+    // Steps NACH applyModel setzen (applyModel hat sie auf den Default gestellt), geclampt:
+    const spec = getModel(this.modelEl.value);
+    const steps = Math.min(spec.steps.max, Math.max(spec.steps.min, entry.steps));
     this.stepsEl.value = String(steps);
     this.stepsValueEl.setText(String(steps));
     this.refresh();
