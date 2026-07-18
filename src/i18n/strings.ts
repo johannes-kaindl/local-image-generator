@@ -74,7 +74,7 @@ export const EN: Record<string, string> = {
   "settings.mflux.modelsDirDesc":
     "Uses the shared Hugging Face cache — models already downloaded via Hugging Face are reused. ComfyUI checkpoints are a different format and cannot be linked. Empty = default (~/.cache/huggingface). Weights: ~8 GB.",
   "settings.mflux.weights": "FLUX.2 weights",
-  "settings.mflux.weightsDesc": "Downloaded on first use or explicitly here (~8 GB, from Hugging Face).",
+  "settings.mflux.weightsDesc": "Downloaded via the explicit download here (~8 GB, from Hugging Face).",
   "settings.mflux.download": "Download (~8 GB)",
 
   "notice.fluxDownloaded": "FLUX.2 weights downloaded",

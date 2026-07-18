@@ -95,7 +95,11 @@ function buildOrtViewModel(s: PanelState): PanelViewModel {
     s.run.kind === "running" ||
     s.run.kind === "loading" ||
     s.model.kind === "downloading" ||
-    s.gpu === "checking";
+    s.gpu === "checking" ||
+    // Ein laufender FLUX-Gewichte-Download blockt auch den ORT-Pfad: sonst könnte ein
+    // Modellwechsel zu SD-Turbo mitten im Download eine In-Process-Generierung neben dem
+    // mflux-Kindprozess starten (GPU-Contention). Whole-Branch-Review 0.4.
+    s.mflux.weights === "downloading";
 
   let status: PanelViewModel["status"];
   if (s.run.kind === "error") status = { icon: "circle-x", text: t("status.error", s.run.message), cls: "is-error" };
