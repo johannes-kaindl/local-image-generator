@@ -8,7 +8,7 @@ import { SdTurboEngine } from "./core/engine";
 import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
-import { MODEL_ID } from "./core/model-manifest";
+import { MODEL_FILES, MODEL_ID } from "./core/model-manifest";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import type { GenParams, PanelState } from "./core/viewmodel";
@@ -25,6 +25,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
   modelStore = new ModelStore();
   private engine: SdTurboEngine | null = null;
+  private settingTab!: LigSettingTab;
   private state: PanelState = {
     gpu: "checking",
     model: { kind: "missing" },
@@ -40,7 +41,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     registerI18n();
     setLang(pickLang(getLanguage()));
 
-    this.addSettingTab(new LigSettingTab(this.app, this));
+    this.settingTab = new LigSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
 
     const host: ViewHost = {
       getPanelState: () => {
@@ -105,6 +107,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
+  /** Read-only-Zugriff für Consumer außerhalb der ViewHost-Fassade (aktuell nur
+   *  LigSettingTab, siehe Spec 2026-07-18-robustheits-block-design.md §2.2). */
+  getState(): Readonly<PanelState> {
+    return this.state;
+  }
+
   private async initStatus(): Promise<void> {
     this.state.gpu = await checkGpu();
     this.state.model = (await this.modelStore.isComplete()) ? { kind: "ready" } : { kind: "missing" };
@@ -116,6 +124,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       const view = leaf.view;
       if (view instanceof GeneratorView) view.refresh();
     }
+    this.settingTab.refreshModel();
   }
 
   private async activateView(): Promise<void> {
@@ -131,13 +140,24 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
-  async downloadModel(onProgress: (pct: number) => void): Promise<void> {
-    this.state.model = { kind: "downloading", pct: 0 };
+  async downloadModel(): Promise<void> {
+    // Optimistischer Platzhalter, bis der erste echte Fortschritts-Callback aus
+    // modelStore.download() eintrifft (Netzwerk-Round-Trip, meist < 1s) — wird sofort
+    // überschrieben. Ohne diesen Zwischenschritt bliebe state.model kurz auf "missing",
+    // während der Button in Wahrheit schon lädt.
+    this.state.model = {
+      kind: "downloading",
+      overallPct: 0,
+      fileKey: MODEL_FILES[0]!.key,
+      fileIndex: 1,
+      totalFiles: MODEL_FILES.length,
+      receivedBytes: 0,
+      totalBytes: MODEL_FILES[0]!.approxBytes,
+    };
     this.refreshViews();
     try {
-      await this.modelStore.download((pct) => {
-        this.state.model = { kind: "downloading", pct };
-        onProgress(pct);
+      await this.modelStore.download((p) => {
+        this.state.model = { kind: "downloading", ...p };
         this.refreshViews();
       });
       this.state.model = { kind: "ready" };

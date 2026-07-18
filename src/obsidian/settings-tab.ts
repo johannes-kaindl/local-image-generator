@@ -1,6 +1,7 @@
 // Settings (UI-STANDARD §5): Modell zuerst, Ausgabe, Presets, Gefährliches ans Ende.
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { totalApproxBytes, MODEL_FILES } from "../core/model-manifest";
+import { formatBytes } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
 import { collapsibleSection, type CollapsibleStorage } from "./collapsible";
 import { ConfirmModal } from "./confirm-modal";
@@ -9,6 +10,8 @@ import { renderPresetEditor } from "./preset-editor";
 import type LocalImageGeneratorPlugin from "../main";
 
 export class LigSettingTab extends PluginSettingTab {
+  private modelSectionEl: HTMLElement | null = null;
+
   constructor(
     app: App,
     private readonly plugin: LocalImageGeneratorPlugin,
@@ -29,12 +32,13 @@ export class LigSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    this.renderModel(collapsibleSection(containerEl, {
+    this.modelSectionEl = collapsibleSection(containerEl, {
       title: t("settings.model.heading"),
       key: "model",
       defaultCollapsed: false,
       storage: this.storage,
-    }));
+    });
+    this.renderModel(this.modelSectionEl);
 
     this.renderOutput(collapsibleSection(containerEl, {
       title: t("settings.output.heading"),
@@ -68,32 +72,54 @@ export class LigSettingTab extends PluginSettingTab {
     }));
   }
 
+  /** Zeichnet NUR die Modell-Sektion neu — state-getrieben (this.plugin.getState().model
+   *  ist die einzige Wahrheit), überlebt Re-Renders anderer Sektionen strukturell, weil
+   *  sie nie eigenen Zustand hält. Wird von main.ts.refreshViews() bei jeder
+   *  Download-Fortschritts-Änderung aufgerufen — der isConnected-Check verhindert, dass
+   *  ein Aufruf nach einem kompletten display()-Rebuild (z.B. presets.rerender()) einen
+   *  bereits aus dem DOM entfernten Container beschreibt (Spec 2026-07-18-robustheits-
+   *  block-design.md §2.2). */
+  refreshModel(): void {
+    const el = this.modelSectionEl;
+    if (!el || !el.isConnected) return;
+    el.empty();
+    this.renderModel(el);
+  }
+
   private renderModel(el: HTMLElement): void {
     const gb = (totalApproxBytes(MODEL_FILES) / 1e9).toFixed(1);
+    const model = this.plugin.getState().model;
     const modelSetting = new Setting(el)
       .setName("SD-Turbo (ONNX, fp16)")
       .setDesc(t("settings.model.desc"));
-    void this.plugin.modelStore.isComplete().then((complete) => {
-      if (complete) {
-        modelSetting.addExtraButton((b) => b.setIcon("circle-check").setTooltip(t("settings.model.downloadedTooltip")));
-      } else {
-        modelSetting.addButton((b) =>
-          b
-            .setButtonText(t("settings.model.download", gb))
-            .setCta()
-            .onClick(async () => {
-              b.setDisabled(true);
-              try {
-                await this.plugin.downloadModel((pct) => b.setButtonText(`${pct}%`));
-                new Notice(t("notice.modelDownloaded"));
-              } catch (e) {
-                new Notice(String(e instanceof Error ? e.message : e));
-              }
-              this.display();
-            }),
-        );
-      }
-    });
+
+    if (model.kind === "ready") {
+      modelSetting.addExtraButton((b) => b.setIcon("circle-check").setTooltip(t("settings.model.downloadedTooltip")));
+      return;
+    }
+
+    if (model.kind === "downloading") {
+      modelSetting.addButton((b) => b.setButtonText(`${model.overallPct}%`).setDisabled(true));
+      el.createEl("p", {
+        text: `${model.fileKey} (${model.fileIndex}/${model.totalFiles}) — ${formatBytes(model.receivedBytes)} / ${formatBytes(model.totalBytes)}`,
+        cls: "setting-item-description",
+      });
+      return;
+    }
+
+    modelSetting.addButton((b) =>
+      b
+        .setButtonText(t("settings.model.download", gb))
+        .setCta()
+        .onClick(async () => {
+          try {
+            await this.plugin.downloadModel();
+            new Notice(t("notice.modelDownloaded"));
+          } catch (e) {
+            new Notice(String(e instanceof Error ? e.message : e));
+          }
+        }),
+    );
   }
 
   private renderOutput(el: HTMLElement): void {
