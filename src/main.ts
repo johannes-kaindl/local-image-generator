@@ -10,11 +10,13 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp 
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { MODEL_FILES, MODEL_ID } from "./core/model-manifest";
-import { DEFAULT_MODEL_ID } from "./core/models";
+import { DEFAULT_MODEL_ID, getModel, type ModelSpec } from "./core/models";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import type { GenParams, PanelState } from "./core/viewmodel";
 import { ConfirmModal } from "./obsidian/confirm-modal";
+import { detectMflux, fluxWeightsReady } from "./obsidian/mflux-host";
+import { MfluxEngine } from "./obsidian/mflux-engine";
 import { ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession } from "./obsidian/ort-host";
 import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
@@ -27,6 +29,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
   modelStore = new ModelStore();
   private engine: SdTurboEngine | null = null;
+  private mfluxEngine = new MfluxEngine();
   private settingTab!: LigSettingTab;
   private engineLoadGeneration = 0;
   private state: PanelState = {
@@ -36,16 +39,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     image: null,
     editorActive: false,
     prompt: "",
-    // Platzhalter für die mflux-Modellwahl (Spec 2026-07-18-multi-modell-flux2 §5/§7):
-    // Task 10 (Engine-Router) verdrahtet selectedModel aus den Settings und mflux aus der
-    // echten Erkennung (detectMflux/fluxWeightsReady, Task 6). Bis dahin bleibt sd-turbo
-    // aktiv (Default), der mflux-Zweig des ViewModels ist ungenutzt.
     selectedModel: DEFAULT_MODEL_ID,
     mflux: { binary: null, weights: "missing", download: null },
   };
 
   async onload(): Promise<void> {
     this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, await this.loadData()));
+    this.state.selectedModel = this.settings.selectedModel;
 
     registerI18n();
     setLang(pickLang(getLanguage()));
@@ -65,6 +65,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       generate: (steps, seed, width, height) => void this.generate(steps, seed, width, height),
       setSelectedModel: (id) => {
         this.settings.selectedModel = id;
+        this.state.selectedModel = id;
         void this.saveSettings();
         this.refreshViews();
       },
@@ -128,11 +129,22 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       }
     });
 
+    this.refreshMfluxStatus();
     void this.initStatus();
   }
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+
+  /** mflux-Erkennung + Gewichte-Check in den State spiegeln (onload, Settings-Änderungen). */
+  refreshMfluxStatus(): void {
+    this.state.mflux = {
+      binary: detectMflux(this.settings),
+      weights: fluxWeightsReady(this.settings) ? "ready" : "missing",
+      download: null,
+    };
+    this.refreshViews();
   }
 
   /** Read-only-Zugriff für Consumer außerhalb der ViewHost-Fassade (aktuell nur
@@ -198,6 +210,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   onunload(): void {
+    // Laufenden mflux-Kindprozess killen (SIGKILL, kein Server-Modus) — VOR dem ORT-
+    // dispose, damit ein laufender generateMflux()-Aufruf sein "cancelled" bekommt, bevor
+    // das Plugin selbst als entladen gilt.
+    this.mfluxEngine.kill();
     // Sessions beim Entladen freigeben (Spec §8: GPU-Speicher-Leak vermeiden).
     void this.engine?.dispose().catch(() => {});
     this.engine = null;
@@ -281,11 +297,20 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
+  // Engine-Router (Spec §5/§7): sd-turbo läuft weiter über ORT/WebGPU (generateOrt),
+  // FLUX.2 über den mflux-Kindprozess (generateMflux). Der Katalog (models.ts) entscheidet
+  // die Weiche — kein Modell-if/else in den Panels.
   private async generate(steps: number, seed: number, width: number, height: number): Promise<void> {
     if (this.state.run.kind === "running" || this.state.run.kind === "loading") return;
+    const spec = getModel(this.settings.selectedModel);
     // Prompt HIER festhalten: zwischen Start und Ende kann der Nutzer weitertippen,
     // und die Ergebnis-Notiz muss das Bild beschreiben, das entstanden ist.
     const prompt = this.state.prompt;
+    if (spec.engine === "mflux") return this.generateMflux(spec, prompt, steps, seed, width, height);
+    return this.generateOrt(prompt, steps, seed); // Katalog garantiert 512² für sd-turbo
+  }
+
+  private async generateOrt(prompt: string, steps: number, seed: number): Promise<void> {
     let engine: SdTurboEngine;
     try {
       engine = await this.ensureEngine();
@@ -310,11 +335,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
           seed: result.seed,
           steps,
           model: MODEL_ID,
-          // Für sd-turbo liefert das Generate-Panel ohnehin nur die eine Katalog-Größe
-          // (512×512, Task 1) — width/height kommen jetzt echt aus dem Aufruf statt aus
-          // einem Hardcode. Task 10 routet zusätzlich auf die mflux-Engine.
-          width,
-          height,
+          // Aus dem Engine-Ergebnis übernehmen statt erneut zu hardcoden: EINE Quelle für
+          // die 512² (IMAGE_SIZE in engine.ts), kein zweiter unabhängiger Literal hier, der
+          // aus dem Tritt geraten könnte (ersetzt den Übergangsfix aus Task 3).
+          width: result.width,
+          height: result.height,
           date: isoStamp(new Date()),
         },
       };
@@ -349,6 +374,109 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         created: p.date,
       });
       void this.saveSettings();
+    }
+  }
+
+  // FLUX.2 über den mflux-Kindprozess (Spec §5/§7): mflux lädt das Modell bei jedem
+  // Aufruf neu in den Speicher (kein Server-Modus) — die Ladephase mit Sekundenzähler
+  // spiegelt das wie ensureEngine(); der erste Step-Callback beendet sie.
+  private async generateMflux(
+    spec: ModelSpec,
+    prompt: string,
+    steps: number,
+    seed: number,
+    width: number,
+    height: number,
+  ): Promise<void> {
+    const binary = this.state.mflux.binary;
+    if (binary === null || this.state.mflux.weights !== "ready" || this.mfluxEngine.busy) return; // ViewModel gated das bereits — Defensive
+    this.state.run = { kind: "loading", elapsedSec: 0 };
+    this.refreshViews();
+    const tick = window.setInterval(() => {
+      if (this.state.run.kind === "loading") {
+        this.state.run = { kind: "loading", elapsedSec: this.state.run.elapsedSec + 1 };
+        this.refreshViews();
+      }
+    }, 1000);
+    let succeeded = false;
+    try {
+      const png = await this.mfluxEngine.run(
+        binary,
+        spec,
+        { prompt, seed, steps, width, height },
+        this.settings.modelsDir.trim(),
+        {
+          onDownload: (file, pct) => {
+            // Sollte im Normalfall nie feuern (Gewichte-Gate oben) — falls doch (Cache extern
+            // gelöscht), ehrlich als Download anzeigen statt minutenlang "Loading".
+            this.state.mflux = { ...this.state.mflux, weights: "downloading", download: { file, pct } };
+            this.refreshViews();
+          },
+          onStep: (step, total) => {
+            this.state.run = { kind: "running", step, total };
+            this.refreshViews();
+          },
+        },
+      );
+      this.state.image = {
+        dataUrl: `data:image/png;base64,${Buffer.from(png).toString("base64")}`,
+        params: { prompt, seed, steps, model: spec.id, width, height, date: isoStamp(new Date()) },
+      };
+      this.state.run = { kind: "idle" };
+      this.state.mflux = { ...this.state.mflux, weights: "ready", download: null };
+      succeeded = true;
+    } catch (e) {
+      // "cancelled" (View-Close/Unload hat gekillt) ist kein Fehler — UI still auf idle.
+      const msg = e instanceof Error ? e.message : String(e);
+      this.state.run = msg === "cancelled" ? { kind: "idle" } : { kind: "error", message: msg };
+    } finally {
+      window.clearInterval(tick);
+      this.refreshViews();
+    }
+    if (succeeded && this.state.image) {
+      const p = this.state.image.params;
+      this.settings.history = pushHistory(this.settings.history, {
+        prompt: p.prompt,
+        seed: p.seed,
+        steps: p.steps,
+        model: p.model,
+        width: p.width,
+        height: p.height,
+        created: p.date,
+      });
+      void this.saveSettings();
+    }
+  }
+
+  /** Vorbereitungslauf (Spec §6): 1 Step / 512² / Seed 0 — mflux lädt dabei die Gewichte;
+   *  das Mini-Bild wird verworfen (Temp-Cleanup der Engine, s. mflux-engine.ts finally).
+   *  Ein reiner Download-Befehl existiert in der verifizierten mflux-Version nicht. */
+  async downloadFluxModel(): Promise<void> {
+    const spec = getModel("flux2-klein-4b");
+    const binary = this.state.mflux.binary;
+    if (binary === null || this.mfluxEngine.busy) return;
+    this.state.mflux = { ...this.state.mflux, weights: "downloading", download: { file: "…", pct: 0 } };
+    this.refreshViews();
+    try {
+      await this.mfluxEngine.run(
+        binary,
+        spec,
+        { prompt: "warmup", seed: 0, steps: 1, width: 512, height: 512 },
+        this.settings.modelsDir.trim(),
+        {
+          onDownload: (file, pct) => {
+            this.state.mflux = { ...this.state.mflux, weights: "downloading", download: { file, pct } };
+            this.refreshViews();
+          },
+          onStep: () => {},
+        },
+      );
+      this.state.mflux = { ...this.state.mflux, weights: "ready", download: null };
+    } catch (e) {
+      this.state.mflux = { ...this.state.mflux, weights: fluxWeightsReady(this.settings) ? "ready" : "missing", download: null };
+      throw e;
+    } finally {
+      this.refreshViews();
     }
   }
 
