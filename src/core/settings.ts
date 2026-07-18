@@ -19,6 +19,8 @@ export interface HistoryEntry {
   seed: number;
   steps: number;
   model: string;
+  width: number;
+  height: number;
   /** Lokaler ISO-8601-Stempel, beim Generier-Erfolg eingefroren (siehe isoStamp). */
   created: string;
 }
@@ -80,15 +82,22 @@ function sanitizePresets(raw: unknown): StylePreset[] {
 
 function sanitizeHistory(raw: unknown): HistoryEntry[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter(
-    (h): h is HistoryEntry =>
-      isPlainObject(h) &&
-      typeof h["prompt"] === "string" &&
-      typeof h["seed"] === "number" &&
-      typeof h["steps"] === "number" &&
-      typeof h["model"] === "string" &&
-      typeof h["created"] === "string",
-  );
+  return raw
+    .filter(
+      (h): h is Omit<HistoryEntry, "width" | "height"> & { width?: unknown; height?: unknown } =>
+        isPlainObject(h) &&
+        typeof h["prompt"] === "string" &&
+        typeof h["seed"] === "number" &&
+        typeof h["steps"] === "number" &&
+        typeof h["model"] === "string" &&
+        typeof h["created"] === "string",
+    )
+    .map((h) => ({
+      ...h,
+      // Migration 0.3→0.4: Alt-Einträge sind alle SD-Turbo-512er (Spec §8).
+      width: typeof h.width === "number" ? h.width : 512,
+      height: typeof h.height === "number" ? h.height : 512,
+    }));
 }
 
 function sanitizeHistoryView(raw: unknown): "recent" | "grouped" {

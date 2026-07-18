@@ -293,7 +293,17 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       });
       this.state.image = {
         dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height),
-        params: { prompt, seed: result.seed, steps, model: MODEL_ID, date: isoStamp(new Date()) },
+        params: {
+          prompt,
+          seed: result.seed,
+          steps,
+          model: MODEL_ID,
+          // TEMPORÄRE BRÜCKE (Task 3/12): hart auf SD-Turbo-512 gesetzt, bis Task 10 die
+          // echten Größen aus dem Multi-Modell-Request durchreicht (Spec §8).
+          width: 512,
+          height: 512,
+          date: isoStamp(new Date()),
+        },
       };
       this.state.run = { kind: "idle" };
       succeeded = true;
@@ -321,6 +331,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         seed: p.seed,
         steps: p.steps,
         model: p.model,
+        width: p.width,
+        height: p.height,
         created: p.date,
       });
       void this.saveSettings();

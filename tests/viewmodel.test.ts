@@ -77,7 +77,7 @@ describe("buildViewModel", () => {
       ...base,
       image: {
         dataUrl: "data:",
-        params: { prompt: "p", seed: 1, steps: 4, model: "sd-turbo", date: "2026-07-16T21:52:43" },
+        params: { prompt: "p", seed: 1, steps: 4, model: "sd-turbo", width: 512, height: 512, date: "2026-07-16T21:52:43" },
       },
     };
     expect(buildViewModel(withImg).showImage).toBe(true);

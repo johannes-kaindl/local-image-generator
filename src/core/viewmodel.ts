@@ -30,6 +30,8 @@ export interface GenParams {
   seed: number;
   steps: number;
   model: string;
+  width: number;
+  height: number;
   /** Lokaler ISO-8601-Stempel, siehe isoStamp() in filename.ts. */
   date: string;
 }

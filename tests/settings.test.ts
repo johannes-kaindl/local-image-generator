@@ -45,7 +45,9 @@ describe("sanitizeSettings (Spec §8)", () => {
       defaultSteps: 2,
       createMode: "note",
       presets: [{ id: "a", label: "A", suffix: "a-suffix" }],
-      history: [{ prompt: "a prompt", seed: 1, steps: 4, model: "sd-turbo", created: "2026-07-17T10:00:00" }],
+      history: [
+        { prompt: "a prompt", seed: 1, steps: 4, model: "sd-turbo", width: 512, height: 512, created: "2026-07-17T10:00:00" },
+      ],
       historyView: "grouped",
       selectedModel: "sd-turbo",
       mfluxPath: "/path/to/mflux",
@@ -143,7 +145,15 @@ describe("Historie-Migration", () => {
   });
 
   it("behält eine gültige history und defaultet historyView auf recent", () => {
-    const entry = { prompt: "a", seed: 1, steps: 4, model: "sd-turbo", created: "2026-07-17T10:00:00" };
+    const entry = {
+      prompt: "a",
+      seed: 1,
+      steps: 4,
+      model: "sd-turbo",
+      width: 512,
+      height: 512,
+      created: "2026-07-17T10:00:00",
+    };
     const s = sanitizeSettings({ history: [entry] });
     expect(s.history).toEqual([entry]);
     expect(s.historyView).toBe("recent");
@@ -178,5 +188,12 @@ describe("sanitizeSettings 0.4 (multi-model)", () => {
     const s = sanitizeSettings({ mfluxPath: 42, modelsDir: null });
     expect(s.mfluxPath).toBe("");
     expect(s.modelsDir).toBe("");
+  });
+});
+
+describe("Historie-Migration 0.4 (width/height)", () => {
+  it("sanitizeHistory migriert Alt-Einträge ohne width/height auf 512", () => {
+    const s = sanitizeSettings({ history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", created: "x" }] });
+    expect(s.history[0]).toMatchObject({ width: 512, height: 512 });
   });
 });

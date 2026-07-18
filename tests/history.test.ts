@@ -3,7 +3,7 @@ import { HISTORY_LIMIT, historyLabel, pushHistory, groupByPrompt, deleteEntry } 
 import type { HistoryEntry } from "../src/core/settings";
 
 function e(prompt: string, seed: number, steps = 4, created = "2026-07-17T10:00:00"): HistoryEntry {
-  return { prompt, seed, steps, model: "sd-turbo", created };
+  return { prompt, seed, steps, model: "sd-turbo", width: 512, height: 512, created };
 }
 
 describe("pushHistory", () => {
@@ -85,6 +85,34 @@ describe("deleteEntry", () => {
     const list = [e("a", 1)];
     deleteEntry(list, e("a", 1));
     expect(list).toEqual([e("a", 1)]);
+  });
+});
+
+describe("recipes 0.4 (model + size im Schlüssel)", () => {
+  const base = {
+    prompt: "apple",
+    seed: 1,
+    steps: 4,
+    model: "sd-turbo",
+    width: 512,
+    height: 512,
+    created: "2026-07-18T10:00:00",
+  };
+  it("gleiches Rezept auf anderem Modell kollabiert NICHT", () => {
+    const list = pushHistory(pushHistory([], base), { ...base, model: "flux2-klein-4b", created: "2026-07-18T10:01:00" });
+    expect(list).toHaveLength(2);
+  });
+  it("gleiches Rezept in anderer Größe kollabiert NICHT", () => {
+    const list = pushHistory(pushHistory([], base), { ...base, width: 1024, height: 1024, created: "2026-07-18T10:01:00" });
+    expect(list).toHaveLength(2);
+  });
+  it("identisches Rezept (inkl. model+size) kollabiert weiterhin", () => {
+    const list = pushHistory(pushHistory([], base), { ...base, created: "2026-07-18T10:01:00" });
+    expect(list).toHaveLength(1);
+  });
+  it("deleteEntry matcht über model+size mit", () => {
+    const other = { ...base, model: "flux2-klein-4b" };
+    expect(deleteEntry([base, other], base)).toEqual([other]);
   });
 });
 
