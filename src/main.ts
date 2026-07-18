@@ -5,6 +5,7 @@
 // rendern die ersten t()-Aufrufe rohe Keys.
 import { getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
+import { raceTimeout } from "./core/timeout";
 import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
@@ -26,6 +27,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   modelStore = new ModelStore();
   private engine: SdTurboEngine | null = null;
   private settingTab!: LigSettingTab;
+  private engineLoadGeneration = 0;
   private state: PanelState = {
     gpu: "checking",
     model: { kind: "missing" },
@@ -99,6 +101,20 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.registerView(VIEW_TYPE, (leaf) => new GeneratorView(leaf, host));
     this.addRibbonIcon("image-plus", t("view.title"), () => void this.activateView());
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
+
+    // Fängt die verschluckte ORT-Init-Rejection ab, die den dokumentierten jsep/asyncify-
+    // Hänger (Fix 7673961) verursacht hat: ORTs eigene interne Promise rejected, ohne dass
+    // unser eigenes await in loadEngine()/ensureEngine() das je erreicht (Spec 2026-07-18-
+    // robustheits-block-design.md §2.4). Bewusst kein event.reason-Auswerten (fragil) —
+    // die Korrelation läuft rein über den State: nur während der Ladephase reagieren, um
+    // fremde Rejections (andere Plugins, Obsidian selbst) nicht fälschlich zu kapern.
+    // Kein preventDefault() — Standard-Konsolen-Logging bleibt erhalten.
+    this.registerDomEvent(window, "unhandledrejection", () => {
+      if (this.state.run.kind === "loading") {
+        this.state.run = { kind: "error", message: t("status.engineLoadFailed") };
+        this.refreshViews();
+      }
+    });
 
     void this.initStatus();
   }
@@ -184,8 +200,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.refreshViews();
   }
 
-  private async ensureEngine(): Promise<SdTurboEngine> {
-    if (this.engine) return this.engine;
+  // Die bisherige reine Ladelogik — unverändert, nur aus ensureEngine() extrahiert,
+  // damit raceTimeout() genau diese eine Promise umschließen kann.
+  private async loadEngine(): Promise<SdTurboEngine> {
     const [textEncoder, unet, vaeDecoder] = await Promise.all([
       this.modelStore.getBuffer("text_encoder").then(createOrtSession),
       this.modelStore.getBuffer("unet").then(createOrtSession),
@@ -195,20 +212,65 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const merges = (await this.modelStore.getText("merges"))
       .split("\n")
       .filter((l) => l.length > 0 && !l.startsWith("#"));
-    this.engine = new SdTurboEngine({ textEncoder, unet, vaeDecoder }, { vocab, merges });
-    return this.engine;
+    return new SdTurboEngine({ textEncoder, unet, vaeDecoder }, { vocab, merges });
+  }
+
+  // Watchdog + Ladephasen-Status um loadEngine() (Spec 2026-07-18-robustheits-block-
+  // design.md §2.4): ORT bietet kein AbortSignal für InferenceSession.create, ein
+  // Timeout kann den Aufruf also nicht wirklich abbrechen — nur der UI melden und die
+  // Promise im Hintergrund verwaisen lassen. Die Generation-ID erkennt genau das: löst
+  // ein verwaister alter Ladeversuch später doch noch auf, wird die Session sofort
+  // freigegeben statt geleakt (bekannter GPU-Leak-Bug aus 0.1).
+  private async ensureEngine(): Promise<SdTurboEngine> {
+    if (this.engine) return this.engine;
+    const myGeneration = ++this.engineLoadGeneration;
+    this.state.run = { kind: "loading", elapsedSec: 0 };
+    this.refreshViews();
+    const tick = window.setInterval(() => {
+      if (this.state.run.kind === "loading") {
+        this.state.run = { kind: "loading", elapsedSec: this.state.run.elapsedSec + 1 };
+        this.refreshViews();
+      }
+    }, 1000);
+    try {
+      const engine = await raceTimeout(this.loadEngine(), 5 * 60_000, "engine load timed out");
+      if (myGeneration !== this.engineLoadGeneration) {
+        // Ein neuerer Ladeversuch läuft bereits (Retry nach Timeout/unhandledrejection) —
+        // dieser hier ist verwaist. Sofort freigeben statt GPU-Speicher zu leaken.
+        void engine.dispose().catch(() => {});
+        throw new Error("stale engine load result");
+      }
+      this.engine = engine;
+      return engine;
+    } catch (e) {
+      if (myGeneration === this.engineLoadGeneration) {
+        this.state.run = { kind: "error", message: t("status.engineLoadFailed") };
+        this.refreshViews();
+      }
+      throw e;
+    } finally {
+      window.clearInterval(tick);
+    }
   }
 
   private async generate(steps: number, seed: number): Promise<void> {
-    if (this.state.run.kind === "running") return;
+    if (this.state.run.kind === "running" || this.state.run.kind === "loading") return;
     // Prompt HIER festhalten: zwischen Start und Ende kann der Nutzer weitertippen,
     // und die Ergebnis-Notiz muss das Bild beschreiben, das entstanden ist.
     const prompt = this.state.prompt;
+    let engine: SdTurboEngine;
+    try {
+      engine = await this.ensureEngine();
+    } catch {
+      // ensureEngine() hat state.run bereits auf status.engineLoadFailed gesetzt und
+      // selbst refreshViews() aufgerufen (Watchdog- oder Generation-Mismatch-Fall) —
+      // hier nichts weiter zu tun, der Generate-Button ist bereits wieder aktiv.
+      return;
+    }
     this.state.run = { kind: "running", step: 0, total: steps };
     this.refreshViews();
     let succeeded = false;
     try {
-      const engine = await this.ensureEngine();
       const result = await engine.generate({ prompt, steps, seed }, (step, total) => {
         this.state.run = { kind: "running", step, total };
         this.refreshViews();
