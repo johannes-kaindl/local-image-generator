@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MODEL_FILES } from "../src/core/model-manifest";
-import { ModelStore, type CacheLike } from "../src/obsidian/model-store";
+import { ModelStore, type CacheLike, type DownloadProgress } from "../src/obsidian/model-store";
 
 function fakeCache(): { cache: CacheLike; store: Map<string, Response> } {
   const store = new Map<string, Response>();
@@ -38,11 +38,29 @@ describe("ModelStore", () => {
     });
     // eine Datei vor-cachen
     store.set(MODEL_FILES[0]!.url, okResponse("cached", 6));
-    const pcts: number[] = [];
-    await s.download((p) => pcts.push(p));
+    const progress: DownloadProgress[] = [];
+    await s.download((p) => progress.push(p));
     expect(fetched.length).toBe(MODEL_FILES.length - 1);
-    expect(pcts[pcts.length - 1]).toBe(100);
+    const last = progress[progress.length - 1]!;
+    expect(last.overallPct).toBe(100);
+    expect(last.fileKey).toBe(MODEL_FILES[MODEL_FILES.length - 1]!.key);
+    expect(last.totalFiles).toBe(MODEL_FILES.length - 1);
     expect(await s.isComplete()).toBe(true);
+  });
+  it("meldet Datei-Index/Gesamtzahl/Bytes pro Chunk korrekt", async () => {
+    const { cache, store } = fakeCache();
+    const s = new ModelStore({
+      openCache: async () => cache,
+      fetchFn: async () => okResponse("x".repeat(10), 10),
+    });
+    store.set(MODEL_FILES[0]!.url, okResponse("cached", 6));
+    const progress: DownloadProgress[] = [];
+    await s.download((p) => progress.push(p));
+    const first = progress[0]!;
+    expect(first.fileIndex).toBe(1);
+    expect(first.totalFiles).toBe(MODEL_FILES.length - 1);
+    expect(first.receivedBytes).toBe(10);
+    expect(first.totalBytes).toBe(10);
   });
   it("Größen-Mismatch: Datei wird verworfen und Fehler geworfen (Spec §8)", async () => {
     const { cache, store } = fakeCache();

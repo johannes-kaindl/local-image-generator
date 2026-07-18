@@ -28,6 +28,17 @@ const realDeps: StoreDeps = {
   fetchFn: (url) => fetch(url),
 };
 
+/** Fortschritt eines download()-Aufrufs — Datei-Detail (Spec 2026-07-18-robustheits-
+ *  block-design.md §2.2) plus der bisherige Gesamt-%-Wert. */
+export interface DownloadProgress {
+  overallPct: number;
+  fileKey: ModelFileKey;
+  fileIndex: number;
+  totalFiles: number;
+  receivedBytes: number;
+  totalBytes: number;
+}
+
 export class ModelStore {
   constructor(private readonly deps: StoreDeps = realDeps) {}
 
@@ -42,16 +53,22 @@ export class ModelStore {
     return (await this.cachedKeys()).length === MODEL_FILES.length;
   }
 
-  async download(onProgress: (pct: number) => void): Promise<void> {
+  async download(onProgress: (p: DownloadProgress) => void): Promise<void> {
     const cache = await this.deps.openCache();
     const todo = missingFiles(await this.cachedKeys());
     const grandTotal = totalApproxBytes(todo);
+    const totalFiles = todo.length;
     let receivedTotal = 0;
+    let fileIndex = 0;
+    let lastFileTotalBytes = 0;
     for (const file of todo) {
+      fileIndex += 1;
       const res = await this.deps.fetchFn(file.url);
       if (!res.ok || !res.body) throw new Error(`download failed: HTTP ${res.status} for ${file.key}`);
       const contentLength = res.headers.get("content-length");
       const expected = contentLength === null ? null : Number(contentLength);
+      const totalBytes = expected ?? file.approxBytes;
+      lastFileTotalBytes = totalBytes;
       const [progressBranch, cacheBranch] = res.body.tee();
       const putDone = cache.put(file.url, new Response(cacheBranch, { headers: res.headers }));
       // Separater No-op-Catch: putDone läuft NEBEN der Leseschleife an; scheitert
@@ -73,7 +90,14 @@ export class ModelStore {
         if (done) break;
         received += value.byteLength;
         receivedTotal += value.byteLength;
-        onProgress(Math.min(99, Math.round((receivedTotal / grandTotal) * 100)));
+        onProgress({
+          overallPct: Math.min(99, Math.round((receivedTotal / grandTotal) * 100)),
+          fileKey: file.key,
+          fileIndex,
+          totalFiles,
+          receivedBytes: received,
+          totalBytes,
+        });
       }
       await putDone;
       if (!isDownloadComplete(received, expected)) {
@@ -81,7 +105,22 @@ export class ModelStore {
         throw new Error(`download incomplete for ${file.key} (${received}/${expected ?? "?"} bytes)`);
       }
     }
-    onProgress(100);
+    // Garantierter Abschluss-Callback bei genau 100%: die approxBytes-Schätzungen im
+    // Manifest können von echten content-length-Werten abweichen, receivedTotal/
+    // grandTotal würde daher nicht zuverlässig exakt 100 erreichen (Math.min-Deckel
+    // oben verhindert das sogar bewusst vor Abschluss). Nur wenn wirklich etwas
+    // geladen wurde (todo nicht leer) — sonst gibt es kein "letztes" File zu melden.
+    const lastFile = todo[todo.length - 1];
+    if (lastFile) {
+      onProgress({
+        overallPct: 100,
+        fileKey: lastFile.key,
+        fileIndex: totalFiles,
+        totalFiles,
+        receivedBytes: lastFileTotalBytes,
+        totalBytes: lastFileTotalBytes,
+      });
+    }
   }
 
   private fileFor(key: ModelFileKey): ModelFile {
