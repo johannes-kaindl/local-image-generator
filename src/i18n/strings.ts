@@ -33,6 +33,9 @@ export const EN: Record<string, string> = {
   "status.downloading": "Downloading model… {0}%",
   "status.generating": "Generating… step {0}/{1}",
   "status.error": "Error: {0}",
+  "status.loadingGpu": "Loading model into GPU… ({0})",
+  "status.engineLoadFailed":
+    "Loading the model into the GPU is taking unusually long or failed silently. Click Generate to try again.",
 
   "empty.noModel": "The model (~2.5 GB) is not downloaded yet.",
   "empty.noModelCta": "Download model (~2.5 GB)",
@@ -120,6 +123,9 @@ export const DE: Record<string, string> = {
   "status.downloading": "Modell wird heruntergeladen… {0}%",
   "status.generating": "Generiert… Schritt {0}/{1}",
   "status.error": "Fehler: {0}",
+  "status.loadingGpu": "Lädt Modell auf GPU… ({0})",
+  "status.engineLoadFailed":
+    "Das Laden des Modells auf die GPU dauert ungewöhnlich lange oder ist lautlos fehlgeschlagen. Klicke auf Generieren, um es erneut zu versuchen.",
 
   "empty.noModel": "Das Modell (~2,5 GB) wurde noch nicht heruntergeladen.",
   "empty.noModelCta": "Modell herunterladen (~2,5 GB)",
