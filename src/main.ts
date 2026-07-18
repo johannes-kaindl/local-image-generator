@@ -232,8 +232,22 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         this.refreshViews();
       }
     }, 1000);
+    const loadPromise = this.loadEngine();
+    // Unabhängig vom Watchdog weiter beobachtet: feuert raceTimeout() zuerst, läuft
+    // loadPromise im Hintergrund weiter (ORT kennt kein AbortSignal). Löst sie später
+    // doch noch erfolgreich auf, muss sie trotzdem freigegeben werden — sonst leakt
+    // genau der GPU-Speicher, den die Generation-ID eigentlich verhindern soll. Eine
+    // spätere Ablehnung wird hier bewusst geschluckt (kein zweiter unhandledrejection-
+    // Kanal) — Fehler-Reporting für den aktuellen Ladeversuch läuft bereits über den
+    // catch-Zweig unten bzw. den unhandledrejection-Listener.
+    loadPromise.then(
+      (engine) => {
+        if (myGeneration !== this.engineLoadGeneration) void engine.dispose().catch(() => {});
+      },
+      () => {},
+    );
     try {
-      const engine = await raceTimeout(this.loadEngine(), 5 * 60_000, "engine load timed out");
+      const engine = await raceTimeout(loadPromise, 5 * 60_000, "engine load timed out");
       if (myGeneration !== this.engineLoadGeneration) {
         // Ein neuerer Ladeversuch läuft bereits (Retry nach Timeout/unhandledrejection) —
         // dieser hier ist verwaist. Sofort freigeben statt GPU-Speicher zu leaken.
