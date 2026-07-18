@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
-import { buildViewModel, formatBytes, formatElapsed, type PanelState } from "../src/core/viewmodel";
+import { buildViewModel, formatBytes, formatElapsed, type MfluxPanelState, type PanelState } from "../src/core/viewmodel";
 
 beforeEach(() => {
   registerI18n();
   setLang("en");
 });
+
+const MFLUX_OK: MfluxPanelState = { binary: "/x/mflux-generate-flux2", weights: "ready", download: null };
 
 const base: PanelState = {
   gpu: "ok",
@@ -15,7 +17,23 @@ const base: PanelState = {
   image: null,
   editorActive: true,
   prompt: "a cat",
+  selectedModel: "sd-turbo",
+  mflux: MFLUX_OK,
 };
+
+function fluxState(over: Partial<PanelState> = {}): PanelState {
+  return {
+    gpu: "no-webgpu", // absichtlich kaputt: darf FLUX nicht blocken
+    model: { kind: "missing" }, // SD-Turbo-Gewichte fehlen: darf FLUX nicht blocken
+    run: { kind: "idle" },
+    image: null,
+    editorActive: false,
+    prompt: "an apple",
+    selectedModel: "flux2-klein-4b",
+    mflux: MFLUX_OK,
+    ...over,
+  };
+}
 
 describe("buildViewModel", () => {
   it("bereit: Generate enabled, Empty-State 'kein Bild', Status ok", () => {
@@ -88,6 +106,30 @@ describe("buildViewModel", () => {
     const vm = buildViewModel({ ...base, run: { kind: "error", message: "boom" } });
     expect(vm.status.cls).toBe("is-error");
     expect(vm.status.text).toContain("boom");
+  });
+});
+
+describe("buildViewModel — mflux (FLUX.2)", () => {
+  it("FLUX generierbar trotz fehlendem WebGPU und fehlenden SD-Turbo-Gewichten", () => {
+    expect(buildViewModel(fluxState()).generateEnabled).toBe(true);
+  });
+  it("FLUX ohne Binary → Setup-Empty mit CTA, generate disabled", () => {
+    const vm = buildViewModel(fluxState({ mflux: { ...MFLUX_OK, binary: null } }));
+    expect(vm.generateEnabled).toBe(false);
+    expect(vm.empty?.ctaLabel).toBeDefined();
+  });
+  it("FLUX ohne Gewichte → Empty mit CTA, kein Auto-Download", () => {
+    const vm = buildViewModel(fluxState({ mflux: { ...MFLUX_OK, weights: "missing" } }));
+    expect(vm.generateEnabled).toBe(false);
+    expect(vm.empty?.ctaLabel).toBeDefined();
+  });
+  it("mflux-Download blockt Generate und zeigt Prozent-Status", () => {
+    const vm = buildViewModel(fluxState({ mflux: { ...MFLUX_OK, weights: "downloading", download: { file: "x", pct: 40 } } }));
+    expect(vm.generateEnabled).toBe(false);
+    expect(vm.status.text).toContain("40");
+  });
+  it("sd-turbo-Verhalten unverändert: no-webgpu blockt", () => {
+    expect(buildViewModel(fluxState({ selectedModel: "sd-turbo" })).generateEnabled).toBe(false);
   });
 });
 

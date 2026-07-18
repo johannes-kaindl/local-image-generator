@@ -1,7 +1,7 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
-import type { ModelFileKey } from "./model-manifest";
+import { getModel } from "./models";
 
 export type GpuState = "checking" | "ok" | "no-webgpu" | "no-f16";
 export type ModelState =
@@ -9,7 +9,7 @@ export type ModelState =
   | {
       kind: "downloading";
       overallPct: number;
-      fileKey: ModelFileKey;
+      fileKey: string;
       fileIndex: number;
       totalFiles: number;
       receivedBytes: number;
@@ -36,6 +36,16 @@ export interface GenParams {
   date: string;
 }
 
+/** Setup-/Download-Zustand von mflux (Spec §5/§6): unabhängig von GpuState/ModelState,
+ *  weil FLUX.2 nicht über WebGPU/ORT läuft, sondern über den lokalen mflux-Kindprozess. */
+export interface MfluxPanelState {
+  /** Pfad zum gefundenen mflux-Binary, oder null = nicht gefunden. */
+  binary: string | null;
+  weights: "missing" | "downloading" | "ready";
+  /** Nur während weights === "downloading" gesetzt. */
+  download: { file: string; pct: number } | null;
+}
+
 export interface PanelState {
   gpu: GpuState;
   model: ModelState;
@@ -43,6 +53,10 @@ export interface PanelState {
   image: { dataUrl: string; params: GenParams } | null;
   editorActive: boolean;
   prompt: string;
+  /** ID aus dem Modell-Katalog (Spec §3) — bestimmt, ob buildViewModel den ORT- oder
+   *  den mflux-Zweig baut. */
+  selectedModel: string;
+  mflux: MfluxPanelState;
 }
 
 export interface PanelViewModel {
@@ -68,7 +82,14 @@ export function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1e6)} MB`;
 }
 
+/** WEICHE (Spec §5/§7): FLUX.2 läuft über mflux statt ORT/WebGPU — braucht daher einen
+ *  eigenen ViewModel-Zweig, der GPU-Zustand ignoriert und stattdessen MfluxPanelState liest. */
 export function buildViewModel(s: PanelState): PanelViewModel {
+  const spec = getModel(s.selectedModel);
+  return spec.engine === "mflux" ? buildMfluxViewModel(s) : buildOrtViewModel(s);
+}
+
+function buildOrtViewModel(s: PanelState): PanelViewModel {
   const gpuBlocked = s.gpu === "no-webgpu" || s.gpu === "no-f16";
   const busy =
     s.run.kind === "running" ||
@@ -98,6 +119,35 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     status,
     empty,
     generateEnabled: !gpuBlocked && !busy && s.model.kind === "ready" && s.prompt.trim().length > 0,
+    insertEnabled: s.image !== null && s.editorActive && !busy,
+    showImage: s.image !== null,
+  };
+}
+
+function buildMfluxViewModel(s: PanelState): PanelViewModel {
+  const m = s.mflux;
+  const busy = s.run.kind === "running" || s.run.kind === "loading" || m.weights === "downloading";
+
+  let status: PanelViewModel["status"];
+  if (s.run.kind === "error") status = { icon: "circle-x", text: t("status.error", s.run.message), cls: "is-error" };
+  else if (m.weights === "downloading")
+    status = { icon: "loader", text: t("status.downloading", m.download?.pct ?? 0), cls: "is-checking" };
+  else if (s.run.kind === "loading")
+    status = { icon: "loader", text: t("status.loadingMflux", formatElapsed(s.run.elapsedSec)), cls: "is-checking" };
+  else if (s.run.kind === "running")
+    status = { icon: "loader", text: t("status.generating", s.run.step, s.run.total), cls: "is-checking" };
+  else if (m.binary === null) status = { icon: "circle-x", text: t("status.mfluxMissing"), cls: "is-error" };
+  else status = { icon: "circle-check", text: t("status.ready"), cls: "is-ok" };
+
+  let empty: PanelViewModel["empty"] = null;
+  if (m.binary === null) empty = { text: t("empty.fluxNeedsMflux"), ctaLabel: t("empty.fluxNeedsMfluxCta") };
+  else if (m.weights === "missing") empty = { text: t("empty.fluxNoModel"), ctaLabel: t("empty.fluxNoModelCta") };
+  else if (!s.image && s.run.kind !== "running" && s.run.kind !== "loading") empty = { text: t("empty.noImage") };
+
+  return {
+    status,
+    empty,
+    generateEnabled: !busy && m.binary !== null && m.weights === "ready" && s.prompt.trim().length > 0,
     insertEnabled: s.image !== null && s.editorActive && !busy,
     showImage: s.image !== null,
   };

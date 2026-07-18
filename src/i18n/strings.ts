@@ -36,10 +36,16 @@ export const EN: Record<string, string> = {
   "status.loadingGpu": "Loading model into GPU… ({0})",
   "status.engineLoadFailed":
     "Loading the model into the GPU is taking unusually long or failed silently. Click Generate to try again.",
+  "status.loadingMflux": "Loading FLUX model… ({0})",
+  "status.mfluxMissing": "mflux is not set up yet",
 
   "empty.noModel": "The model (~2.5 GB) is not downloaded yet.",
   "empty.noModelCta": "Download model (~2.5 GB)",
   "empty.noImage": "Enter a prompt and press Generate.",
+  "empty.fluxNeedsMflux": "FLUX.2 runs via the local mflux tool, which is not installed or not found.",
+  "empty.fluxNeedsMfluxCta": "Open setup",
+  "empty.fluxNoModel": "The FLUX.2 weights (~8 GB) are not downloaded yet.",
+  "empty.fluxNoModelCta": "Open settings",
 
   "notice.saveFailed": "Save failed: {0}",
   "notice.oomHint":
@@ -126,10 +132,16 @@ export const DE: Record<string, string> = {
   "status.loadingGpu": "Lädt Modell auf GPU… ({0})",
   "status.engineLoadFailed":
     "Das Laden des Modells auf die GPU dauert ungewöhnlich lange oder ist lautlos fehlgeschlagen. Klicke auf Generieren, um es erneut zu versuchen.",
+  "status.loadingMflux": "Lade FLUX-Modell… ({0})",
+  "status.mfluxMissing": "mflux ist noch nicht eingerichtet",
 
   "empty.noModel": "Das Modell (~2,5 GB) wurde noch nicht heruntergeladen.",
   "empty.noModelCta": "Modell herunterladen (~2,5 GB)",
   "empty.noImage": "Prompt eingeben und auf Generieren klicken.",
+  "empty.fluxNeedsMflux": "FLUX.2 läuft über das lokale Tool mflux, das nicht installiert oder nicht auffindbar ist.",
+  "empty.fluxNeedsMfluxCta": "Einrichtung öffnen",
+  "empty.fluxNoModel": "Die FLUX.2-Gewichte (~8 GB) sind noch nicht heruntergeladen.",
+  "empty.fluxNoModelCta": "Einstellungen öffnen",
 
   "notice.saveFailed": "Speichern fehlgeschlagen: {0}",
   "notice.oomHint":

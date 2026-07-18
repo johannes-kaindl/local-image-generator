@@ -10,6 +10,7 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp 
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { MODEL_FILES, MODEL_ID } from "./core/model-manifest";
+import { DEFAULT_MODEL_ID } from "./core/models";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import type { GenParams, PanelState } from "./core/viewmodel";
@@ -35,6 +36,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     image: null,
     editorActive: false,
     prompt: "",
+    // Platzhalter für die mflux-Modellwahl (Spec 2026-07-18-multi-modell-flux2 §5/§7):
+    // Task 10 (Engine-Router) verdrahtet selectedModel aus den Settings und mflux aus der
+    // echten Erkennung (detectMflux/fluxWeightsReady, Task 6). Bis dahin bleibt sd-turbo
+    // aktiv (Default), der mflux-Zweig des ViewModels ist ungenutzt.
+    selectedModel: DEFAULT_MODEL_ID,
+    mflux: { binary: null, weights: "missing", download: null },
   };
 
   async onload(): Promise<void> {
