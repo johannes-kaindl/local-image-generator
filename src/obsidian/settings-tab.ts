@@ -11,6 +11,7 @@ import type LocalImageGeneratorPlugin from "../main";
 
 export class LigSettingTab extends PluginSettingTab {
   private modelSectionEl: HTMLElement | null = null;
+  private fluxSectionEl: HTMLElement | null = null;
 
   constructor(
     app: App,
@@ -39,6 +40,14 @@ export class LigSettingTab extends PluginSettingTab {
       storage: this.storage,
     });
     this.renderModel(this.modelSectionEl);
+
+    this.fluxSectionEl = collapsibleSection(containerEl, {
+      title: "FLUX.2 klein 4B (mflux)", // Eigenname + Toolname — unübersetzt
+      key: "mflux",
+      defaultCollapsed: false,
+      storage: this.storage,
+    });
+    this.renderFlux(this.fluxSectionEl);
 
     this.renderOutput(collapsibleSection(containerEl, {
       title: t("settings.output.heading"),
@@ -81,9 +90,15 @@ export class LigSettingTab extends PluginSettingTab {
    *  block-design.md §2.2). */
   refreshModel(): void {
     const el = this.modelSectionEl;
-    if (!el || !el.isConnected) return;
-    el.empty();
-    this.renderModel(el);
+    if (el?.isConnected) {
+      el.empty();
+      this.renderModel(el);
+    }
+    const fx = this.fluxSectionEl;
+    if (fx?.isConnected) {
+      fx.empty();
+      this.renderFlux(fx);
+    }
   }
 
   private renderModel(el: HTMLElement): void {
@@ -115,6 +130,67 @@ export class LigSettingTab extends PluginSettingTab {
           try {
             await this.plugin.downloadModel();
             new Notice(t("notice.modelDownloaded"));
+          } catch (e) {
+            new Notice(String(e instanceof Error ? e.message : e));
+          }
+        }),
+    );
+  }
+
+  private renderFlux(el: HTMLElement): void {
+    const mflux = this.plugin.getState().mflux;
+
+    // 1) Binary-Status + Pfad-Feld
+    const status = new Setting(el).setName(t("settings.mflux.binary"));
+    status.setDesc(
+      mflux.binary !== null ? t("settings.mflux.found", mflux.binary) : t("settings.mflux.notFound"),
+    );
+    status.addText((tf) => {
+      tf.setPlaceholder(t("settings.mflux.binaryPlaceholder"))
+        .setValue(this.plugin.settings.mfluxPath)
+        .onChange(async (v) => {
+          this.plugin.settings.mfluxPath = v.trim();
+          await this.plugin.saveSettings();
+          this.plugin.refreshMfluxStatus(); // re-detect → refreshViews → refreshModel
+        });
+    });
+
+    // 2) Speicherort (Systempfad — bewusst KEIN FolderSuggest, der kennt nur Vault-Ordner)
+    new Setting(el)
+      .setName(t("settings.mflux.modelsDir"))
+      .setDesc(t("settings.mflux.modelsDirDesc"))
+      .addText((tf) => {
+        tf.setPlaceholder("~/.cache/huggingface")
+          .setValue(this.plugin.settings.modelsDir)
+          .onChange(async (v) => {
+            this.plugin.settings.modelsDir = v.trim();
+            await this.plugin.saveSettings();
+            this.plugin.refreshMfluxStatus(); // Gewichte-Check gegen neuen Ort
+          });
+      });
+
+    // 3) Gewichte: ready → Häkchen · downloading → Prozent + Detail · missing → Download-Button
+    const weights = new Setting(el).setName(t("settings.mflux.weights")).setDesc(t("settings.mflux.weightsDesc"));
+    if (mflux.weights === "ready") {
+      weights.addExtraButton((b) => b.setIcon("circle-check").setTooltip(t("settings.model.downloadedTooltip")));
+      return;
+    }
+    if (mflux.weights === "downloading") {
+      weights.addButton((b) => b.setButtonText(`${mflux.download?.pct ?? 0}%`).setDisabled(true));
+      el.createEl("p", {
+        text: `${mflux.download?.file ?? "…"} — ${mflux.download?.pct ?? 0}%`,
+        cls: "setting-item-description",
+      });
+      return;
+    }
+    weights.addButton((b) =>
+      b.setButtonText(t("settings.mflux.download"))
+        .setCta()
+        .setDisabled(mflux.binary === null) // ohne Binary kein Vorbereitungslauf
+        .onClick(async () => {
+          try {
+            await this.plugin.downloadFluxModel();
+            new Notice(t("notice.fluxDownloaded"));
           } catch (e) {
             new Notice(String(e instanceof Error ? e.message : e));
           }

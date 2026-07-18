@@ -65,6 +65,20 @@ export const EN: Record<string, string> = {
   "settings.model.deleteConfirm":
     "Delete the downloaded model files (~2.5 GB)? You can download them again anytime.",
 
+  "settings.mflux.binary": "mflux runtime",
+  "settings.mflux.found": "Found: {0}",
+  "settings.mflux.notFound":
+    "Not found. Install with `uv tool install mflux`, then reopen this tab — or enter the path to mflux-generate-flux2 below.",
+  "settings.mflux.binaryPlaceholder": "Path to mflux-generate-flux2 (optional)",
+  "settings.mflux.modelsDir": "Model storage location",
+  "settings.mflux.modelsDirDesc":
+    "Uses the shared Hugging Face cache — models already downloaded via Hugging Face are reused. ComfyUI checkpoints are a different format and cannot be linked. Empty = default (~/.cache/huggingface). Weights: ~8 GB.",
+  "settings.mflux.weights": "FLUX.2 weights",
+  "settings.mflux.weightsDesc": "Downloaded on first use or explicitly here (~8 GB, from Hugging Face).",
+  "settings.mflux.download": "Download (~8 GB)",
+
+  "notice.fluxDownloaded": "FLUX.2 weights downloaded",
+
   "settings.output.heading": "Output",
   "settings.output.folder": "Image folder",
   "settings.output.folderDesc":
@@ -162,6 +176,20 @@ export const DE: Record<string, string> = {
   "settings.model.delete": "Modell löschen",
   "settings.model.deleteConfirm":
     "Heruntergeladene Modelldateien löschen (~2,5 GB)? Du kannst sie jederzeit erneut herunterladen.",
+
+  "settings.mflux.binary": "mflux-Runtime",
+  "settings.mflux.found": "Gefunden: {0}",
+  "settings.mflux.notFound":
+    "Nicht gefunden. Mit `uv tool install mflux` installieren und diesen Tab neu öffnen — oder unten den Pfad zu mflux-generate-flux2 eintragen.",
+  "settings.mflux.binaryPlaceholder": "Pfad zu mflux-generate-flux2 (optional)",
+  "settings.mflux.modelsDir": "Modell-Speicherort",
+  "settings.mflux.modelsDirDesc":
+    "Nutzt den geteilten Hugging-Face-Cache — bereits via Hugging Face geladene Modelle werden wiederverwendet. ComfyUI-Checkpoints sind ein anderes Format und können nicht eingebunden werden. Leer = Standard (~/.cache/huggingface). Gewichte: ~8 GB.",
+  "settings.mflux.weights": "FLUX.2-Gewichte",
+  "settings.mflux.weightsDesc": "Werden beim expliziten Download hier geladen (~8 GB, von Hugging Face).",
+  "settings.mflux.download": "Herunterladen (~8 GB)",
+
+  "notice.fluxDownloaded": "FLUX.2-Gewichte heruntergeladen",
 
   "settings.output.heading": "Ausgabe",
   "settings.output.folder": "Bilderordner",
