@@ -154,7 +154,7 @@ export class LigSettingTab extends PluginSettingTab {
           // Re-Detect NICHT hier (würde die Section pro Tastendruck neu rendern und
           // den Fokus killen) — läuft stattdessen einmalig beim Verlassen des Felds.
         });
-      this.plugin.registerDomEvent(tf.inputEl, "blur", () => {
+      tf.inputEl.addEventListener("blur", () => {
         this.plugin.refreshMfluxStatus(); // re-detect → refreshViews → refreshModel
       });
     });
@@ -172,7 +172,7 @@ export class LigSettingTab extends PluginSettingTab {
             // Re-Detect NICHT hier (würde die Section pro Tastendruck neu rendern und
             // den Fokus killen) — läuft stattdessen einmalig beim Verlassen des Felds.
           });
-        this.plugin.registerDomEvent(tf.inputEl, "blur", () => {
+        tf.inputEl.addEventListener("blur", () => {
           this.plugin.refreshMfluxStatus(); // Gewichte-Check gegen neuen Ort
         });
       });
