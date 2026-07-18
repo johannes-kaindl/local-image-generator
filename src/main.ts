@@ -62,7 +62,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       setPrompt: (p) => {
         this.state.prompt = p;
       },
-      generate: (steps, seed) => void this.generate(steps, seed),
+      generate: (steps, seed, width, height) => void this.generate(steps, seed, width, height),
+      setSelectedModel: (id) => {
+        this.settings.selectedModel = id;
+        void this.saveSettings();
+        this.refreshViews();
+      },
       saveImage: (mode) => void this.saveImage(mode),
       openSettings: () => {
         const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
@@ -75,7 +80,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
           const view = leaf.view;
           if (view instanceof GeneratorView) {
-            view.applyRecipe(entry.prompt, entry.seed, entry.steps);
+            view.applyRecipe(entry);
             view.showTab("generate");
           }
         }
@@ -276,7 +281,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
-  private async generate(steps: number, seed: number): Promise<void> {
+  private async generate(steps: number, seed: number, width: number, height: number): Promise<void> {
     if (this.state.run.kind === "running" || this.state.run.kind === "loading") return;
     // Prompt HIER festhalten: zwischen Start und Ende kann der Nutzer weitertippen,
     // und die Ergebnis-Notiz muss das Bild beschreiben, das entstanden ist.
@@ -305,10 +310,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
           seed: result.seed,
           steps,
           model: MODEL_ID,
-          // TEMPORÄRE BRÜCKE (Task 3/12): hart auf SD-Turbo-512 gesetzt, bis Task 10 die
-          // echten Größen aus dem Multi-Modell-Request durchreicht (Spec §8).
-          width: 512,
-          height: 512,
+          // Für sd-turbo liefert das Generate-Panel ohnehin nur die eine Katalog-Größe
+          // (512×512, Task 1) — width/height kommen jetzt echt aus dem Aufruf statt aus
+          // einem Hardcode. Task 10 routet zusätzlich auf die mflux-Engine.
+          width,
+          height,
           date: isoStamp(new Date()),
         },
       };
