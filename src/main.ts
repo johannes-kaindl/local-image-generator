@@ -233,19 +233,6 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       }
     }, 1000);
     const loadPromise = this.loadEngine();
-    // Unabhängig vom Watchdog weiter beobachtet: feuert raceTimeout() zuerst, läuft
-    // loadPromise im Hintergrund weiter (ORT kennt kein AbortSignal). Löst sie später
-    // doch noch erfolgreich auf, muss sie trotzdem freigegeben werden — sonst leakt
-    // genau der GPU-Speicher, den die Generation-ID eigentlich verhindern soll. Eine
-    // spätere Ablehnung wird hier bewusst geschluckt (kein zweiter unhandledrejection-
-    // Kanal) — Fehler-Reporting für den aktuellen Ladeversuch läuft bereits über den
-    // catch-Zweig unten bzw. den unhandledrejection-Listener.
-    loadPromise.then(
-      (engine) => {
-        if (myGeneration !== this.engineLoadGeneration) void engine.dispose().catch(() => {});
-      },
-      () => {},
-    );
     try {
       const engine = await raceTimeout(loadPromise, 5 * 60_000, "engine load timed out");
       if (myGeneration !== this.engineLoadGeneration) {
@@ -261,6 +248,21 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         this.state.run = { kind: "error", message: t("status.engineLoadFailed") };
         this.refreshViews();
       }
+      // Ab HIER steht endgültig fest, dass dieser Aufruf loadPromise nicht adoptiert —
+      // egal ob raceTimeout() selbst das Timeout-Fehler geworfen hat, loadEngine() direkt
+      // abgelehnt wurde, oder der "stale"-Zweig oben schon synchron disposed hat (dann ist
+      // dieser zweite dispose()-Aufruf ein harmloser No-op, SdTurboEngine.dispose() ist
+      // idempotent). ORT kennt kein AbortSignal — läuft loadPromise nach einem Watchdog-
+      // Timeout im Hintergrund weiter und löst SPÄTER doch noch auf (der Normalfall: das
+      // Laden war nur langsam, kein echter Hänger), wird sie hier trotzdem freigegeben,
+      // unabhängig davon, ob inzwischen ein Retry die Generation-ID weitergezählt hat.
+      // Vor diesem Punkt (eager, direkt nach dem Erzeugen von loadPromise) anzuhängen
+      // würde den GLÜCKSFALL fälschlich disposen: der Handler würde vor der
+      // this.engine-Zuweisung oben feuern (Promise.race abonniert loadPromise ebenfalls,
+      // aber "await raceTimeout(...)" resumt erst einen Microtask-Hop später als direkte
+      // loadPromise-Subscriber) und die gerade erfolgreich geladene Engine zerstören,
+      // bevor sie adoptiert wird.
+      loadPromise.then((lateEngine) => void lateEngine.dispose().catch(() => {})).catch(() => {});
       throw e;
     } finally {
       window.clearInterval(tick);
