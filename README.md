@@ -125,8 +125,8 @@ no plugin code is loaded from the network at runtime.
 - **No telemetry.** The plugin does not collect, transmit, or phone home any
   usage data, prompts, or images.
 - **No network access** other than the one-time, user-initiated model
-  download described above. Once the model is downloaded, generation runs
-  entirely on your GPU, offline.
+  downloads described above. Once a model is downloaded, generation runs
+  entirely on your device, offline.
 
 ## Model & licenses
 
