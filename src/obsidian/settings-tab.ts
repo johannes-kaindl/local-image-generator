@@ -151,8 +151,12 @@ export class LigSettingTab extends PluginSettingTab {
         .onChange(async (v) => {
           this.plugin.settings.mfluxPath = v.trim();
           await this.plugin.saveSettings();
-          this.plugin.refreshMfluxStatus(); // re-detect → refreshViews → refreshModel
+          // Re-Detect NICHT hier (würde die Section pro Tastendruck neu rendern und
+          // den Fokus killen) — läuft stattdessen einmalig beim Verlassen des Felds.
         });
+      this.plugin.registerDomEvent(tf.inputEl, "blur", () => {
+        this.plugin.refreshMfluxStatus(); // re-detect → refreshViews → refreshModel
+      });
     });
 
     // 2) Speicherort (Systempfad — bewusst KEIN FolderSuggest, der kennt nur Vault-Ordner)
@@ -165,8 +169,12 @@ export class LigSettingTab extends PluginSettingTab {
           .onChange(async (v) => {
             this.plugin.settings.modelsDir = v.trim();
             await this.plugin.saveSettings();
-            this.plugin.refreshMfluxStatus(); // Gewichte-Check gegen neuen Ort
+            // Re-Detect NICHT hier (würde die Section pro Tastendruck neu rendern und
+            // den Fokus killen) — läuft stattdessen einmalig beim Verlassen des Felds.
           });
+        this.plugin.registerDomEvent(tf.inputEl, "blur", () => {
+          this.plugin.refreshMfluxStatus(); // Gewichte-Check gegen neuen Ort
+        });
       });
 
     // 3) Gewichte: ready → Häkchen · downloading → Prozent + Detail · missing → Download-Button
