@@ -1,6 +1,8 @@
 // Plugin-Settings — pure (Spec §5.1). Leerer outputFolder = Obsidians Attachment-Logik,
 // leerer noteFolder = Notiz landet neben dem Bild.
 
+import { DEFAULT_MODEL_ID, MODELS } from "./models";
+
 /** Ein Stil-Baustein, der per Chip an den Prompt gehängt wird. */
 export interface StylePreset {
   /** Stabil über Umbenennungen hinweg — identifiziert die Zeile im Editor. */
@@ -33,6 +35,12 @@ export interface LigSettings {
   history: HistoryEntry[];
   /** Ansicht des Historie-Tabs. */
   historyView: "recent" | "grouped";
+  /** Zuletzt gewähltes Modell (Generate-Tab-Dropdown, Spec §5). */
+  selectedModel: string;
+  /** Pfad zum mflux-generate-flux2-Binary; "" = Auto-Detect (Spec §6). */
+  mfluxPath: string;
+  /** HF_HOME für den Kindprozess; "" = HF-Standard-Cache (Spec §6). */
+  modelsDir: string;
   /** Auf-/Zu-Zustand der Settings-Sektionen, Key → collapsed. */
   sectionsCollapsed: Record<string, boolean>;
 }
@@ -52,6 +60,9 @@ export const DEFAULT_SETTINGS: LigSettings = {
   presets: DEFAULT_PRESETS,
   history: [],
   historyView: "recent",
+  selectedModel: DEFAULT_MODEL_ID,
+  mfluxPath: "",
+  modelsDir: "",
   sectionsCollapsed: {},
 };
 
@@ -100,6 +111,10 @@ function sanitizeFolder(raw: unknown): string {
   return typeof raw === "string" ? raw : "";
 }
 
+function sanitizeSelectedModel(raw: unknown): string {
+  return typeof raw === "string" && MODELS.some((m) => m.id === raw) ? raw : DEFAULT_MODEL_ID;
+}
+
 /** Bereinigt einen geladenen Settings-Stand (Spec §8): handeditierte oder korrupte
  *  `data.json` darf nicht in vier verschiedenen Renderstellen (Chips, Preset-Editor,
  *  Collapsible-Storage, Historie-Push) auf falsche Formannahmen treffen. Fällt Feld für
@@ -117,6 +132,9 @@ export function sanitizeSettings(raw: unknown): LigSettings {
     presets: sanitizePresets(s.presets),
     history: sanitizeHistory(s.history),
     historyView: sanitizeHistoryView(s.historyView),
+    selectedModel: sanitizeSelectedModel(s.selectedModel),
+    mfluxPath: sanitizeFolder(s.mfluxPath),
+    modelsDir: sanitizeFolder(s.modelsDir),
     sectionsCollapsed: sanitizeSectionsCollapsed(s.sectionsCollapsed),
   };
 }
