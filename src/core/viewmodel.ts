@@ -90,7 +90,7 @@ export function buildViewModel(s: PanelState): PanelViewModel {
   let empty: PanelViewModel["empty"] = null;
   if (gpuBlocked) empty = { text: s.gpu === "no-webgpu" ? t("status.noWebgpu") : t("status.noF16") };
   else if (s.model.kind === "missing") empty = { text: t("empty.noModel"), ctaLabel: t("empty.noModelCta") };
-  else if (!s.image && s.run.kind !== "running") empty = { text: t("empty.noImage") };
+  else if (!s.image && s.run.kind !== "running" && s.run.kind !== "loading") empty = { text: t("empty.noImage") };
 
   return {
     status,

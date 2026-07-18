@@ -60,6 +60,10 @@ describe("buildViewModel", () => {
     expect(vm.status.text).toContain("1:05");
     expect(vm.generateEnabled).toBe(false);
   });
+  it("GPU-Laden läuft ohne Bild: kein widersprüchlicher Empty-State", () => {
+    const vm = buildViewModel({ ...base, image: null, run: { kind: "loading", elapsedSec: 5 } });
+    expect(vm.empty).toBeNull();
+  });
   it("Generierung läuft: Step-Anzeige, Generate disabled (Lock)", () => {
     const vm = buildViewModel({ ...base, run: { kind: "running", step: 2, total: 4 } });
     expect(vm.status.text).toContain("2/4");
