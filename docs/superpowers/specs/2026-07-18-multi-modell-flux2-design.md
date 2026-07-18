@@ -132,12 +132,13 @@ Pure-Bausteine (Node-testbar, `src/core/`):
   Kandidatenliste (`~/.local/bin/mflux-generate`, `/opt/homebrew/bin/…`,
   `/usr/local/bin/…` — Electron erbt den Shell-PATH nicht), darunter manuelles
   Pfad-Feld (überschreibt Auto-Detect). Statuszeile:
-  „mflux gefunden: <Pfad> · Version X" / „nicht gefunden" + Kurzanleitung
-  (`uv tool install mflux`).
+  „mflux gefunden: <Pfad>" / „nicht gefunden" + Kurzanleitung (`uv tool install mflux`).
+  (Keine Versionsanzeige — mflux exponiert keine; 2026-07-18 verifiziert.)
 - **Modell-Speicherort** (Setting `modelsDir: string`, leer = HF-Standard): Textfeld,
   Systempfad (kein Vault-FolderSuggest). Leer =
-  HF-Standard-Cache (`~/.cache/huggingface`). Validierung: existiert nicht → wird beim
-  Download angelegt; nicht beschreibbar → Fehlermeldung im Feld. Hinweistext:
+  HF-Standard-Cache (`~/.cache/huggingface`). Ein nicht existierendes Verzeichnis legt
+  huggingface_hub beim Download selbst an; ist es nicht beschreibbar, erscheint der
+  Fehler beim Download (Notice) — keine eigene Feld-Validierung. Hinweistext:
   geteilter HF-Cache (bereits via HuggingFace geladene Modelle werden wiederverwendet),
   ComfyUI-Checkpoints sind ein anderes Format und nicht einbindbar.
 - **Gewichte-Download (Opt-in, ~8 GB):** Button „Modell herunterladen" startet einen
