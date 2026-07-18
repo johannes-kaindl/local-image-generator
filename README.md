@@ -30,6 +30,9 @@ just one curated model (SD-Turbo) for fast local text-to-image generation.
 Output resolution is fixed at **512×512**: SD-Turbo is distilled for exactly
 that resolution and 1–4 steps, so there's no slider for it.
 
+The interface is available in English and German, switching automatically to
+match Obsidian's own language setting — no separate language option to set.
+
 ## Requirements
 
 - **Obsidian desktop only** (`isDesktopOnly: true` — this plugin does not run
