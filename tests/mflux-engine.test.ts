@@ -55,6 +55,23 @@ describe("MfluxEngine", () => {
     expect(engine.busy).toBe(false);
   });
 
+  it("Watchdog re-armt nach Settlement nicht mehr (gepufferte Pipe-Daten nach Kill)", async () => {
+    const child = new FakeChild();
+    const { engine } = makeEngine(child);
+    const p = engine.run("/bin/mflux", SPEC, REQ, "", { onDownload: () => {}, onStep: () => {} });
+    const guard = p.catch((e: Error) => e); // Rejection sofort beobachten (kein unhandled)
+    vi.advanceTimersByTime(MFLUX_STALL_MS + 1);
+    expect(child.killed).toBe(true);
+    await guard; // Watchdog hat bereits gerejected (settled === true) — VOR dem close-Event
+    // OS liefert nach SIGKILL noch gepufferte stdout/stderr-Daten aus, bevor close kommt:
+    child.stderr.emit("data", Buffer.from("late output after kill\n"));
+    expect(vi.getTimerCount()).toBe(0); // kein Re-Arm nach Settlement — sonst kickt der Leak-Timer später einen FREMDEN run
+    // Auch eine weitere volle Stall-Zeit darf jetzt nichts mehr auslösen (kein Fremd-Kill):
+    expect(() => vi.advanceTimersByTime(MFLUX_STALL_MS + 1)).not.toThrow();
+    expect(vi.getTimerCount()).toBe(0);
+    child.emit("close", 137); // finales close darf weiterhin nicht erneut settlen
+  });
+
   it("Output resettet den Watchdog", async () => {
     const child = new FakeChild();
     const { engine } = makeEngine(child);

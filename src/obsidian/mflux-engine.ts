@@ -71,6 +71,7 @@ export class MfluxEngine {
         };
         let watchdog: ReturnType<typeof setTimeout>;
         const armWatchdog = (): void => {
+          if (settled) return; // kein Re-Arm nach Settlement (leaked Timer würde spätere run()-Aufrufe treffen)
           clearTimeout(watchdog);
           watchdog = setTimeout(() => {
             this.child?.kill("SIGKILL");
@@ -87,6 +88,7 @@ export class MfluxEngine {
         let lastErrLine = "";
         const buffers = { out: "", err: "" };
         const onData = (which: "out" | "err") => (chunk: Buffer) => {
+          if (settled) return; // gepufferte Pipe-Daten nach SIGKILL dürfen weder Watchdog re-armen noch Callbacks feuern
           armWatchdog(); // JEDER Output ist ein Lebenszeichen, auch ungeparster
           const r = splitChunks(buffers[which], chunk.toString());
           buffers[which] = r.rest;
