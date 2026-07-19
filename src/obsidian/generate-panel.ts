@@ -88,11 +88,15 @@ export class GeneratePanel implements HubPanel {
     this.stepsValueEl = controls.createSpan({ text: startSteps, cls: "lig-steps-value" });
     this.stepsEl.addEventListener("input", () => {
       this.stepsValueEl.setText(this.stepsEl.value);
+      this.refresh();
     });
     controls.createSpan({ text: t("generate.seed"), cls: "lig-label" });
     this.seedEl = controls.createEl("input", {
       cls: "lig-seed",
       attr: { type: "number", value: String(randomSeed()) },
+    });
+    this.seedEl.addEventListener("input", () => {
+      this.refresh();
     });
     const dice = controls.createEl("button", { cls: "clickable-icon" });
     setIcon(dice, "dices");
@@ -100,6 +104,7 @@ export class GeneratePanel implements HubPanel {
     dice.setAttribute("aria-label", t("generate.randomSeed"));
     dice.addEventListener("click", () => {
       this.seedEl.value = String(randomSeed());
+      this.refresh();
     });
 
     this.generateBtn = root.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
@@ -185,6 +190,7 @@ export class GeneratePanel implements HubPanel {
       this.sizeEl.createEl("option", { text: `${s.width} × ${s.height}`, attr: { value: `${s.width}x${s.height}` } });
     if (preferred && spec.sizes.some((s) => s.width === preferred.width && s.height === preferred.height))
       this.sizeEl.value = `${preferred.width}x${preferred.height}`;
+    this.sizeEl.addEventListener("change", () => this.refresh());
   }
 
   /** Aktive Größe: Dropdown-Wert oder die einzige Katalog-Größe. */
@@ -226,6 +232,8 @@ export class GeneratePanel implements HubPanel {
   }
 
   refresh(): void {
+    const { width, height } = this.currentSize();
+    this.host.setRecipe(Number(this.stepsEl.value), Number(this.seedEl.value), width, height);
     const state = this.host.getPanelState();
     this.renderChips();
     const vm = buildViewModel(state);

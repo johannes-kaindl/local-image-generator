@@ -11,7 +11,6 @@ import type LocalImageGeneratorPlugin from "../main";
 
 export class LigSettingTab extends PluginSettingTab {
   private modelSectionEl: HTMLElement | null = null;
-  private fluxSectionEl: HTMLElement | null = null;
 
   constructor(
     app: App,
@@ -40,14 +39,7 @@ export class LigSettingTab extends PluginSettingTab {
       storage: this.storage,
     });
     this.renderModel(this.modelSectionEl);
-
-    this.fluxSectionEl = collapsibleSection(containerEl, {
-      title: "FLUX.2 klein 4B (mflux)", // Eigenname + Toolname — unübersetzt
-      key: "mflux",
-      defaultCollapsed: false,
-      storage: this.storage,
-    });
-    this.renderFlux(this.fluxSectionEl);
+    this.renderFlux(this.modelSectionEl);
 
     this.renderOutput(collapsibleSection(containerEl, {
       title: t("settings.output.heading"),
@@ -93,15 +85,12 @@ export class LigSettingTab extends PluginSettingTab {
     if (el?.isConnected) {
       el.empty();
       this.renderModel(el);
-    }
-    const fx = this.fluxSectionEl;
-    if (fx?.isConnected) {
-      fx.empty();
-      this.renderFlux(fx);
+      this.renderFlux(el);
     }
   }
 
   private renderModel(el: HTMLElement): void {
+    new Setting(el).setName("SD-Turbo").setHeading();
     const gb = (totalApproxBytes(MODEL_FILES) / 1e9).toFixed(1);
     const model = this.plugin.getState().model;
     const modelSetting = new Setting(el)
@@ -138,6 +127,7 @@ export class LigSettingTab extends PluginSettingTab {
   }
 
   private renderFlux(el: HTMLElement): void {
+    new Setting(el).setName("FLUX.2 klein 4B (mflux)").setHeading();
     const mflux = this.plugin.getState().mflux;
 
     // 1) Binary-Status + Pfad-Feld
