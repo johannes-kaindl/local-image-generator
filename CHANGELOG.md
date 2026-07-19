@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-07-19
+
 ### Internal
 
 - Popout-window-safe timers: `window.setTimeout`/`window.clearTimeout` throughout,

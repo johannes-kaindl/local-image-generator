@@ -1,7 +1,7 @@
 {
   "id": "local-image-generator",
   "name": "Local Image Generator",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "minAppVersion": "1.8.7",
   "description": "Generate images locally — SD-Turbo (WebGPU) and FLUX.2 (mflux), no external server, no cloud.",
   "author": "Johannes Kaindl",
