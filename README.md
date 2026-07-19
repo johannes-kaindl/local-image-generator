@@ -146,7 +146,7 @@ no plugin code is loaded from the network at runtime.
 
 ## Model & licenses
 
-- **Plugin code:** MIT license (see `LICENSE`).
+- **Plugin code:** AGPL-3.0-or-later (see `LICENSE`).
 - **SD-Turbo weights:** [stabilityai/sd-turbo](https://huggingface.co/stabilityai/sd-turbo)
   — subject to Stability AI's model license. Please review the terms on the
   model card before using generated images, especially for commercial
@@ -177,5 +177,5 @@ yourself.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Model weights have their own license terms
-(see Model & licenses above).
+AGPL-3.0-or-later — see [LICENSE](LICENSE). Model weights have their own
+license terms (see Model & licenses above).
