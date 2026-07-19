@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed to **Local Image Generator** (title case) in the manifest, view title
+  and docs.
+
+### Internal
+
+- Community-store review compliance: the manifest description no longer contains
+  the word "Obsidian"; global `fetch`/`setTimeout`/`globalThis`/`document.createElement`
+  were replaced with their popout-window-safe Obsidian equivalents where applicable
+  (`activeWindow.fetch`, `createEl`, …); unnecessary type assertions removed.
+- Added `eslint-plugin-obsidianmd` as a local lint gate (`npm run lint`) so
+  store-review findings surface before submission instead of after.
+
 ## [0.4.1] — 2026-07-19
 
 ### Added

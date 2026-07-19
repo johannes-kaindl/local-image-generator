@@ -10,7 +10,7 @@ import { defineStrings } from "../vendor/kit/i18n";
 export const EN: Record<string, string> = {
   "cmd.open": "Open generator",
 
-  "view.title": "Local image generator",
+  "view.title": "Local Image Generator",
   "view.tabGenerate": "Generate",
   "view.tabHistory": "History",
 

@@ -28,7 +28,17 @@ export class LigSettingTab extends PluginSettingTab {
     },
   };
 
+  // Imperatives Rendering (klassische Setting-API): das UI nutzt einklappbare Sektionen
+  // (collapsibleSection, Kit-vendored) und state-getriebene Download-Zeilen mit partiellem
+  // refreshModel() — beides ist NICHT auf das deklarative getSettingDefinitions()-Schema
+  // (Obsidian ≥ 1.13) abbildbar; minAppVersion 1.8.7 unterstützt es ohnehin nicht. Der
+  // prefer-setting-definitions-Hinweis ist darum in eslint.config.mjs file-scoped begründet
+  // abgeschaltet. display() bleibt der einzige Render-Einstieg und delegiert an render().
   display(): void {
+    this.render();
+  }
+
+  private render(): void {
     const { containerEl } = this;
     containerEl.empty();
 
@@ -62,7 +72,7 @@ export class LigSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         this.plugin.refreshViews();
       },
-      rerender: () => this.display(),
+      rerender: () => this.render(),
     });
 
     this.renderDanger(collapsibleSection(containerEl, {
@@ -238,7 +248,7 @@ export class LigSettingTab extends PluginSettingTab {
         s
           .setLimits(1, 4, 1)
           .setValue(this.plugin.settings.defaultSteps)
-          .setDynamicTooltip()
+          .setDynamicTooltip() // deprecated ab 1.13 (Wert dann immer inline), aber auf minAppVersion 1.8.7–1.12 nötig, damit der Slider-Wert überhaupt sichtbar ist
           .onChange(async (v) => {
             this.plugin.settings.defaultSteps = v;
             await this.plugin.saveSettings();
@@ -255,7 +265,7 @@ export class LigSettingTab extends PluginSettingTab {
           new ConfirmModal(this.app, t("settings.model.deleteConfirm"), t("modal.confirm"), async () => {
             await this.plugin.modelStore.deleteAll();
             this.plugin.onModelDeleted();
-            this.display();
+            this.render();
           }).open();
         }),
     );

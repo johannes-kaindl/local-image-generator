@@ -24,8 +24,8 @@ export interface StoreDeps {
 }
 
 const realDeps: StoreDeps = {
-  openCache: () => caches.open(MODEL_CACHE_NAME) as Promise<CacheLike>,
-  fetchFn: (url) => fetch(url),
+  openCache: () => caches.open(MODEL_CACHE_NAME),
+  fetchFn: (url) => activeWindow.fetch(url),
 };
 
 /** Fortschritt eines download()-Aufrufs — Datei-Detail (Spec 2026-07-18-robustheits-

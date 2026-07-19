@@ -1,6 +1,6 @@
 // RGBA → PNG über den nativen Canvas (Spec §5: keine Encoder-Dependency).
 export function rgbaToDataUrl(rgba: Uint8ClampedArray, w: number, h: number): string {
-  const canvas = document.createElement("canvas");
+  const canvas = createEl("canvas");
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d");

@@ -12,7 +12,7 @@ afterEach(() => {
 
 describe("registerI18n + t()", () => {
   it("returns the EN string for a known key by default", () => {
-    expect(t("view.title")).toBe("Local image generator");
+    expect(t("view.title")).toBe("Local Image Generator");
   });
 
   it("setLang('de') switches t() to the DE translation", () => {

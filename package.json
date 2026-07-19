@@ -1,7 +1,7 @@
 {
-  "name": "local-image-generator",
+  "name": "Local Image Generator",
   "version": "0.4.1",
-  "description": "Generate images locally inside Obsidian — SD-Turbo via WebGPU, no external software, no cloud.",
+  "description": "Generate images locally — SD-Turbo (WebGPU) and FLUX.2 (mflux), no external server, no cloud.",
   "type": "module",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -9,8 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "check:pure": "node scripts/check-pure.mjs",
-    "lint": "npm run check:pure",
-    "gate": "npm run typecheck && npm test && npm run check:pure && npm run build",
+    "lint": "eslint src && npm run check:pure",
+    "gate": "npm run typecheck && npm test && npm run lint && npm run build",
     "deploy": "npm run build && cp main.js manifest.json styles.css \"${OBSIDIAN_PLUGIN_DIR:?set OBSIDIAN_PLUGIN_DIR}\"/",
     "release": "node scripts/release.mjs",
     "version-bump": "node scripts/version-bump.mjs"
@@ -20,8 +20,11 @@
   "devDependencies": {
     "@types/node": "^20",
     "esbuild": "^0.23",
+    "eslint": "^9",
+    "eslint-plugin-obsidianmd": "latest",
     "obsidian": "latest",
     "typescript": "^5.5",
+    "typescript-eslint": "^8",
     "vitest": "^2"
   },
   "dependencies": {

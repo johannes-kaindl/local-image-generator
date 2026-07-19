@@ -1,4 +1,4 @@
-# Local image generator
+# Local Image Generator
 
 Generate images locally inside Obsidian — no cloud, no external app, no API key.
 Choose between two models: [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo)
@@ -59,7 +59,7 @@ match Obsidian's own language setting — no separate language option to set.
 ## Install & first steps
 
 1. Install and enable the plugin.
-2. Open **Settings → Local image generator**, section **Model**, and click
+2. Open **Settings → Local Image Generator**, section **Model**, and click
    **Download** under SD-Turbo (~2.5 GB). This is a one-time download;
    nothing happens automatically. (Optional: install `mflux` and download the
    FLUX.2 weights in the same section if you want the second model.)
@@ -76,7 +76,7 @@ settings page.
 
 ## Settings
 
-**Settings → Local image generator** is grouped into collapsible sections:
+**Settings → Local Image Generator** is grouped into collapsible sections:
 
 - **Model** — one section covering both models: download the SD-Turbo model
   files, and (below it) find/point at your `mflux` install, choose where FLUX
@@ -118,7 +118,7 @@ never leave your machine, and no image data is ever sent anywhere.
 [Cache API](https://developer.mozilla.org/en-US/docs/Web/API/Cache) inside
 Obsidian's Electron profile — **not** into your vault, and not synced by
 Obsidian Sync or any vault sync tool. You can delete the cached model files
-at any time via **Settings → Local image generator → Delete model**.
+at any time via **Settings → Local Image Generator → Delete model**.
 Generated images, by contrast, are saved as normal attachments inside your
 vault, exactly like any image you'd add yourself.
 

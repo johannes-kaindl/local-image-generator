@@ -22,7 +22,7 @@ function initOrt(): void {
   ort.env.wasm.wasmBinary = ortWasm.buffer.slice(
     ortWasm.byteOffset,
     ortWasm.byteOffset + ortWasm.byteLength,
-  ) as ArrayBuffer;
+  );
   ort.env.wasm.numThreads = 1; // keine Worker-Spawns aus Blob-URLs (Electron-CSP)
   initialized = true;
 }
@@ -69,7 +69,7 @@ export async function createOrtSession(buf: ArrayBuffer): Promise<Session> {
     ): Promise<Record<string, OrtValue>> {
       const ortFeeds: Record<string, ort.Tensor> = {};
       for (const [name, v] of Object.entries(feeds)) {
-        ortFeeds[name] = new ort.Tensor(dtypeOf(v), v.data, v.dims as number[]);
+        ortFeeds[name] = new ort.Tensor(dtypeOf(v), v.data, v.dims);
       }
       const out = await session.run(ortFeeds);
       const result: Record<string, OrtValue> = {};
@@ -95,7 +95,7 @@ function toOrtData(name: string, data: unknown): OrtValue["data"] {
   ) {
     return data;
   }
-  const F16 = (globalThis as { Float16Array?: new (...a: never[]) => ArrayBufferView }).Float16Array;
+  const F16 = (activeWindow as { Float16Array?: new (...a: never[]) => ArrayBufferView }).Float16Array;
   if (F16 && data instanceof F16) {
     const t = data as ArrayBufferView & { length: number };
     return new Uint16Array(t.buffer, t.byteOffset, t.length);
