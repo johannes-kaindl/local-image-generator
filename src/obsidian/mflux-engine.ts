@@ -66,14 +66,14 @@ export class MfluxEngine {
         const settle = (fn: () => void): void => {
           if (settled) return;
           settled = true;
-          clearTimeout(watchdog);
+          window.clearTimeout(watchdog);
           fn();
         };
-        let watchdog: ReturnType<typeof setTimeout>;
+        let watchdog: number;
         const armWatchdog = (): void => {
           if (settled) return; // kein Re-Arm nach Settlement (leaked Timer würde spätere run()-Aufrufe treffen)
-          clearTimeout(watchdog);
-          watchdog = setTimeout(() => {
+          window.clearTimeout(watchdog);
+          watchdog = window.setTimeout(() => {
             this.child?.kill("SIGKILL");
             settle(() => reject(new Error("mflux stalled (no output for 5 minutes)")));
           }, MFLUX_STALL_MS);

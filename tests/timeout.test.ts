@@ -1,5 +1,6 @@
+// @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
-import { raceTimeout } from "../src/core/timeout";
+import { raceTimeout } from "../src/obsidian/timeout";
 
 describe("raceTimeout", () => {
   it("löst normal auf, wenn die Promise vor dem Timeout resolved", async () => {

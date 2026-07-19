@@ -22,6 +22,7 @@
     "esbuild": "^0.23",
     "eslint": "^9",
     "eslint-plugin-obsidianmd": "latest",
+    "happy-dom": "^14.12.3",
     "obsidian": "latest",
     "typescript": "^5.5",
     "typescript-eslint": "^8",

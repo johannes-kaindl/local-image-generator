@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MFLUX_STALL_MS, MfluxEngine } from "../src/obsidian/mflux-engine";

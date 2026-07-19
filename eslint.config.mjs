@@ -21,16 +21,6 @@ export default tseslint.config(
     },
   },
   {
-    // timeout.ts (Promise-Race-Helfer, Kit-Kandidat) + mflux-engine.ts (child_process-
-    // Stall-Watchdog): beides sind KEINE UI-Timer — die prefer-window-timers-Regel zielt
-    // auf Popout-Fenster-Kompatibilität, die für einen Prozess-/Promise-Timer ohne DOM-
-    // Bezug irrelevant ist. Zudem läuft beides in vitest-Node-Tests (kein `window`).
-    files: ["src/core/timeout.ts", "src/obsidian/mflux-engine.ts"],
-    rules: {
-      "obsidianmd/prefer-window-timers": "off",
-    },
-  },
-  {
     // settings-tab.ts: (1) nennt Modell-EIGENNAMEN (SD-Turbo, FLUX.2) in UI-Labels — die
     // sentence-case-Regel würde daraus fälschlich "Sd-turbo" machen. (2) Das UI nutzt
     // einklappbare Sektionen + state-getriebene Download-Zeilen mit partiellem Re-Render,

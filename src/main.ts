@@ -5,7 +5,7 @@
 // rendern die ersten t()-Aufrufe rohe Keys.
 import { getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { SdTurboEngine } from "./core/engine";
-import { raceTimeout } from "./core/timeout";
+import { raceTimeout } from "./obsidian/timeout";
 import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
