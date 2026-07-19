@@ -131,6 +131,15 @@ describe("buildViewModel — mflux (FLUX.2)", () => {
   it("sd-turbo-Verhalten unverändert: no-webgpu blockt", () => {
     expect(buildViewModel(fluxState({ selectedModel: "sd-turbo" })).generateEnabled).toBe(false);
   });
+  it("FLUX lädt kurz: kein Kaltstart-Hinweis", () => {
+    const vm = buildViewModel(fluxState({ run: { kind: "loading", elapsedSec: 5 } }));
+    expect(vm.status.text).not.toContain("first load");
+  });
+  it("FLUX lädt ungewöhnlich lange: Status bekommt Kaltstart-Hinweis", () => {
+    const vm = buildViewModel(fluxState({ run: { kind: "loading", elapsedSec: 25 } }));
+    expect(vm.status.text).toContain("0:25");
+    expect(vm.status.text).toContain("first load");
+  });
 });
 
 describe("formatElapsed", () => {

@@ -128,6 +128,12 @@ function buildOrtViewModel(s: PanelState): PanelViewModel {
   };
 }
 
+/** Ab dieser Ladedauer bekommt die Statuszeile den Kaltstart-Hinweis: mflux hat keinen
+ *  Server-Modus, lädt die ~8 GB Gewichte also bei jedem Start neu von der Platte — mit
+ *  warmem OS-Page-Cache dauert das Sekunden, mit kaltem (Neustart/Speicherdruck) Minuten
+ *  und wirkt sonst wie ein erneuter Download (Jays Smoke-Feedback 0.4). */
+export const MFLUX_SLOW_LOAD_HINT_SEC = 20;
+
 function buildMfluxViewModel(s: PanelState): PanelViewModel {
   const m = s.mflux;
   const busy = s.run.kind === "running" || s.run.kind === "loading" || m.weights === "downloading";
@@ -137,7 +143,14 @@ function buildMfluxViewModel(s: PanelState): PanelViewModel {
   else if (m.weights === "downloading")
     status = { icon: "loader", text: t("status.downloading", m.download?.pct ?? 0), cls: "is-checking" };
   else if (s.run.kind === "loading")
-    status = { icon: "loader", text: t("status.loadingMflux", formatElapsed(s.run.elapsedSec)), cls: "is-checking" };
+    status = {
+      icon: "loader",
+      text: t(
+        s.run.elapsedSec >= MFLUX_SLOW_LOAD_HINT_SEC ? "status.loadingMfluxSlow" : "status.loadingMflux",
+        formatElapsed(s.run.elapsedSec),
+      ),
+      cls: "is-checking",
+    };
   else if (s.run.kind === "running")
     status = { icon: "loader", text: t("status.generating", s.run.step, s.run.total), cls: "is-checking" };
   else if (m.binary === null) status = { icon: "circle-x", text: t("status.mfluxMissing"), cls: "is-error" };

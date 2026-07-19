@@ -39,6 +39,8 @@ export const EN: Record<string, string> = {
   "status.engineLoadFailed":
     "Loading the model into the GPU is taking unusually long or failed silently. Click Generate to try again.",
   "status.loadingMflux": "Loading FLUX model… ({0})",
+  "status.loadingMfluxSlow":
+    "Loading FLUX model… ({0}) — a first load after some time can take a few minutes",
   "status.mfluxMissing": "mflux is not set up yet",
 
   "empty.noModel": "The model (~2.5 GB) is not downloaded yet.",
@@ -151,6 +153,8 @@ export const DE: Record<string, string> = {
   "status.engineLoadFailed":
     "Das Laden des Modells auf die GPU dauert ungewöhnlich lange oder ist lautlos fehlgeschlagen. Klicke auf Generieren, um es erneut zu versuchen.",
   "status.loadingMflux": "Lade FLUX-Modell… ({0})",
+  "status.loadingMfluxSlow":
+    "Lade FLUX-Modell… ({0}) — ein erster Ladevorgang nach einer Weile kann einige Minuten dauern",
   "status.mfluxMissing": "mflux ist noch nicht eingerichtet",
 
   "empty.noModel": "Das Modell (~2,5 GB) wurde noch nicht heruntergeladen.",
