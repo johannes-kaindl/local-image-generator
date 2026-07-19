@@ -41,6 +41,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     prompt: "",
     selectedModel: DEFAULT_MODEL_ID,
     mflux: { binary: null, weights: "missing", download: null },
+    // Platzhalter bis zum ersten GeneratePanel.refresh() (kein Bild vorhanden →
+    // recipeUnchanged ist bis dahin ohnehin immer false, siehe viewmodel.ts).
+    seed: 0,
+    steps: 4,
+    width: 512,
+    height: 512,
   };
 
   async onload(): Promise<void> {
@@ -61,6 +67,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       getSettings: () => this.settings,
       setPrompt: (p) => {
         this.state.prompt = p;
+      },
+      setRecipe: (steps, seed, width, height) => {
+        this.state.steps = steps;
+        this.state.seed = seed;
+        this.state.width = width;
+        this.state.height = height;
       },
       generate: (steps, seed, width, height) => void this.generate(steps, seed, width, height),
       setSelectedModel: (id) => {
