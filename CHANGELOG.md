@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Internal
+
+- Popout-window-safe timers: `window.setTimeout`/`window.clearTimeout` throughout,
+  and the `raceTimeout` helper moved into the obsidian layer (the core stays
+  node-pure). Resolves the remaining `prefer-window-timers` review warnings.
+
 ## [0.4.2] — 2026-07-19
 
 ### Changed
