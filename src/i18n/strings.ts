@@ -72,7 +72,7 @@ export const EN: Record<string, string> = {
   "settings.mflux.binaryPlaceholder": "Path to mflux-generate-flux2 (optional)",
   "settings.mflux.modelsDir": "Model storage location",
   "settings.mflux.modelsDirDesc":
-    "Uses the shared Hugging Face cache — models already downloaded via Hugging Face are reused. ComfyUI checkpoints are a different format and cannot be linked. Empty = default (~/.cache/huggingface). Weights: ~8 GB.",
+    "Uses the shared Hugging Face cache — models already downloaded via Hugging Face are reused. Empty = default (~/.cache/huggingface). Weights: ~8 GB.",
   "settings.mflux.weights": "FLUX.2 weights",
   "settings.mflux.weightsDesc": "Downloaded via the explicit download here (~8 GB, from Hugging Face).",
   "settings.mflux.download": "Download (~8 GB)",
@@ -184,7 +184,7 @@ export const DE: Record<string, string> = {
   "settings.mflux.binaryPlaceholder": "Pfad zu mflux-generate-flux2 (optional)",
   "settings.mflux.modelsDir": "Modell-Speicherort",
   "settings.mflux.modelsDirDesc":
-    "Nutzt den geteilten Hugging-Face-Cache — bereits via Hugging Face geladene Modelle werden wiederverwendet. ComfyUI-Checkpoints sind ein anderes Format und können nicht eingebunden werden. Leer = Standard (~/.cache/huggingface). Gewichte: ~8 GB.",
+    "Nutzt den geteilten Hugging-Face-Cache — bereits via Hugging Face geladene Modelle werden wiederverwendet. Leer = Standard (~/.cache/huggingface). Gewichte: ~8 GB.",
   "settings.mflux.weights": "FLUX.2-Gewichte",
   "settings.mflux.weightsDesc": "Werden beim expliziten Download hier geladen (~8 GB, von Hugging Face).",
   "settings.mflux.download": "Herunterladen (~8 GB)",
