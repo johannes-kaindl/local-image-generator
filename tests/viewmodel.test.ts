@@ -19,6 +19,10 @@ const base: PanelState = {
   prompt: "a cat",
   selectedModel: "sd-turbo",
   mflux: MFLUX_OK,
+  seed: 1,
+  steps: 4,
+  width: 512,
+  height: 512,
 };
 
 function fluxState(over: Partial<PanelState> = {}): PanelState {
@@ -31,6 +35,10 @@ function fluxState(over: Partial<PanelState> = {}): PanelState {
     prompt: "an apple",
     selectedModel: "flux2-klein-4b",
     mflux: MFLUX_OK,
+    seed: 1,
+    steps: 4,
+    width: 512,
+    height: 512,
     ...over,
   };
 }
@@ -139,6 +147,95 @@ describe("buildViewModel — mflux (FLUX.2)", () => {
     const vm = buildViewModel(fluxState({ run: { kind: "loading", elapsedSec: 25 } }));
     expect(vm.status.text).toContain("0:25");
     expect(vm.status.text).toContain("first load");
+  });
+});
+
+describe("buildViewModel — Generate-Gating (unverändertes Rezept)", () => {
+  it("ORT: identisches Rezept zum letzten Bild → Generate disabled, Reroll unberührt", () => {
+    const state: PanelState = {
+      ...base,
+      seed: 42,
+      steps: 4,
+      width: 512,
+      height: 512,
+      image: {
+        dataUrl: "data:",
+        params: {
+          prompt: base.prompt,
+          seed: 42,
+          steps: 4,
+          model: base.selectedModel,
+          width: 512,
+          height: 512,
+          date: "2026-07-19T10:00:00",
+        },
+      },
+    };
+    expect(buildViewModel(state).generateEnabled).toBe(false);
+  });
+  it("ORT: ein geändertes Feld (Seed) → Generate wieder enabled", () => {
+    const state: PanelState = {
+      ...base,
+      seed: 42,
+      steps: 4,
+      width: 512,
+      height: 512,
+      image: {
+        dataUrl: "data:",
+        params: {
+          prompt: base.prompt,
+          seed: 42,
+          steps: 4,
+          model: base.selectedModel,
+          width: 512,
+          height: 512,
+          date: "2026-07-19T10:00:00",
+        },
+      },
+    };
+    expect(buildViewModel({ ...state, seed: 43 }).generateEnabled).toBe(true);
+  });
+  it("mflux: identisches Rezept zum letzten Bild → Generate disabled", () => {
+    const state = fluxState({
+      seed: 7,
+      steps: 4,
+      width: 768,
+      height: 768,
+      image: {
+        dataUrl: "data:",
+        params: {
+          prompt: "an apple",
+          seed: 7,
+          steps: 4,
+          model: "flux2-klein-4b",
+          width: 768,
+          height: 768,
+          date: "2026-07-19T10:00:00",
+        },
+      },
+    });
+    expect(buildViewModel(state).generateEnabled).toBe(false);
+  });
+  it("mflux: geänderte Größe → Generate wieder enabled", () => {
+    const state = fluxState({
+      seed: 7,
+      steps: 4,
+      width: 768,
+      height: 768,
+      image: {
+        dataUrl: "data:",
+        params: {
+          prompt: "an apple",
+          seed: 7,
+          steps: 4,
+          model: "flux2-klein-4b",
+          width: 768,
+          height: 768,
+          date: "2026-07-19T10:00:00",
+        },
+      },
+    });
+    expect(buildViewModel({ ...state, width: 512, height: 512 }).generateEnabled).toBe(true);
   });
 });
 

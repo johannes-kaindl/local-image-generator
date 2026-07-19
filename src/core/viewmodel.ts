@@ -57,6 +57,12 @@ export interface PanelState {
    *  den mflux-Zweig baut. */
   selectedModel: string;
   mflux: MfluxPanelState;
+  /** Aktuell im DOM eingestelltes, noch nicht generiertes Rezept (generate-panel.ts
+   *  zieht das bei jedem refresh() nach) — Grundlage für das Generate-Gating (§Task 2). */
+  seed: number;
+  steps: number;
+  width: number;
+  height: number;
 }
 
 export interface PanelViewModel {
@@ -80,6 +86,23 @@ export function formatElapsed(totalSec: number): string {
 export function formatBytes(bytes: number): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
   return `${Math.round(bytes / 1e6)} MB`;
+}
+
+/** Prüft, ob Prompt/Modell/Seed/Steps/Größe exakt dem zuletzt erzeugten Bild entsprechen —
+ *  ein erneuter Klick auf Generate würde dann byte-identisch dasselbe Bild liefern
+ *  (deterministischer Seed). Reroll ist davon unabhängig: der würfelt den Seed vorher neu
+ *  und ist nie an generateEnabled gebunden (generate-panel.ts). */
+function recipeUnchanged(s: PanelState): boolean {
+  const p = s.image?.params;
+  return (
+    p !== undefined &&
+    p.prompt === s.prompt &&
+    p.model === s.selectedModel &&
+    p.seed === s.seed &&
+    p.steps === s.steps &&
+    p.width === s.width &&
+    p.height === s.height
+  );
 }
 
 /** WEICHE (Spec §5/§7): FLUX.2 läuft über mflux statt ORT/WebGPU — braucht daher einen
@@ -122,7 +145,8 @@ function buildOrtViewModel(s: PanelState): PanelViewModel {
   return {
     status,
     empty,
-    generateEnabled: !gpuBlocked && !busy && s.model.kind === "ready" && s.prompt.trim().length > 0,
+    generateEnabled:
+      !gpuBlocked && !busy && s.model.kind === "ready" && s.prompt.trim().length > 0 && !recipeUnchanged(s),
     insertEnabled: s.image !== null && s.editorActive && !busy,
     showImage: s.image !== null,
   };
@@ -164,7 +188,8 @@ function buildMfluxViewModel(s: PanelState): PanelViewModel {
   return {
     status,
     empty,
-    generateEnabled: !busy && m.binary !== null && m.weights === "ready" && s.prompt.trim().length > 0,
+    generateEnabled:
+      !busy && m.binary !== null && m.weights === "ready" && s.prompt.trim().length > 0 && !recipeUnchanged(s),
     insertEnabled: s.image !== null && s.editorActive && !busy,
     showImage: s.image !== null,
   };
