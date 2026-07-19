@@ -107,7 +107,7 @@ export class GeneratePanel implements HubPanel {
       this.refresh();
     });
 
-    this.generateBtn = root.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
+    this.generateBtn = controls.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
     this.generateBtn.addEventListener("click", () => {
       const { width, height } = this.currentSize();
       this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), width, height);
