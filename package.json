@@ -9,11 +9,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "check:pure": "node scripts/check-pure.mjs",
+    "lint": "npm run check:pure",
     "gate": "npm run typecheck && npm test && npm run check:pure && npm run build",
-    "deploy": "npm run build && cp main.js manifest.json styles.css \"${OBSIDIAN_PLUGIN_DIR:?set OBSIDIAN_PLUGIN_DIR}\"/"
+    "deploy": "npm run build && cp main.js manifest.json styles.css \"${OBSIDIAN_PLUGIN_DIR:?set OBSIDIAN_PLUGIN_DIR}\"/",
+    "release": "node scripts/release.mjs",
+    "version-bump": "node scripts/version-bump.mjs"
   },
   "author": "Johannes Kaindl",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "devDependencies": {
     "@types/node": "^20",
     "esbuild": "^0.23",
