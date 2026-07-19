@@ -1,6 +1,6 @@
 {
   "name": "local-image-generator",
-  "version": "0.1.0",
+  "version": "0.4.1",
   "description": "Generate images locally inside Obsidian — SD-Turbo via WebGPU, no external software, no cloud.",
   "type": "module",
   "scripts": {

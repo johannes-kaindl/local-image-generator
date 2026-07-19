@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-19
+
 ### Added
 
 - First public release. Generate images locally inside Obsidian — no external
