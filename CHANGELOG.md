@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-07-19
+
 ### Changed
 
 - Renamed to **Local Image Generator** (title case) in the manifest, view title
