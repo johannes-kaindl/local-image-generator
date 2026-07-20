@@ -22,10 +22,15 @@ export default tseslint.config(
   },
   {
     // settings-tab.ts: (1) nennt Modell-EIGENNAMEN (SD-Turbo, FLUX.2) in UI-Labels — die
-    // sentence-case-Regel würde daraus fälschlich "Sd-turbo" machen. (2) Das UI nutzt
-    // einklappbare Sektionen + state-getriebene Download-Zeilen mit partiellem Re-Render,
-    // die nicht auf das deklarative getSettingDefinitions()-Schema abbildbar sind
-    // (minAppVersion 1.8.7 < 1.13.0 unterstützt es ohnehin nicht) → display() bleibt.
+    // sentence-case-Regel würde daraus fälschlich "Sd-turbo" machen. (2) Die Download-
+    // Zeilen sind state-getrieben und werden partiell neu gezeichnet (refreshModel()),
+    // was sich nicht auf das deklarative getSettingDefinitions()-Schema abbilden lässt
+    // → display() bleibt.
+    //
+    // NICHT mehr Teil der Begründung: die einklappbaren Sektionen (2026-07-20 entfernt)
+    // und "minAppVersion 1.8.7 < 1.13.0". Letzteres war sachlich falsch — obsidian.d.ts:6630
+    // sieht display() ausdrücklich als Fallback für <1.13 vor, Koexistenz hebt den Floor
+    // nicht an (PROF-OBS-06). Es bleibt allein (2); fällt der Grund weg, ist zu migrieren.
     files: ["src/obsidian/settings-tab.ts"],
     rules: {
       "obsidianmd/ui/sentence-case": "off",

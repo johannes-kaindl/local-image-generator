@@ -3,7 +3,6 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { totalApproxBytes, MODEL_FILES } from "../core/model-manifest";
 import { formatBytes } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
-import { collapsibleSection, type CollapsibleStorage } from "./collapsible";
 import { ConfirmModal } from "./confirm-modal";
 import { FolderSuggest } from "./folder-suggest";
 import { renderPresetEditor } from "./preset-editor";
@@ -19,51 +18,39 @@ export class LigSettingTab extends PluginSettingTab {
     super(app, plugin);
   }
 
-  // Auf-/Zu-Zustand landet in data.json (der Kit-Baustein bleibt storage-agnostisch).
-  private storage: CollapsibleStorage = {
-    getCollapsed: (key) => this.plugin.settings.sectionsCollapsed[key],
-    setCollapsed: (key, collapsed) => {
-      this.plugin.settings.sectionsCollapsed[key] = collapsed;
-      void this.plugin.saveSettings();
-    },
-  };
-
-  // Imperatives Rendering (klassische Setting-API): das UI nutzt einklappbare Sektionen
-  // (collapsibleSection, Kit-vendored) und state-getriebene Download-Zeilen mit partiellem
-  // refreshModel() — beides ist NICHT auf das deklarative getSettingDefinitions()-Schema
-  // (Obsidian ≥ 1.13) abbildbar; minAppVersion 1.8.7 unterstützt es ohnehin nicht. Der
-  // prefer-setting-definitions-Hinweis ist darum in eslint.config.mjs file-scoped begründet
-  // abgeschaltet. display() bleibt der einzige Render-Einstieg und delegiert an render().
+  // Imperatives Rendering (klassische Setting-API): state-getriebene Download-Zeilen mit
+  // partiellem refreshModel() sind nicht auf das deklarative getSettingDefinitions()-Schema
+  // (Obsidian ≥ 1.13) abbildbar. Der prefer-setting-definitions-Hinweis ist darum in
+  // eslint.config.mjs file-scoped begründet abgeschaltet. display() bleibt der einzige
+  // Render-Einstieg und delegiert an render().
+  //
+  // Bis 2026-07-20 waren die Sektionen zusätzlich einklappbar (collapsibleSection,
+  // Kit-vendored). Aufgegeben: einklappbare Sektionen und die deklarative API schließen
+  // einander aus (SettingDefinitionGroup kennt kein Collapse), und ohne Migration
+  // erscheinen die Einstellungen ab 1.13 nicht in Obsidians Settings-Suche.
   display(): void {
     this.render();
+  }
+
+  /** Sektions-Überschrift + eigener Body-Container. Der Body ist funktional, nicht
+   *  kosmetisch: refreshModel() ruft el.empty() auf und darf dabei nur seine eigene
+   *  Sektion treffen, nicht die ganze Settings-Seite. */
+  private section(title: string): HTMLElement {
+    new Setting(this.containerEl).setName(title).setHeading();
+    return this.containerEl.createDiv();
   }
 
   private render(): void {
     const { containerEl } = this;
     containerEl.empty();
 
-    this.modelSectionEl = collapsibleSection(containerEl, {
-      title: t("settings.model.heading"),
-      key: "model",
-      defaultCollapsed: false,
-      storage: this.storage,
-    });
+    this.modelSectionEl = this.section(t("settings.model.heading"));
     this.renderModel(this.modelSectionEl);
     this.renderFlux(this.modelSectionEl);
 
-    this.renderOutput(collapsibleSection(containerEl, {
-      title: t("settings.output.heading"),
-      key: "output",
-      defaultCollapsed: false,
-      storage: this.storage,
-    }));
+    this.renderOutput(this.section(t("settings.output.heading")));
 
-    const presets = collapsibleSection(containerEl, {
-      title: t("settings.presets.heading"),
-      key: "presets",
-      defaultCollapsed: true,
-      storage: this.storage,
-    });
+    const presets = this.section(t("settings.presets.heading"));
     presets.createEl("p", { text: t("settings.presets.desc"), cls: "setting-item-description" });
     renderPresetEditor(presets, {
       getPresets: () => this.plugin.settings.presets,
@@ -75,12 +62,7 @@ export class LigSettingTab extends PluginSettingTab {
       rerender: () => this.render(),
     });
 
-    this.renderDanger(collapsibleSection(containerEl, {
-      title: t("settings.danger.heading"),
-      key: "danger",
-      defaultCollapsed: true,
-      storage: this.storage,
-    }));
+    this.renderDanger(this.section(t("settings.danger.heading")));
   }
 
   /** Zeichnet NUR die Modell-Sektion neu — state-getrieben (this.plugin.getState().model

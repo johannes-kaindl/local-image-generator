@@ -43,7 +43,9 @@ export interface LigSettings {
   mfluxPath: string;
   /** HF_HOME für den Kindprozess; "" = HF-Standard-Cache (Spec §6). */
   modelsDir: string;
-  /** Auf-/Zu-Zustand der Settings-Sektionen, Key → collapsed. */
+  /** Legacy: Auf-/Zu-Zustand der früher einklappbaren Settings-Sektionen. Seit deren
+   *  Wegfall (2026-07-20) liest den Wert kein Codepfad mehr; das Feld bleibt, damit
+   *  gespeicherte Konfigurationen ohne Migration laden. */
   sectionsCollapsed: Record<string, boolean>;
 }
 
