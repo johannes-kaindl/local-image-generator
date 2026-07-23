@@ -46,7 +46,17 @@ describe("sanitizeSettings (Spec §8)", () => {
       createMode: "note",
       presets: [{ id: "a", label: "A", suffix: "a-suffix" }],
       history: [
-        { prompt: "a prompt", seed: 1, steps: 4, model: "sd-turbo", width: 512, height: 512, created: "2026-07-17T10:00:00" },
+        {
+          prompt: "a prompt",
+          seed: 1,
+          steps: 4,
+          model: "sd-turbo",
+          width: 512,
+          height: 512,
+          created: "2026-07-17T10:00:00",
+          negativePrompt: "blurry, low quality",
+          cfg: 8,
+        },
       ],
       historyView: "grouped",
       endpoint: "http://127.0.0.1:7860",
@@ -167,6 +177,8 @@ describe("Historie-Migration", () => {
       width: 512,
       height: 512,
       created: "2026-07-17T10:00:00",
+      negativePrompt: "",
+      cfg: 7,
     };
     const s = sanitizeSettings({ history: [entry] });
     expect(s.history).toEqual([entry]);
@@ -211,5 +223,33 @@ describe("Historie-Migration 0.4 (width/height)", () => {
   it("sanitizeHistory migriert Alt-Einträge ohne width/height auf 512", () => {
     const s = sanitizeSettings({ history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", created: "x" }] });
     expect(s.history[0]).toMatchObject({ width: 512, height: 512 });
+  });
+});
+
+describe("Historie-Migration 0.5 (negativePrompt/cfg)", () => {
+  it("sanitizeHistory migriert Alt-Einträge ohne negativePrompt/cfg auf '' / 7", () => {
+    const s = sanitizeSettings({
+      history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", width: 512, height: 512, created: "x" }],
+    });
+    expect(s.history[0]).toMatchObject({ negativePrompt: "", cfg: 7 });
+  });
+
+  it("sanitizeHistory behält vorhandene negativePrompt/cfg-Werte", () => {
+    const s = sanitizeSettings({
+      history: [
+        {
+          prompt: "a",
+          seed: 1,
+          steps: 2,
+          model: "sd-turbo",
+          width: 512,
+          height: 512,
+          created: "x",
+          negativePrompt: "ugly",
+          cfg: 9,
+        },
+      ],
+    });
+    expect(s.history[0]).toMatchObject({ negativePrompt: "ugly", cfg: 9 });
   });
 });

@@ -103,7 +103,17 @@ describe("buildViewModel", () => {
       ...base,
       image: {
         dataUrl: "data:",
-        params: { prompt: "p", seed: 1, steps: 4, model: "sd-turbo", width: 512, height: 512, date: "2026-07-16T21:52:43" },
+        params: {
+          prompt: "p",
+          negativePrompt: "",
+          seed: 1,
+          steps: 4,
+          cfg: 7,
+          model: "sd-turbo",
+          width: 512,
+          height: 512,
+          date: "2026-07-16T21:52:43",
+        },
       },
     };
     expect(buildViewModel(withImg).showImage).toBe(true);
@@ -162,8 +172,10 @@ describe("buildViewModel — Generate-Gating (unverändertes Rezept)", () => {
         dataUrl: "data:",
         params: {
           prompt: base.prompt,
+          negativePrompt: "",
           seed: 42,
           steps: 4,
+          cfg: 7,
           model: base.selectedModel,
           width: 512,
           height: 512,
@@ -184,8 +196,10 @@ describe("buildViewModel — Generate-Gating (unverändertes Rezept)", () => {
         dataUrl: "data:",
         params: {
           prompt: base.prompt,
+          negativePrompt: "",
           seed: 42,
           steps: 4,
+          cfg: 7,
           model: base.selectedModel,
           width: 512,
           height: 512,
@@ -205,8 +219,10 @@ describe("buildViewModel — Generate-Gating (unverändertes Rezept)", () => {
         dataUrl: "data:",
         params: {
           prompt: "an apple",
+          negativePrompt: "",
           seed: 7,
           steps: 4,
+          cfg: 7,
           model: "flux2-klein-4b",
           width: 768,
           height: 768,
@@ -226,8 +242,10 @@ describe("buildViewModel — Generate-Gating (unverändertes Rezept)", () => {
         dataUrl: "data:",
         params: {
           prompt: "an apple",
+          negativePrompt: "",
           seed: 7,
           steps: 4,
+          cfg: 7,
           model: "flux2-klein-4b",
           width: 768,
           height: 768,

@@ -344,8 +344,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height),
         params: {
           prompt,
+          // TODO(Task 5): Platzhalter-Bridge, damit GenParams (Task 3) hier kompiliert —
+          // echte Negativ-Prompt-/CFG-Steuerung kommt mit der UI-Verdrahtung in Task 5.
+          negativePrompt: "",
           seed: result.seed,
           steps,
+          cfg: 7,
           model: MODEL_ID,
           // Aus dem Engine-Ergebnis übernehmen statt erneut zu hardcoden: EINE Quelle für
           // die 512² (IMAGE_SIZE in engine.ts), kein zweiter unabhängiger Literal hier, der
@@ -378,8 +382,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       const p = this.state.image.params;
       this.settings.history = pushHistory(this.settings.history, {
         prompt: p.prompt,
+        negativePrompt: p.negativePrompt,
         seed: p.seed,
         steps: p.steps,
+        cfg: p.cfg,
         model: p.model,
         width: p.width,
         height: p.height,
@@ -432,7 +438,19 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       );
       this.state.image = {
         dataUrl: `data:image/png;base64,${Buffer.from(png).toString("base64")}`,
-        params: { prompt, seed, steps, model: spec.id, width, height, date: isoStamp(new Date()) },
+        params: {
+          prompt,
+          // TODO(Task 5): Platzhalter-Bridge, damit GenParams (Task 3) hier kompiliert —
+          // echte Negativ-Prompt-/CFG-Steuerung kommt mit der UI-Verdrahtung in Task 5.
+          negativePrompt: "",
+          seed,
+          steps,
+          cfg: 7,
+          model: spec.id,
+          width,
+          height,
+          date: isoStamp(new Date()),
+        },
       };
       this.state.run = { kind: "idle" };
       this.state.mflux = { ...this.state.mflux, weights: "ready", download: null };
@@ -449,8 +467,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       const p = this.state.image.params;
       this.settings.history = pushHistory(this.settings.history, {
         prompt: p.prompt,
+        negativePrompt: p.negativePrompt,
         seed: p.seed,
         steps: p.steps,
+        cfg: p.cfg,
         model: p.model,
         width: p.width,
         height: p.height,

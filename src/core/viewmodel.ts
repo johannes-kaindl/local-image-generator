@@ -27,8 +27,12 @@ export type RunState =
  *  weitergetippten Prompt). */
 export interface GenParams {
   prompt: string;
+  /** Negativ-Prompt (A1111-kompatibel) — leerer String heißt "nicht gesetzt" (Spec §5). */
+  negativePrompt: string;
   seed: number;
   steps: number;
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). */
+  cfg: number;
   model: string;
   width: number;
   height: number;

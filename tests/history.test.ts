@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 import { HISTORY_LIMIT, historyLabel, pushHistory, groupByPrompt, deleteEntry } from "../src/core/history";
 import type { HistoryEntry } from "../src/core/settings";
 
-function e(prompt: string, seed: number, steps = 4, created = "2026-07-17T10:00:00"): HistoryEntry {
-  return { prompt, seed, steps, model: "sd-turbo", width: 512, height: 512, created };
+function e(
+  prompt: string,
+  seed: number,
+  steps = 4,
+  created = "2026-07-17T10:00:00",
+  negativePrompt = "",
+  cfg = 7,
+): HistoryEntry {
+  return { prompt, seed, steps, model: "sd-turbo", width: 512, height: 512, created, negativePrompt, cfg };
 }
 
 describe("pushHistory", () => {
@@ -89,7 +96,7 @@ describe("deleteEntry", () => {
 });
 
 describe("recipes 0.4 (model + size im Schlüssel)", () => {
-  const base = {
+  const base: HistoryEntry = {
     prompt: "apple",
     seed: 1,
     steps: 4,
@@ -97,6 +104,8 @@ describe("recipes 0.4 (model + size im Schlüssel)", () => {
     width: 512,
     height: 512,
     created: "2026-07-18T10:00:00",
+    negativePrompt: "",
+    cfg: 7,
   };
   it("gleiches Rezept auf anderem Modell kollabiert NICHT", () => {
     const list = pushHistory(pushHistory([], base), { ...base, model: "flux2-klein-4b", created: "2026-07-18T10:01:00" });
@@ -112,6 +121,40 @@ describe("recipes 0.4 (model + size im Schlüssel)", () => {
   });
   it("deleteEntry matcht über model+size mit", () => {
     const other = { ...base, model: "flux2-klein-4b" };
+    expect(deleteEntry([base, other], base)).toEqual([other]);
+  });
+});
+
+describe("recipes negativePrompt/cfg (Task 3)", () => {
+  const base: HistoryEntry = {
+    prompt: "apple",
+    seed: 1,
+    steps: 4,
+    model: "sd-turbo",
+    width: 512,
+    height: 512,
+    created: "2026-07-18T10:00:00",
+    negativePrompt: "",
+    cfg: 7,
+  };
+  it("gleiches Rezept mit anderem negativePrompt kollabiert NICHT", () => {
+    const list = pushHistory(pushHistory([], base), {
+      ...base,
+      negativePrompt: "blurry",
+      created: "2026-07-18T10:01:00",
+    });
+    expect(list).toHaveLength(2);
+  });
+  it("gleiches Rezept mit anderem cfg kollabiert NICHT", () => {
+    const list = pushHistory(pushHistory([], base), { ...base, cfg: 9, created: "2026-07-18T10:01:00" });
+    expect(list).toHaveLength(2);
+  });
+  it("identisches Rezept (inkl. negativePrompt+cfg) kollabiert weiterhin", () => {
+    const list = pushHistory(pushHistory([], base), { ...base, created: "2026-07-18T10:01:00" });
+    expect(list).toHaveLength(1);
+  });
+  it("deleteEntry matcht über negativePrompt+cfg mit", () => {
+    const other = { ...base, negativePrompt: "blurry" };
     expect(deleteEntry([base, other], base)).toEqual([other]);
   });
 });

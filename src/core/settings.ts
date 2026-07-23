@@ -16,8 +16,12 @@ export interface StylePreset {
 /** Ein aufgezeichnetes Rezept in der Historie (volle Reproduktion). */
 export interface HistoryEntry {
   prompt: string;
+  /** Negativ-Prompt (A1111-kompatibel) — leerer String heißt "nicht gesetzt" (Spec §5). */
+  negativePrompt: string;
   seed: number;
   steps: number;
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). */
+  cfg: number;
   model: string;
   width: number;
   height: number;
@@ -97,7 +101,14 @@ function sanitizeHistory(raw: unknown): HistoryEntry[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter(
-      (h): h is Omit<HistoryEntry, "width" | "height"> & { width?: unknown; height?: unknown } =>
+      (
+        h,
+      ): h is Omit<HistoryEntry, "width" | "height" | "negativePrompt" | "cfg"> & {
+        width?: unknown;
+        height?: unknown;
+        negativePrompt?: unknown;
+        cfg?: unknown;
+      } =>
         isPlainObject(h) &&
         typeof h["prompt"] === "string" &&
         typeof h["seed"] === "number" &&
@@ -110,6 +121,9 @@ function sanitizeHistory(raw: unknown): HistoryEntry[] {
       // Migration 0.3→0.4: Alt-Einträge sind alle SD-Turbo-512er (Spec §8).
       width: typeof h.width === "number" ? h.width : 512,
       height: typeof h.height === "number" ? h.height : 512,
+      // Migration 0.4→0.5: Alt-Einträge kannten weder negativePrompt noch cfg (Spec §5/§8).
+      negativePrompt: typeof h.negativePrompt === "string" ? h.negativePrompt : "",
+      cfg: typeof h.cfg === "number" ? h.cfg : 7,
     }));
 }
 

@@ -5,14 +5,29 @@
 import { serializeFrontmatter, type FmValue } from "../vendor/kit/frontmatter";
 import type { GenParams } from "./viewmodel";
 
-const FM_ORDER = ["prompt", "seed", "steps", "model", "width", "height", "created", "image"];
+const FM_ORDER = [
+  "prompt",
+  "negative_prompt",
+  "seed",
+  "steps",
+  "cfg",
+  "model",
+  "width",
+  "height",
+  "created",
+  "image",
+];
 
 /** @param imageLink Vault-Pfad des Bildes, so wie er in `![[…]]` stehen soll. */
 export function buildImageNote(params: GenParams, imageLink: string): string {
   const data: Record<string, FmValue> = {
     prompt: params.prompt,
+    // negative_prompt nur bei nicht-leerem Wert (Spec §5) — ein leerer Negativ-Prompt ist
+    // "nicht gesetzt", nicht "bewusst leer", und soll nicht als Rauschen in jeder Notiz stehen.
+    ...(params.negativePrompt.trim() !== "" ? { negative_prompt: params.negativePrompt } : {}),
     seed: params.seed,
     steps: params.steps,
+    cfg: params.cfg,
     model: params.model,
     width: params.width,
     height: params.height,
