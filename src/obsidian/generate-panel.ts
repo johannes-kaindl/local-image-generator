@@ -4,8 +4,7 @@ import { setIcon, setTooltip } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
 import { t } from "../vendor/kit/i18n";
 import { buildViewModel } from "../core/viewmodel";
-import { CFG } from "../core/generation";
-import { getModel, MODELS, type ModelSpec, type SizeOption } from "../core/models";
+import { CFG, SIZES, STEPS, type SizeOption } from "../core/generation";
 import type { HistoryEntry } from "../core/settings";
 import type { HubPanel, TabId } from "./hub";
 import type { ViewHost } from "./view";
@@ -19,17 +18,21 @@ export class GeneratePanel implements HubPanel {
   readonly label = t("view.tabGenerate");
   readonly icon = "image-plus";
 
-  private modelEl!: HTMLSelectElement;
+  private modelInfoEl!: HTMLElement;
   private sizeRowEl!: HTMLElement; // Container in der controls-Zeile
   private sizeEl: HTMLSelectElement | null = null;
   private promptEl!: HTMLTextAreaElement;
+  private negativePromptEl!: HTMLTextAreaElement;
   private stepsEl!: HTMLInputElement;
   private stepsValueEl!: HTMLElement;
+  private cfgEl!: HTMLInputElement;
+  private cfgValueEl!: HTMLElement;
   private seedEl!: HTMLInputElement;
   private generateBtn!: HTMLButtonElement;
   private emptyEl!: HTMLElement;
   private emptyTextEl!: HTMLElement;
   private emptyCtaEl!: HTMLButtonElement;
+  private emptyCtaAction: "settings" | "recheck" | undefined;
   private imageCard!: HTMLElement;
   private imgEl!: HTMLImageElement;
   private regenBtn!: HTMLButtonElement;
@@ -47,13 +50,7 @@ export class GeneratePanel implements HubPanel {
     const root = container.createDiv({ cls: "lig-panel" });
 
     const modelRow = root.createDiv({ cls: "lig-row lig-model-row" });
-    modelRow.createSpan({ text: t("generate.model"), cls: "lig-label" });
-    this.modelEl = modelRow.createEl("select", { cls: "dropdown lig-model" });
-    for (const m of MODELS) this.modelEl.createEl("option", { text: m.label, attr: { value: m.id } });
-    this.modelEl.value = this.host.getSettings().selectedModel;
-    this.modelEl.addEventListener("change", () => {
-      this.applyModel(this.modelEl.value);
-    });
+    this.modelInfoEl = modelRow.createSpan({ cls: "lig-model-info" });
 
     const promptRow = root.createDiv({ cls: "lig-prompt-row" });
     this.promptEl = promptRow.createEl("textarea", {
@@ -64,23 +61,29 @@ export class GeneratePanel implements HubPanel {
       this.host.setPrompt(this.promptEl.value);
       this.refresh();
     });
+
+    const negativePromptRow = root.createDiv({ cls: "lig-prompt-row" });
+    this.negativePromptEl = negativePromptRow.createEl("textarea", {
+      cls: "lig-prompt lig-negative",
+      attr: { placeholder: t("generate.negativePromptPlaceholder"), rows: "2" },
+    });
+    this.negativePromptEl.addEventListener("input", () => {
+      this.host.setNegativePrompt(this.negativePromptEl.value);
+      this.refresh();
+    });
+
     this.chipsEl = root.createDiv({ cls: "lig-row lig-chips" });
 
     const controls = root.createDiv({ cls: "lig-row" });
     this.sizeRowEl = controls.createSpan({ cls: "lig-size-slot" });
     controls.createSpan({ text: t("generate.steps"), cls: "lig-label" });
-    // Startwert: SD-Turbo behält den Settings-Startwert (Nutzer-Regler, kein Zwang),
-    // andere Modelle starten am Katalog-Default (Task 9 Brief).
-    const startSpec = getModel(this.host.getSettings().selectedModel);
-    const startSteps = String(
-      startSpec.id === "sd-turbo" ? this.host.getSettings().defaultSteps : startSpec.steps.default,
-    );
+    const startSteps = String(this.host.getSettings().defaultSteps);
     this.stepsEl = controls.createEl("input", {
       cls: "lig-steps",
       attr: {
         type: "range",
-        min: String(startSpec.steps.min),
-        max: String(startSpec.steps.max),
+        min: String(STEPS.min),
+        max: String(STEPS.max),
         step: "1",
         value: startSteps,
       },
@@ -88,6 +91,23 @@ export class GeneratePanel implements HubPanel {
     this.stepsValueEl = controls.createSpan({ text: startSteps, cls: "lig-steps-value" });
     this.stepsEl.addEventListener("input", () => {
       this.stepsValueEl.setText(this.stepsEl.value);
+      this.refresh();
+    });
+    controls.createSpan({ text: t("generate.cfg"), cls: "lig-label" });
+    const startCfg = String(CFG.default);
+    this.cfgEl = controls.createEl("input", {
+      cls: "lig-cfg",
+      attr: {
+        type: "range",
+        min: String(CFG.min),
+        max: String(CFG.max),
+        step: String(CFG.step),
+        value: startCfg,
+      },
+    });
+    this.cfgValueEl = controls.createSpan({ text: startCfg, cls: "lig-cfg-value" });
+    this.cfgEl.addEventListener("input", () => {
+      this.cfgValueEl.setText(this.cfgEl.value);
       this.refresh();
     });
     controls.createSpan({ text: t("generate.seed"), cls: "lig-label" });
@@ -110,14 +130,16 @@ export class GeneratePanel implements HubPanel {
     this.generateBtn = controls.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
     this.generateBtn.addEventListener("click", () => {
       const { width, height } = this.currentSize();
-      // TODO(Task 6): CFG.default bridge until the panel has a real slider
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), CFG.default, width, height);
+      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
     });
 
     this.emptyEl = root.createDiv({ cls: "lig-empty" });
     this.emptyTextEl = this.emptyEl.createDiv();
     this.emptyCtaEl = this.emptyEl.createEl("button", { cls: "mod-cta" });
-    this.emptyCtaEl.addEventListener("click", () => this.host.openSettings());
+    this.emptyCtaEl.addEventListener("click", () => {
+      if (this.emptyCtaAction === "recheck") this.host.recheckServer();
+      else this.host.openSettings();
+    });
 
     this.imageCard = root.createDiv({ cls: "lig-card" });
     this.imgEl = this.imageCard.createEl("img", { cls: "lig-image" });
@@ -128,8 +150,7 @@ export class GeneratePanel implements HubPanel {
       // Seed aus dem Feld und würfelt nie — so sagt jeder Knopf, was er tut.
       this.seedEl.value = String(randomSeed());
       const { width, height } = this.currentSize();
-      // TODO(Task 6): CFG.default bridge until the panel has a real slider
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), CFG.default, width, height);
+      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
     });
     this.createBtn = actions.createEl("button", { text: t("generate.button.create"), cls: "mod-cta" });
     this.createBtn.addEventListener("click", () => this.host.saveImage("create"));
@@ -140,7 +161,7 @@ export class GeneratePanel implements HubPanel {
     this.statusIconEl = status.createSpan({ cls: "lig-status-icon" });
     this.statusTextEl = status.createSpan({ cls: "lig-status-text" });
 
-    this.rebuildSizeDropdown(startSpec, null);
+    this.buildSizeDropdown();
     this.refresh();
   }
 
@@ -180,65 +201,55 @@ export class GeneratePanel implements HubPanel {
     }
   }
 
-  /** Größen-Dropdown zum Modell aufbauen; preferred (aus applyRecipe) wird vorausgewählt,
-   *  wenn das Modell die Größe kennt. Bei nur einer Größe: kein Dropdown (Spec §5). */
-  private rebuildSizeDropdown(spec: ModelSpec, preferred: SizeOption | null): void {
+  /** Größen-Dropdown einmalig aus der generischen SIZES-Konstante aufbauen (kein
+   *  Modellbezug mehr — der Server-App-seitige Modellwechsel kennt keine Katalog-Größen). */
+  private buildSizeDropdown(): void {
     this.sizeRowEl.empty();
-    this.sizeEl = null;
-    if (spec.sizes.length <= 1) return;
     this.sizeRowEl.createSpan({ text: t("generate.size"), cls: "lig-label" });
     this.sizeEl = this.sizeRowEl.createEl("select", { cls: "dropdown lig-size" });
-    for (const s of spec.sizes)
+    for (const s of SIZES)
       this.sizeEl.createEl("option", { text: `${s.width} × ${s.height}`, attr: { value: `${s.width}x${s.height}` } });
-    if (preferred && spec.sizes.some((s) => s.width === preferred.width && s.height === preferred.height))
-      this.sizeEl.value = `${preferred.width}x${preferred.height}`;
     this.sizeEl.addEventListener("change", () => this.refresh());
   }
 
-  /** Aktive Größe: Dropdown-Wert oder die einzige Katalog-Größe. */
+  /** Aktive Größe: Dropdown-Wert (der Dropdown existiert nach mount() immer). */
   private currentSize(): SizeOption {
-    const spec = getModel(this.modelEl.value);
-    if (this.sizeEl) {
-      const [w, h] = this.sizeEl.value.split("x").map(Number);
-      return { width: w!, height: h! };
-    }
-    return spec.sizes[0]!;
-  }
-
-  /** Regler an ein Modell anpassen (Modellwechsel + applyRecipe). */
-  private applyModel(id: string, preferredSize: SizeOption | null = null): void {
-    const spec = getModel(id);
-    this.stepsEl.min = String(spec.steps.min);
-    this.stepsEl.max = String(spec.steps.max);
-    this.stepsEl.value = String(spec.steps.default);
-    this.stepsValueEl.setText(this.stepsEl.value);
-    this.rebuildSizeDropdown(spec, preferredSize);
-    this.refresh();
+    const [w, h] = this.sizeEl!.value.split("x").map(Number);
+    return { width: w!, height: h! };
   }
 
   /** Ein Rezept aus der Historie in die DOM-Felder schreiben. Der Host wechselt danach
    *  auf den Generate-Tab; refresh() zieht Chips/Aktiv-Zustand nach. */
   applyRecipe(entry: HistoryEntry): void {
-    this.modelEl.value = getModel(entry.model).id; // getModel-Fallback fängt Alt-/Fremd-IDs
-    this.applyModel(this.modelEl.value, { width: entry.width, height: entry.height });
     this.promptEl.value = entry.prompt;
     this.host.setPrompt(entry.prompt);
+    this.negativePromptEl.value = entry.negativePrompt;
+    this.host.setNegativePrompt(entry.negativePrompt);
     this.seedEl.value = String(entry.seed);
-    // Steps NACH applyModel setzen (applyModel hat sie auf den Default gestellt), geclampt:
-    const spec = getModel(this.modelEl.value);
-    const steps = Math.min(spec.steps.max, Math.max(spec.steps.min, entry.steps));
+    const steps = Math.min(STEPS.max, Math.max(STEPS.min, entry.steps));
     this.stepsEl.value = String(steps);
     this.stepsValueEl.setText(String(steps));
+    const cfg = Math.min(CFG.max, Math.max(CFG.min, entry.cfg));
+    this.cfgEl.value = String(cfg);
+    this.cfgValueEl.setText(String(cfg));
+    const inCatalog = SIZES.some((s) => s.width === entry.width && s.height === entry.height);
+    const size = inCatalog ? { width: entry.width, height: entry.height } : SIZES[0]!;
+    this.sizeEl!.value = `${size.width}x${size.height}`;
     this.refresh();
   }
 
   refresh(): void {
     const { width, height } = this.currentSize();
-    // TODO(Task 6): CFG.default bridge until the panel has a real slider
-    this.host.setRecipe(Number(this.stepsEl.value), Number(this.seedEl.value), CFG.default, width, height);
+    this.host.setRecipe(Number(this.stepsEl.value), Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
     const state = this.host.getPanelState();
     this.renderChips();
     const vm = buildViewModel(state);
+
+    this.modelInfoEl.setText(
+      state.server.kind === "ok" && state.server.modelName !== null
+        ? t("generate.modelInfo", state.server.modelName)
+        : t("generate.modelInApp"),
+    );
 
     this.generateBtn.disabled = !vm.generateEnabled;
     this.emptyEl.toggleClass("is-hidden", vm.empty === null);
@@ -246,6 +257,7 @@ export class GeneratePanel implements HubPanel {
       this.emptyTextEl.setText(vm.empty.text);
       this.emptyCtaEl.toggleClass("is-hidden", vm.empty.ctaLabel === undefined);
       if (vm.empty.ctaLabel) this.emptyCtaEl.setText(vm.empty.ctaLabel);
+      this.emptyCtaAction = vm.empty.ctaAction;
     }
     this.imageCard.toggleClass("is-hidden", !vm.showImage);
     if (state.image) this.imgEl.src = state.image.dataUrl;

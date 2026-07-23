@@ -5,7 +5,10 @@
 .lig-label { color: var(--text-muted); font-size: var(--font-ui-small); }
 .lig-steps { flex: 1 1 60px; }
 .lig-steps-value { min-width: 1.5em; text-align: center; }
+.lig-cfg { flex: 1 1 60px; }
+.lig-cfg-value { min-width: 1.5em; text-align: center; }
 .lig-seed { width: 8em; }
+.lig-model-info { color: var(--text-muted); font-size: var(--font-ui-small); }
 /* Ohne diese Regel unterscheidet sich ein deaktivierter mod-cta-Button optisch kaum vom
    aktiven (nur der Cursor ändert sich) — wirkt wie ein Bug statt wie "nichts zu tun".
    Deckkraft + Graustufen machen deutlich, dass der Button gerade keine Aktion ist. */
