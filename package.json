@@ -1,7 +1,7 @@
 {
   "name": "Local Image Generator",
-  "version": "0.4.4",
-  "description": "Generate images locally — SD-Turbo (WebGPU) and FLUX.2 (mflux), no external server, no cloud.",
+  "version": "0.5.0",
+  "description": "Generate images with your local Draw Things or A1111-compatible server — private, on-device, no cloud.",
   "type": "module",
   "scripts": {
     "dev": "node esbuild.config.mjs",

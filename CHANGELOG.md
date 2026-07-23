@@ -6,6 +6,58 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-23
+
+### Breaking
+
+- **In-process image generation is gone.** Both the SD-Turbo engine
+  (ONNX/WebGPU, running inside the plugin) and the FLUX.2 klein 4B engine
+  (via a local `mflux` child process) have been removed entirely, along with
+  the model catalog that drove them. The plugin now requires a **separately
+  running local A1111-compatible image server** — [Draw Things](https://drawthings.ai/),
+  [AUTOMATIC1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui),
+  [Forge](https://github.com/lllyasviel/stable-diffusion-webui-forge), or
+  [SD.Next](https://github.com/vladmandic/sdnext) — configured via a new
+  **Server endpoint** setting. See the rewritten README for setup
+  instructions.
+
+### Added
+
+- **Thin-client architecture**: the plugin talks to `/sdapi/v1/txt2img`,
+  `/sdapi/v1/options`, and `/sdapi/v1/progress` over HTTP instead of running
+  a model in-process. Model choice now lives entirely in the server app; the
+  plugin sends generic parameters and shows the server's active model as a
+  status hint.
+- **Real negative prompt and CFG (guidance scale) controls** — previously
+  impossible, since both old models (SD-Turbo, FLUX.2 klein 4B) were
+  guidance-distilled and didn't support them meaningfully. Server-hosted
+  models generally do.
+- Generic **size** (7 curated aspect ratios), **steps** (1–50) and **CFG**
+  (1–15) controls replace the old per-model catalog and its fixed
+  SD-Turbo resolution / FLUX.2-only size dropdown.
+- **Test connection** button in settings, checking reachability and
+  reporting the server's active model.
+- **Legacy-cache cleanup**: upgraders from pre-0.5 versions may still have
+  ~2.5 GB of old SD-Turbo model weights cached in the browser's Cache API
+  from the old in-process architecture. The plugin detects this once on
+  load and shows a one-time notice; a new settings button deletes the
+  cache in one click.
+
+### Changed
+
+- Generation history is preserved across the upgrade: existing entries are
+  loaded with default values for the new fields (`negativePrompt: ""`,
+  `cfg: 7`) rather than being discarded or breaking.
+- Bundle size dropped from ~34 MB (including the bundled ONNX-runtime-web
+  WASM runtime) to ~39.7 KB, since no inference runtime or model code ships
+  with the plugin anymore.
+
+### Removed
+
+- SD-Turbo (ONNX/WebGPU) and FLUX.2 klein 4B (`mflux`) engines, the model
+  catalog, and all associated settings (model download, `mflux` path, FLUX
+  weights location).
+
 ## [0.4.4] — 2026-07-23
 
 ### Changed
