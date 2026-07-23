@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-07-23
+
 ### Changed
 - **Settings sections no longer collapse.** They are all open now, separated by headings.
   This is a trade: collapsible sections and Obsidian's settings **search** (1.13+) are
