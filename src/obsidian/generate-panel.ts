@@ -63,6 +63,7 @@ export class GeneratePanel implements HubPanel {
     });
 
     const negativePromptRow = root.createDiv({ cls: "lig-prompt-row" });
+    negativePromptRow.createSpan({ text: t("generate.negativePrompt"), cls: "lig-label" });
     this.negativePromptEl = negativePromptRow.createEl("textarea", {
       cls: "lig-prompt lig-negative",
       attr: { placeholder: t("generate.negativePromptPlaceholder"), rows: "2" },

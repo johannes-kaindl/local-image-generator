@@ -42,7 +42,7 @@ describe("EN/DE dictionaries", () => {
   });
 
   it("are both non-empty and cover core keys used across the plugin", () => {
-    for (const key of ["cmd.open", "view.title", "generate.button.generate", "history.empty", "modal.confirm"]) {
+    for (const key of ["cmd.open", "view.title", "generate.button.generate", "history.empty", "modal.cancel"]) {
       expect(EN[key]).toBeTruthy();
       expect(DE[key]).toBeTruthy();
     }

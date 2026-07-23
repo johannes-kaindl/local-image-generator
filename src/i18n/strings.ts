@@ -19,7 +19,6 @@ export const EN: Record<string, string> = {
   "generate.button.reroll": "Reroll",
   "generate.button.create": "Create",
   "generate.button.insert": "Insert",
-  "generate.model": "Model",
   "generate.modelInfo": "Model: {0}",
   "generate.modelInApp": "Model: (chosen in the server app)",
   "generate.negativePrompt": "Negative prompt",
@@ -67,7 +66,7 @@ export const EN: Record<string, string> = {
   "settings.createModeNote": "Image + note",
 
   "settings.defaultSteps": "Default steps",
-  "settings.defaultStepsDesc": "Starting value of the steps slider. SD-Turbo is trained for 1–4 steps.",
+  "settings.defaultStepsDesc": "Starting value of the steps slider (1–50). More steps trade speed for detail.",
 
   "settings.server.name": "Server endpoint",
   "settings.server.desc":
@@ -88,8 +87,6 @@ export const EN: Record<string, string> = {
   "settings.presets.add": "Add style",
   "settings.presets.delete": "Delete style",
 
-  "settings.danger.heading": "Danger zone",
-
   "history.empty": "No history yet. Generate an image to start.",
   "history.viewRecent": "Recent",
   "history.viewGrouped": "By prompt",
@@ -101,7 +98,6 @@ export const EN: Record<string, string> = {
   "history.variations.other": "{0} variations",
 
   "modal.cancel": "Cancel",
-  "modal.confirm": "Delete",
 };
 
 export const DE: Record<string, string> = {
@@ -116,7 +112,6 @@ export const DE: Record<string, string> = {
   "generate.button.reroll": "Neu würfeln",
   "generate.button.create": "Erstellen",
   "generate.button.insert": "Einfügen",
-  "generate.model": "Modell",
   "generate.modelInfo": "Modell: {0}",
   "generate.modelInApp": "Modell: (in der Server-App gewählt)",
   "generate.negativePrompt": "Negativ-Prompt",
@@ -164,7 +159,7 @@ export const DE: Record<string, string> = {
   "settings.createModeNote": "Bild + Notiz",
 
   "settings.defaultSteps": "Standard-Schritte",
-  "settings.defaultStepsDesc": "Startwert des Schritte-Reglers. SD-Turbo ist auf 1–4 Schritte trainiert.",
+  "settings.defaultStepsDesc": "Startwert des Schritte-Reglers (1–50). Mehr Schritte tauschen Geschwindigkeit gegen Detail.",
 
   "settings.server.name": "Server-Endpoint",
   "settings.server.desc":
@@ -185,8 +180,6 @@ export const DE: Record<string, string> = {
   "settings.presets.add": "Stil hinzufügen",
   "settings.presets.delete": "Stil löschen",
 
-  "settings.danger.heading": "Gefahrenzone",
-
   "history.empty": "Noch kein Verlauf. Erstelle ein Bild, um zu starten.",
   "history.viewRecent": "Zuletzt",
   "history.viewGrouped": "Nach Prompt",
@@ -198,7 +191,6 @@ export const DE: Record<string, string> = {
   "history.variations.other": "{0} Varianten",
 
   "modal.cancel": "Abbrechen",
-  "modal.confirm": "Löschen",
 };
 
 /** Registriert EN/DE bei der vendorten i18n-Engine. Einmalig vor dem ersten t()-Aufruf

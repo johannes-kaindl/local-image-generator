@@ -160,8 +160,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.refreshViews();
     try {
       const r = await httpGetJson(`${normalizeEndpoint(ep)}/sdapi/v1/options`);
+      if (this.unloaded) return this.state.server; // Plugin entladen → keine späten State-Mutationen mehr
       this.state.server = r.status === 200 ? { kind: "ok", modelName: parseOptionsModel(r.json) } : { kind: "unreachable" };
     } catch {
+      if (this.unloaded) return this.state.server;
       this.state.server = { kind: "unreachable" };
     }
     this.refreshViews();

@@ -2,8 +2,8 @@
 // damit Txt2ImgClient pure bleibt. Muster: yijing-oracle/src/obsidian/http.ts.
 import { requestUrl } from "obsidian";
 
-/** Passt zu HttpPostJson in core/txt2img.ts. Default-Timeout 30 min: FLUX auf schwacher
- *  Hardware darf Minuten dauern (Spec §3) — der Timeout ist nur die Notbremse gegen
+/** Passt zu HttpPostJson in core/txt2img.ts. Default-Timeout 30 min: große Bilder auf
+ *  langsamen Servern können Minuten dauern (Spec §3) — der Timeout ist nur die Notbremse gegen
  *  ewiges Hängen, requestUrl kennt weder timeout noch Abort. */
 export async function httpPostJson(url: string, body: unknown, timeoutMs = 1_800_000): Promise<{ status: number; json: unknown }> {
   let timer: number | undefined;
