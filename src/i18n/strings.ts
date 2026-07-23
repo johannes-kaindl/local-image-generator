@@ -114,6 +114,18 @@ export const EN: Record<string, string> = {
   "settings.defaultSteps": "Default steps",
   "settings.defaultStepsDesc": "Starting value of the steps slider. SD-Turbo is trained for 1–4 steps.",
 
+  "settings.server.name": "Server endpoint",
+  "settings.server.desc":
+    "A1111-compatible local image server — Draw Things (enable API server), AUTOMATIC1111 (--api), Forge, SD.Next.",
+  "settings.server.test": "Test connection",
+
+  "notice.serverOk": "Server OK — model: {0}",
+  "notice.serverFail": "Server not reachable. Check that it is running and the API is enabled.",
+
+  "settings.legacy.delete": "Delete old SD-Turbo weights (~2.5 GB)",
+  "settings.legacy.done": "Old weights deleted.",
+  "notice.legacyHint": "Old in-process model weights found (~2.5 GB). You can delete them in the settings.",
+
   "settings.presets.heading": "Styles",
   "settings.presets.desc": "Style chips shown under the prompt. Clicking a chip appends its text to the prompt.",
   "settings.presets.label": "Label",
@@ -243,6 +255,18 @@ export const DE: Record<string, string> = {
 
   "settings.defaultSteps": "Standard-Schritte",
   "settings.defaultStepsDesc": "Startwert des Schritte-Reglers. SD-Turbo ist auf 1–4 Schritte trainiert.",
+
+  "settings.server.name": "Server-Endpoint",
+  "settings.server.desc":
+    "A1111-kompatibler lokaler Bild-Server — Draw Things (API-Server aktivieren), AUTOMATIC1111 (--api), Forge, SD.Next.",
+  "settings.server.test": "Verbindung testen",
+
+  "notice.serverOk": "Server OK — Modell: {0}",
+  "notice.serverFail": "Server nicht erreichbar. Prüfe, ob er läuft und die API aktiviert ist.",
+
+  "settings.legacy.delete": "Alte SD-Turbo-Gewichte löschen (~2,5 GB)",
+  "settings.legacy.done": "Alte Gewichte gelöscht.",
+  "notice.legacyHint": "Alte In-Process-Modellgewichte gefunden (~2,5 GB). Du kannst sie in den Einstellungen löschen.",
 
   "settings.presets.heading": "Stile",
   "settings.presets.desc": "Stil-Chips unter dem Prompt. Ein Klick auf einen Chip hängt dessen Text an den Prompt an.",

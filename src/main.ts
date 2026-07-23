@@ -11,9 +11,10 @@ import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import { parseOptionsModel, parseProgressPct, Txt2ImgClient } from "./core/txt2img";
-import type { GenParams, PanelState } from "./core/viewmodel";
+import type { GenParams, PanelState, ServerState } from "./core/viewmodel";
 import { ConfirmModal } from "./obsidian/confirm-modal";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
+import { hasLegacyCache } from "./obsidian/legacy-cache";
 import { dataUrlToBytes } from "./obsidian/png";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { GeneratorView, VIEW_TYPE, type ViewHost } from "./obsidian/view";
@@ -122,6 +123,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
     void this.checkServer();
+    // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
+    // Settings-Tab-Öffnung): Bestandsinstallationen können noch ~2,5 GB alte SD-Turbo-
+    // Gewichte im Cache-API-Speicher haben (0.x, In-Process-Engine). Hinweis statt
+    // automatischem Löschen — der Aufräumer selbst sitzt in den Settings (Task 7).
+    void hasLegacyCache().then((found) => {
+      if (found) new Notice(t("notice.legacyHint"));
+    });
   }
 
   onunload(): void {
@@ -137,13 +145,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   /** Erreichbarkeit + aktives Modell in den State spiegeln (Spec §3: GET /sdapi/v1/options,
-   *  200 ohne Modellfeld gilt als OK — Draw Things liefert die Options-Form nur teilweise). */
-  async checkServer(): Promise<void> {
+   *  200 ohne Modellfeld gilt als OK — Draw Things liefert die Options-Form nur teilweise).
+   *  Gibt den resultierenden ServerState zurück, damit der Settings-Tab-Test-Button (Task 7)
+   *  das Ergebnis direkt für seine Notice auswerten kann, ohne einen eigenen Zugriff auf
+   *  den (privaten) Plugin-State zu brauchen. */
+  async checkServer(): Promise<ServerState> {
     const ep = this.settings.endpoint.trim();
     if (ep === "") {
       this.state.server = { kind: "unconfigured" };
       this.refreshViews();
-      return;
+      return this.state.server;
     }
     this.state.server = { kind: "checking" };
     this.refreshViews();
@@ -154,6 +165,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.state.server = { kind: "unreachable" };
     }
     this.refreshViews();
+    return this.state.server;
   }
 
   refreshViews(): void {
@@ -161,7 +173,6 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       const view = leaf.view;
       if (view instanceof GeneratorView) view.refresh();
     }
-    this.settingTab.refreshModel();
   }
 
   private async activateView(): Promise<void> {
