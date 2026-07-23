@@ -24,6 +24,12 @@ import { pickLang, setLang, t } from "./vendor/kit/i18n";
 export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
   private settingTab!: LigSettingTab;
+  // Wird in onunload gesetzt. Die generate()-Polling-Callbacks und der Post-await-Block
+  // prüfen es, damit ein spät eintreffendes HTTP-Ergebnis nach dem Entladen des Plugins
+  // nicht mehr this.state mutiert, refreshViews() ruft oder History schreibt. Der Remote-
+  // Call selbst ist nicht abbrechbar (Obsidians requestUrl kennt kein Abort) — wir
+  // verhindern nur die späte Nebenwirkung.
+  private unloaded = false;
   private state: PanelState = {
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
     run: { kind: "idle" },
@@ -118,6 +124,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     void this.checkServer();
   }
 
+  onunload(): void {
+    // Thin Client: kein Prozess/keine Session zu killen. Aber eine laufende generate()
+    // pollt per setInterval und wartet auf einen nicht abbrechbaren HTTP-Call. Das Flag
+    // sorgt dafür, dass deren Callbacks nach dem Entladen zu No-ops werden (kein State-
+    // Mutieren, kein refreshViews, kein History-Schreiben).
+    this.unloaded = true;
+  }
+
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
@@ -176,15 +190,18 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden.
     let elapsed = 0;
     const tick = window.setInterval(() => {
+      if (this.unloaded) return; // Plugin entladen → keine späten State-Mutationen mehr
       elapsed += 1;
       if (this.state.run.kind !== "generating" && this.state.run.kind !== "contacting") return;
       void httpGetJson(`${normalizeEndpoint(this.settings.endpoint)}/sdapi/v1/progress`, 1000)
         .then((r) => {
+          if (this.unloaded) return;
           if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
             this.state.run = { kind: "generating", pct: r.status === 200 ? parseProgressPct(r.json) : null, elapsedSec: elapsed };
           this.refreshViews();
         })
         .catch(() => {
+          if (this.unloaded) return;
           if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
             this.state.run = { kind: "generating", pct: null, elapsedSec: elapsed };
           this.refreshViews();
@@ -193,6 +210,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     let succeeded = false;
     try {
       const png = await client.generate({ prompt, negativePrompt, width, height, steps, seed, cfg });
+      // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
+      // keine State-Mutation, kein refreshViews, kein History-Schreiben — nur das finally
+      // räumt den Timer ab. return löst finally aus und überspringt den Post-await-Block.
+      if (this.unloaded) return;
       this.state.image = {
         dataUrl: `data:image/png;base64,${png}`,
         params: { prompt, negativePrompt, seed, steps, cfg, model, width, height, date: isoStamp(new Date()) },
@@ -200,13 +221,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.state.run = { kind: "idle" };
       succeeded = true;
     } catch (e) {
+      if (this.unloaded) return;
       const msg = e instanceof Error ? e.message : String(e);
       this.state.run = { kind: "error", message: msg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
       void this.checkServer();
     } finally {
+      // Timer immer abräumen (auch wenn onunload zwischen zwei Polls fiel) — verhindert
+      // weiteres Feuern; refreshViews aber nur, solange das Plugin noch aktiv ist.
       window.clearInterval(tick);
-      this.refreshViews();
+      if (!this.unloaded) this.refreshViews();
     }
     if (succeeded && this.state.image) {
       const p = this.state.image.params;
