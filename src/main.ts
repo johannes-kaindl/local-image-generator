@@ -1,57 +1,46 @@
 // Wiring (Spec §4): EIN registerView, Command + Ribbon, Host-Implementierung für die
-// View, Lazy-Init der Engine (GPU-Check → Cache-Buffers → ORT-Sessions).
+// View. Thin Client — keine In-Process-Engine mehr: generate() spricht über HTTP mit
+// einem lokal laufenden A1111-kompatiblen Server (/sdapi/v1/txt2img).
 // i18n (docs/superpowers/specs/2026-07-17-i18n-design.md §2): registerI18n() + setLang()
 // laufen ZUERST im onload, vor addSettingTab/registerView/addRibbonIcon/addCommand — sonst
 // rendern die ersten t()-Aufrufe rohe Keys.
 import { getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
-import { SdTurboEngine } from "./core/engine";
-import { raceTimeout } from "./obsidian/timeout";
 import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
-import { MODEL_FILES, MODEL_ID } from "./core/model-manifest";
-import { DEFAULT_MODEL_ID, getModel, type ModelSpec } from "./core/models";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
+import { parseOptionsModel, parseProgressPct, Txt2ImgClient } from "./core/txt2img";
 import type { GenParams, PanelState } from "./core/viewmodel";
 import { ConfirmModal } from "./obsidian/confirm-modal";
-import { detectMflux, fluxWeightsReady } from "./obsidian/mflux-host";
-import { MfluxEngine } from "./obsidian/mflux-engine";
-import { ModelStore } from "./obsidian/model-store";
-import { checkGpu, createOrtSession } from "./obsidian/ort-host";
-import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
+import { httpGetJson, httpPostJson } from "./obsidian/http";
+import { dataUrlToBytes } from "./obsidian/png";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { GeneratorView, VIEW_TYPE, type ViewHost } from "./obsidian/view";
+import { normalizeEndpoint } from "./vendor/kit/endpoint";
 import { mergeSettings } from "./vendor/kit/settings";
 import { pickLang, setLang, t } from "./vendor/kit/i18n";
 
 export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
-  modelStore = new ModelStore();
-  private engine: SdTurboEngine | null = null;
-  private mfluxEngine = new MfluxEngine();
   private settingTab!: LigSettingTab;
-  private engineLoadGeneration = 0;
   private state: PanelState = {
-    gpu: "checking",
-    model: { kind: "missing" },
+    server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
     run: { kind: "idle" },
     image: null,
     editorActive: false,
     prompt: "",
-    selectedModel: DEFAULT_MODEL_ID,
-    mflux: { binary: null, weights: "missing", download: null },
-    // Platzhalter bis zum ersten GeneratePanel.refresh() (kein Bild vorhanden →
-    // recipeUnchanged ist bis dahin ohnehin immer false, siehe viewmodel.ts).
+    negativePrompt: "",
     seed: 0,
-    steps: 4,
+    steps: 20,
+    cfg: 7,
     width: 512,
     height: 512,
   };
 
   async onload(): Promise<void> {
     this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, await this.loadData()));
-    this.state.selectedModel = this.settings.selectedModel;
+    this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
 
     registerI18n();
     setLang(pickLang(getLanguage()));
@@ -68,19 +57,18 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       setPrompt: (p) => {
         this.state.prompt = p;
       },
-      setRecipe: (steps, seed, width, height) => {
+      setNegativePrompt: (p) => {
+        this.state.negativePrompt = p;
+      },
+      setRecipe: (steps, seed, cfg, width, height) => {
         this.state.steps = steps;
         this.state.seed = seed;
+        this.state.cfg = cfg;
         this.state.width = width;
         this.state.height = height;
       },
-      generate: (steps, seed, width, height) => void this.generate(steps, seed, width, height),
-      setSelectedModel: (id) => {
-        this.settings.selectedModel = id;
-        this.state.selectedModel = id;
-        void this.saveSettings();
-        this.refreshViews();
-      },
+      generate: (steps, seed, cfg, width, height) => void this.generate(steps, seed, cfg, width, height),
+      recheckServer: () => void this.checkServer(),
       saveImage: (mode) => void this.saveImage(mode),
       openSettings: () => {
         const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
@@ -127,47 +115,30 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.addRibbonIcon("image-plus", t("view.title"), () => void this.activateView());
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
-    // Fängt die verschluckte ORT-Init-Rejection ab, die den dokumentierten jsep/asyncify-
-    // Hänger (Fix 7673961) verursacht hat: ORTs eigene interne Promise rejected, ohne dass
-    // unser eigenes await in loadEngine()/ensureEngine() das je erreicht (Spec 2026-07-18-
-    // robustheits-block-design.md §2.4). Bewusst kein event.reason-Auswerten (fragil) —
-    // die Korrelation läuft rein über den State: nur während der Ladephase reagieren, um
-    // fremde Rejections (andere Plugins, Obsidian selbst) nicht fälschlich zu kapern.
-    // Kein preventDefault() — Standard-Konsolen-Logging bleibt erhalten.
-    this.registerDomEvent(window, "unhandledrejection", () => {
-      if (this.state.run.kind === "loading") {
-        this.state.run = { kind: "error", message: t("status.engineLoadFailed") };
-        this.refreshViews();
-      }
-    });
-
-    this.refreshMfluxStatus();
-    void this.initStatus();
+    void this.checkServer();
   }
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
   }
 
-  /** mflux-Erkennung + Gewichte-Check in den State spiegeln (onload, Settings-Änderungen). */
-  refreshMfluxStatus(): void {
-    this.state.mflux = {
-      binary: detectMflux(this.settings),
-      weights: fluxWeightsReady(this.settings) ? "ready" : "missing",
-      download: null,
-    };
+  /** Erreichbarkeit + aktives Modell in den State spiegeln (Spec §3: GET /sdapi/v1/options,
+   *  200 ohne Modellfeld gilt als OK — Draw Things liefert die Options-Form nur teilweise). */
+  async checkServer(): Promise<void> {
+    const ep = this.settings.endpoint.trim();
+    if (ep === "") {
+      this.state.server = { kind: "unconfigured" };
+      this.refreshViews();
+      return;
+    }
+    this.state.server = { kind: "checking" };
     this.refreshViews();
-  }
-
-  /** Read-only-Zugriff für Consumer außerhalb der ViewHost-Fassade (aktuell nur
-   *  LigSettingTab, siehe Spec 2026-07-18-robustheits-block-design.md §2.2). */
-  getState(): Readonly<PanelState> {
-    return this.state;
-  }
-
-  private async initStatus(): Promise<void> {
-    this.state.gpu = await checkGpu();
-    this.state.model = (await this.modelStore.isComplete()) ? { kind: "ready" } : { kind: "missing" };
+    try {
+      const r = await httpGetJson(`${normalizeEndpoint(ep)}/sdapi/v1/options`);
+      this.state.server = r.status === 200 ? { kind: "ok", modelName: parseOptionsModel(r.json) } : { kind: "unreachable" };
+    } catch {
+      this.state.server = { kind: "unreachable" };
+    }
     this.refreshViews();
   }
 
@@ -192,273 +163,47 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
-  async downloadModel(): Promise<void> {
-    // Optimistischer Platzhalter, bis der erste echte Fortschritts-Callback aus
-    // modelStore.download() eintrifft (Netzwerk-Round-Trip, meist < 1s) — wird sofort
-    // überschrieben. Ohne diesen Zwischenschritt bliebe state.model kurz auf "missing",
-    // während der Button in Wahrheit schon lädt.
-    this.state.model = {
-      kind: "downloading",
-      overallPct: 0,
-      fileKey: MODEL_FILES[0]!.key,
-      fileIndex: 1,
-      totalFiles: MODEL_FILES.length,
-      receivedBytes: 0,
-      totalBytes: MODEL_FILES[0]!.approxBytes,
-    };
-    this.refreshViews();
-    try {
-      await this.modelStore.download((p) => {
-        this.state.model = { kind: "downloading", ...p };
-        this.refreshViews();
-      });
-      this.state.model = { kind: "ready" };
-    } catch (e) {
-      this.state.model = { kind: "missing" };
-      throw e;
-    } finally {
-      this.refreshViews();
-    }
-  }
-
-  onunload(): void {
-    // Laufenden mflux-Kindprozess killen (SIGKILL, kein Server-Modus) — VOR dem ORT-
-    // dispose, damit ein laufender generateMflux()-Aufruf sein "cancelled" bekommt, bevor
-    // das Plugin selbst als entladen gilt.
-    this.mfluxEngine.kill();
-    // Sessions beim Entladen freigeben (Spec §8: GPU-Speicher-Leak vermeiden).
-    void this.engine?.dispose().catch(() => {});
-    this.engine = null;
-  }
-
-  onModelDeleted(): void {
-    // Erst die Sessions freigeben, dann verwerfen (fire-and-forget: onModelDeleted
-    // ist synchron, der Release muss den UI-Refresh nicht blockieren; Spec §8).
-    void this.engine?.dispose().catch(() => {});
-    this.engine = null;
-    this.state.model = { kind: "missing" };
-    this.refreshViews();
-  }
-
-  // Die bisherige reine Ladelogik — unverändert, nur aus ensureEngine() extrahiert,
-  // damit raceTimeout() genau diese eine Promise umschließen kann.
-  private async loadEngine(): Promise<SdTurboEngine> {
-    const [textEncoder, unet, vaeDecoder] = await Promise.all([
-      this.modelStore.getBuffer("text_encoder").then(createOrtSession),
-      this.modelStore.getBuffer("unet").then(createOrtSession),
-      this.modelStore.getBuffer("vae_decoder").then(createOrtSession),
-    ]);
-    const vocab = JSON.parse(await this.modelStore.getText("vocab")) as Record<string, number>;
-    const merges = (await this.modelStore.getText("merges"))
-      .split("\n")
-      .filter((l) => l.length > 0 && !l.startsWith("#"));
-    return new SdTurboEngine({ textEncoder, unet, vaeDecoder }, { vocab, merges });
-  }
-
-  // Watchdog + Ladephasen-Status um loadEngine() (Spec 2026-07-18-robustheits-block-
-  // design.md §2.4): ORT bietet kein AbortSignal für InferenceSession.create, ein
-  // Timeout kann den Aufruf also nicht wirklich abbrechen — nur der UI melden und die
-  // Promise im Hintergrund verwaisen lassen. Die Generation-ID erkennt genau das: löst
-  // ein verwaister alter Ladeversuch später doch noch auf, wird die Session sofort
-  // freigegeben statt geleakt (bekannter GPU-Leak-Bug aus 0.1).
-  private async ensureEngine(): Promise<SdTurboEngine> {
-    if (this.engine) return this.engine;
-    const myGeneration = ++this.engineLoadGeneration;
-    this.state.run = { kind: "loading", elapsedSec: 0 };
-    this.refreshViews();
-    const tick = window.setInterval(() => {
-      if (this.state.run.kind === "loading") {
-        this.state.run = { kind: "loading", elapsedSec: this.state.run.elapsedSec + 1 };
-        this.refreshViews();
-      }
-    }, 1000);
-    const loadPromise = this.loadEngine();
-    try {
-      const engine = await raceTimeout(loadPromise, 5 * 60_000, "engine load timed out");
-      if (myGeneration !== this.engineLoadGeneration) {
-        // Ein neuerer Ladeversuch läuft bereits (Retry nach Timeout/unhandledrejection) —
-        // dieser hier ist verwaist. Sofort freigeben statt GPU-Speicher zu leaken.
-        void engine.dispose().catch(() => {});
-        throw new Error("stale engine load result");
-      }
-      this.engine = engine;
-      return engine;
-    } catch (e) {
-      if (myGeneration === this.engineLoadGeneration) {
-        this.state.run = { kind: "error", message: t("status.engineLoadFailed") };
-        this.refreshViews();
-      }
-      // Ab HIER steht endgültig fest, dass dieser Aufruf loadPromise nicht adoptiert —
-      // egal ob raceTimeout() selbst das Timeout-Fehler geworfen hat, loadEngine() direkt
-      // abgelehnt wurde, oder der "stale"-Zweig oben schon synchron disposed hat (dann ist
-      // dieser zweite dispose()-Aufruf ein harmloser No-op, SdTurboEngine.dispose() ist
-      // idempotent). ORT kennt kein AbortSignal — läuft loadPromise nach einem Watchdog-
-      // Timeout im Hintergrund weiter und löst SPÄTER doch noch auf (der Normalfall: das
-      // Laden war nur langsam, kein echter Hänger), wird sie hier trotzdem freigegeben,
-      // unabhängig davon, ob inzwischen ein Retry die Generation-ID weitergezählt hat.
-      // Vor diesem Punkt (eager, direkt nach dem Erzeugen von loadPromise) anzuhängen
-      // würde den GLÜCKSFALL fälschlich disposen: der Handler würde vor der
-      // this.engine-Zuweisung oben feuern (Promise.race abonniert loadPromise ebenfalls,
-      // aber "await raceTimeout(...)" resumt erst einen Microtask-Hop später als direkte
-      // loadPromise-Subscriber) und die gerade erfolgreich geladene Engine zerstören,
-      // bevor sie adoptiert wird.
-      loadPromise.then((lateEngine) => void lateEngine.dispose().catch(() => {})).catch(() => {});
-      throw e;
-    } finally {
-      window.clearInterval(tick);
-    }
-  }
-
-  // Engine-Router (Spec §5/§7): sd-turbo läuft weiter über ORT/WebGPU (generateOrt),
-  // FLUX.2 über den mflux-Kindprozess (generateMflux). Der Katalog (models.ts) entscheidet
-  // die Weiche — kein Modell-if/else in den Panels.
-  private async generate(steps: number, seed: number, width: number, height: number): Promise<void> {
-    if (this.state.run.kind === "running" || this.state.run.kind === "loading") return;
-    const spec = getModel(this.settings.selectedModel);
-    // Prompt HIER festhalten: zwischen Start und Ende kann der Nutzer weitertippen,
-    // und die Ergebnis-Notiz muss das Bild beschreiben, das entstanden ist.
+  private async generate(steps: number, seed: number, cfg: number, width: number, height: number): Promise<void> {
+    if (this.state.run.kind === "contacting" || this.state.run.kind === "generating") return;
+    if (this.state.server.kind !== "ok") return; // ViewModel gated das bereits — Defensive
     const prompt = this.state.prompt;
-    if (spec.engine === "mflux") return this.generateMflux(spec, prompt, steps, seed, width, height);
-    return this.generateOrt(prompt, steps, seed); // Katalog garantiert 512² für sd-turbo
-  }
-
-  private async generateOrt(prompt: string, steps: number, seed: number): Promise<void> {
-    let engine: SdTurboEngine;
-    try {
-      engine = await this.ensureEngine();
-    } catch {
-      // ensureEngine() hat state.run bereits auf status.engineLoadFailed gesetzt und
-      // selbst refreshViews() aufgerufen (Watchdog- oder Generation-Mismatch-Fall) —
-      // hier nichts weiter zu tun, der Generate-Button ist bereits wieder aktiv.
-      return;
-    }
-    this.state.run = { kind: "running", step: 0, total: steps };
+    const negativePrompt = this.state.negativePrompt;
+    const model = this.state.server.modelName ?? "unknown";
+    const client = new Txt2ImgClient(this.settings.endpoint, httpPostJson);
+    this.state.run = { kind: "contacting" };
     this.refreshViews();
+    // Fortschritt: 1-s-Polling auf /sdapi/v1/progress; liefert der Server keins (404,
+    // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden.
+    let elapsed = 0;
+    const tick = window.setInterval(() => {
+      elapsed += 1;
+      if (this.state.run.kind !== "generating" && this.state.run.kind !== "contacting") return;
+      void httpGetJson(`${normalizeEndpoint(this.settings.endpoint)}/sdapi/v1/progress`, 1000)
+        .then((r) => {
+          if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
+            this.state.run = { kind: "generating", pct: r.status === 200 ? parseProgressPct(r.json) : null, elapsedSec: elapsed };
+          this.refreshViews();
+        })
+        .catch(() => {
+          if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
+            this.state.run = { kind: "generating", pct: null, elapsedSec: elapsed };
+          this.refreshViews();
+        });
+    }, 1000);
     let succeeded = false;
     try {
-      const result = await engine.generate({ prompt, steps, seed }, (step, total) => {
-        this.state.run = { kind: "running", step, total };
-        this.refreshViews();
-      });
+      const png = await client.generate({ prompt, negativePrompt, width, height, steps, seed, cfg });
       this.state.image = {
-        dataUrl: rgbaToDataUrl(result.rgba, result.width, result.height),
-        params: {
-          prompt,
-          // TODO(Task 5): Platzhalter-Bridge, damit GenParams (Task 3) hier kompiliert —
-          // echte Negativ-Prompt-/CFG-Steuerung kommt mit der UI-Verdrahtung in Task 5.
-          negativePrompt: "",
-          seed: result.seed,
-          steps,
-          cfg: 7,
-          model: MODEL_ID,
-          // Aus dem Engine-Ergebnis übernehmen statt erneut zu hardcoden: EINE Quelle für
-          // die 512² (IMAGE_SIZE in engine.ts), kein zweiter unabhängiger Literal hier, der
-          // aus dem Tritt geraten könnte (ersetzt den Übergangsfix aus Task 3).
-          width: result.width,
-          height: result.height,
-          date: isoStamp(new Date()),
-        },
+        dataUrl: `data:image/png;base64,${png}`,
+        params: { prompt, negativePrompt, seed, steps, cfg, model, width, height, date: isoStamp(new Date()) },
       };
       this.state.run = { kind: "idle" };
       succeeded = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.state.run = { kind: "error", message: msg };
-      // Sessions freigeben und verwerfen, nächster Lauf lädt neu (Spec §8).
-      // Fire-and-forget: der Fehlerpfad soll den UI-Refresh nicht blockieren.
-      void this.engine?.dispose().catch(() => {});
-      this.engine = null;
-      new Notice(t("notice.oomHint"));
-    } finally {
-      this.refreshViews();
-    }
-    // Bewusst AUSSERHALB des try/catch der Generierung: ein Fehler hier (z.B. defekte
-    // Historie) darf weder als Generierungsfehler gemeldet werden noch die bereits
-    // erfolgreich befüllte Engine verwerfen. Erst bei Erfolg aufnehmen — sonst füllt
-    // sich die Liste mit Halbsätzen und Fehlversuchen. saveSettings bewusst
-    // fire-and-forget: ein langsamer Schreibvorgang darf das fertige Bild nicht aufhalten.
-    if (succeeded && this.state.image) {
-      // Volles Rezept aus dem beim Erfolg eingefrorenen img.params (kein "jetzt"-Nachziehen).
-      const p = this.state.image.params;
-      this.settings.history = pushHistory(this.settings.history, {
-        prompt: p.prompt,
-        negativePrompt: p.negativePrompt,
-        seed: p.seed,
-        steps: p.steps,
-        cfg: p.cfg,
-        model: p.model,
-        width: p.width,
-        height: p.height,
-        created: p.date,
-      });
-      void this.saveSettings();
-    }
-  }
-
-  // FLUX.2 über den mflux-Kindprozess (Spec §5/§7): mflux lädt das Modell bei jedem
-  // Aufruf neu in den Speicher (kein Server-Modus) — die Ladephase mit Sekundenzähler
-  // spiegelt das wie ensureEngine(); der erste Step-Callback beendet sie.
-  private async generateMflux(
-    spec: ModelSpec,
-    prompt: string,
-    steps: number,
-    seed: number,
-    width: number,
-    height: number,
-  ): Promise<void> {
-    const binary = this.state.mflux.binary;
-    if (binary === null || this.state.mflux.weights !== "ready" || this.mfluxEngine.busy) return; // ViewModel gated das bereits — Defensive
-    this.state.run = { kind: "loading", elapsedSec: 0 };
-    this.refreshViews();
-    const tick = window.setInterval(() => {
-      if (this.state.run.kind === "loading") {
-        this.state.run = { kind: "loading", elapsedSec: this.state.run.elapsedSec + 1 };
-        this.refreshViews();
-      }
-    }, 1000);
-    let succeeded = false;
-    try {
-      const png = await this.mfluxEngine.run(
-        binary,
-        spec,
-        { prompt, seed, steps, width, height },
-        this.settings.modelsDir.trim(),
-        {
-          onDownload: (file, pct) => {
-            // Sollte im Normalfall nie feuern (Gewichte-Gate oben) — falls doch (Cache extern
-            // gelöscht), ehrlich als Download anzeigen statt minutenlang "Loading".
-            this.state.mflux = { ...this.state.mflux, weights: "downloading", download: { file, pct } };
-            this.refreshViews();
-          },
-          onStep: (step, total) => {
-            this.state.run = { kind: "running", step, total };
-            this.refreshViews();
-          },
-        },
-      );
-      this.state.image = {
-        dataUrl: `data:image/png;base64,${Buffer.from(png).toString("base64")}`,
-        params: {
-          prompt,
-          // TODO(Task 5): Platzhalter-Bridge, damit GenParams (Task 3) hier kompiliert —
-          // echte Negativ-Prompt-/CFG-Steuerung kommt mit der UI-Verdrahtung in Task 5.
-          negativePrompt: "",
-          seed,
-          steps,
-          cfg: 7,
-          model: spec.id,
-          width,
-          height,
-          date: isoStamp(new Date()),
-        },
-      };
-      this.state.run = { kind: "idle" };
-      this.state.mflux = { ...this.state.mflux, weights: "ready", download: null };
-      succeeded = true;
-    } catch (e) {
-      // "cancelled" (View-Close/Unload hat gekillt) ist kein Fehler — UI still auf idle.
-      const msg = e instanceof Error ? e.message : String(e);
-      this.state.run = msg === "cancelled" ? { kind: "idle" } : { kind: "error", message: msg };
+      // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
+      void this.checkServer();
     } finally {
       window.clearInterval(tick);
       this.refreshViews();
@@ -466,49 +211,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     if (succeeded && this.state.image) {
       const p = this.state.image.params;
       this.settings.history = pushHistory(this.settings.history, {
-        prompt: p.prompt,
-        negativePrompt: p.negativePrompt,
-        seed: p.seed,
-        steps: p.steps,
-        cfg: p.cfg,
-        model: p.model,
-        width: p.width,
-        height: p.height,
-        created: p.date,
+        prompt: p.prompt, negativePrompt: p.negativePrompt, seed: p.seed, steps: p.steps,
+        cfg: p.cfg, model: p.model, width: p.width, height: p.height, created: p.date,
       });
       void this.saveSettings();
-    }
-  }
-
-  /** Vorbereitungslauf (Spec §6): 1 Step / 512² / Seed 0 — mflux lädt dabei die Gewichte;
-   *  das Mini-Bild wird verworfen (Temp-Cleanup der Engine, s. mflux-engine.ts finally).
-   *  Ein reiner Download-Befehl existiert in der verifizierten mflux-Version nicht. */
-  async downloadFluxModel(): Promise<void> {
-    const spec = getModel("flux2-klein-4b");
-    const binary = this.state.mflux.binary;
-    if (binary === null || this.mfluxEngine.busy) return;
-    this.state.mflux = { ...this.state.mflux, weights: "downloading", download: { file: "…", pct: 0 } };
-    this.refreshViews();
-    try {
-      await this.mfluxEngine.run(
-        binary,
-        spec,
-        { prompt: "warmup", seed: 0, steps: 1, width: 512, height: 512 },
-        this.settings.modelsDir.trim(),
-        {
-          onDownload: (file, pct) => {
-            this.state.mflux = { ...this.state.mflux, weights: "downloading", download: { file, pct } };
-            this.refreshViews();
-          },
-          onStep: () => {},
-        },
-      );
-      this.state.mflux = { ...this.state.mflux, weights: "ready", download: null };
-    } catch (e) {
-      this.state.mflux = { ...this.state.mflux, weights: fluxWeightsReady(this.settings) ? "ready" : "missing", download: null };
-      throw e;
-    } finally {
-      this.refreshViews();
     }
   }
 

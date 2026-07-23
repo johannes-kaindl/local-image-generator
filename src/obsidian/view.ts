@@ -15,9 +15,10 @@ export interface ViewHost {
   getPanelState(): PanelState;
   getSettings(): LigSettings;
   setPrompt(p: string): void;
-  setRecipe(steps: number, seed: number, width: number, height: number): void;
-  generate(steps: number, seed: number, width: number, height: number): void;
-  setSelectedModel(id: string): void;
+  setNegativePrompt(p: string): void;
+  setRecipe(steps: number, seed: number, cfg: number, width: number, height: number): void;
+  generate(steps: number, seed: number, cfg: number, width: number, height: number): void;
+  recheckServer(): void;
   saveImage(mode: "create" | "insert"): void;
   openSettings(): void;
   restoreRecipe(entry: HistoryEntry): void;
