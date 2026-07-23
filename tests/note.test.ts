@@ -10,6 +10,8 @@ const params = (over: Partial<GenParams> = {}): GenParams => ({
   width: 512,
   height: 512,
   date: "2026-07-16T21:52:43",
+  negativePrompt: "",
+  cfg: 7,
   ...over,
 });
 
@@ -21,6 +23,7 @@ describe("buildImageNote", () => {
         "prompt: an apple",
         "seed: 199801046",
         "steps: 4",
+        "cfg: 7",
         "model: sd-turbo",
         "width: 512",
         "height: 512",
@@ -32,6 +35,22 @@ describe("buildImageNote", () => {
         "",
       ].join("\n"),
     );
+  });
+
+  it("Frontmatter enthält cfg immer, auch bei negativePrompt=''", () => {
+    const note = buildImageNote(params(), "x.png");
+    expect(note).not.toContain("negative_prompt");
+    expect(note).toContain("cfg: 7");
+  });
+
+  it("Frontmatter enthält negative_prompt nur bei nicht-leerem Wert, direkt nach prompt", () => {
+    const note = buildImageNote(params({ negativePrompt: "blurry, low quality" }), "x.png");
+    expect(note).toMatch(/prompt: an apple\nnegative_prompt: "blurry, low quality"\nseed:/);
+  });
+
+  it("negativePrompt aus reinem Whitespace erzeugt kein negative_prompt-Feld", () => {
+    const note = buildImageNote(params({ negativePrompt: "   " }), "x.png");
+    expect(note).not.toContain("negative_prompt");
   });
 
   it("schreibt seed und steps als native Zahlen", () => {
@@ -68,7 +87,17 @@ describe("buildImageNote", () => {
 
   it("Frontmatter enthält width/height zwischen model und created", () => {
     const note = buildImageNote(
-      { prompt: "a", seed: 1, steps: 2, model: "flux2-klein-4b", width: 1024, height: 576, date: "2026-07-18T10:00:00" },
+      {
+        prompt: "a",
+        seed: 1,
+        steps: 2,
+        model: "flux2-klein-4b",
+        width: 1024,
+        height: 576,
+        date: "2026-07-18T10:00:00",
+        negativePrompt: "",
+        cfg: 7,
+      },
       "img.png",
     );
     expect(note).toMatch(/model: flux2-klein-4b\nwidth: 1024\nheight: 576\ncreated:/);

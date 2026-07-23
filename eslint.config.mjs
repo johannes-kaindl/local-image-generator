@@ -21,16 +21,30 @@ export default tseslint.config(
     },
   },
   {
-    // settings-tab.ts: (1) nennt Modell-EIGENNAMEN (SD-Turbo, FLUX.2) in UI-Labels — die
-    // sentence-case-Regel würde daraus fälschlich "Sd-turbo" machen. (2) Die Download-
-    // Zeilen sind state-getrieben und werden partiell neu gezeichnet (refreshModel()),
-    // was sich nicht auf das deklarative getSettingDefinitions()-Schema abbilden lässt
-    // → display() bleibt.
+    // settings-tab.ts (Stand Task 7, 2026-07-23):
+    // (1) sentence-case: der Server-Endpoint-Feld-Placeholder ist die technische Beispiel-
+    // URL "http://127.0.0.1:7860" — die Regel verlangt dafür fälschlich "HTTP://…"
+    // (falsches Protokoll-Casing). Kein UI-Label, sondern ein Literal-Beispielwert; die
+    // Regel kennt diesen Fall nicht.
+    // NICHT mehr Teil der Begründung: Modell-EIGENNAMEN (SD-Turbo, FLUX.2) — die
+    // Download-/mflux-Sektionen samt ihrer Labels sind mit dem Thin-Client-Umbau entfallen.
+    //
+    // (2) prefer-setting-definitions: die Legacy-Cache-Zeile (Spec §4) wird NACH einem
+    // asynchronen hasLegacyCache()-Check bedingt angehängt und nach dem Löschen wieder aus
+    // dem DOM entfernt (display()) — state-getrieben. getSettingDefinitions() böte dafür
+    // mit SettingDefinitionRender (obsidian.d.ts:6265-6283, render(setting, group) =>
+    // void | (() => void)) durchaus eine Escape-Hatch für genau dieses Muster; die Zeile
+    // ist also nicht technisch unabbildbar. Der Override bleibt trotzdem bestehen, weil
+    // die Migration der gesamten Datei aufs deklarative Schema außerhalb des Scopes von
+    // Task 7 liegt — zurückgestellt, nicht unmöglich.
+    // NICHT mehr Teil der Begründung: die alten Download-Zeilen (refreshModel(), Task 5
+    // entfallen) — der ursprüngliche Auslöser dieses Overrides ist weg, aber die
+    // Legacy-Cache-Zeile braucht ihn aus demselben strukturellen Grund weiter.
     //
     // NICHT mehr Teil der Begründung: die einklappbaren Sektionen (2026-07-20 entfernt)
     // und "minAppVersion 1.8.7 < 1.13.0". Letzteres war sachlich falsch — obsidian.d.ts:6630
     // sieht display() ausdrücklich als Fallback für <1.13 vor, Koexistenz hebt den Floor
-    // nicht an (PROF-OBS-06). Es bleibt allein (2); fällt der Grund weg, ist zu migrieren.
+    // nicht an (PROF-OBS-06).
     files: ["src/obsidian/settings-tab.ts"],
     rules: {
       "obsidianmd/ui/sentence-case": "off",

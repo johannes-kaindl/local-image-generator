@@ -23,7 +23,7 @@ describe("settings", () => {
   it("migriert eine 0.1-data.json ohne Migrationscode (fehlende Felder aus Defaults)", () => {
     const merged = mergeSettings<LigSettings>(DEFAULT_SETTINGS, { outputFolder: "Art" });
     expect(merged.noteFolder).toBe("");
-    expect(merged.defaultSteps).toBe(4);
+    expect(merged.defaultSteps).toBe(20);
     expect(merged.createMode).toBe("image");
     expect(merged.history).toEqual([]);
     expect(merged.historyView).toBe("recent");
@@ -46,9 +46,20 @@ describe("sanitizeSettings (Spec §8)", () => {
       createMode: "note",
       presets: [{ id: "a", label: "A", suffix: "a-suffix" }],
       history: [
-        { prompt: "a prompt", seed: 1, steps: 4, model: "sd-turbo", width: 512, height: 512, created: "2026-07-17T10:00:00" },
+        {
+          prompt: "a prompt",
+          seed: 1,
+          steps: 4,
+          model: "sd-turbo",
+          width: 512,
+          height: 512,
+          created: "2026-07-17T10:00:00",
+          negativePrompt: "blurry, low quality",
+          cfg: 8,
+        },
       ],
       historyView: "grouped",
+      endpoint: "http://127.0.0.1:7860",
       selectedModel: "sd-turbo",
       mfluxPath: "/path/to/mflux",
       modelsDir: "/path/to/models",
@@ -104,12 +115,13 @@ describe("sanitizeSettings (Spec §8)", () => {
   });
 
   it.each([
-    [0, 4],
-    [99, 4],
-    ["3", 4],
-    [2.5, 4],
+    [0, 20],
+    [51, 20],
+    ["3", 20],
+    [2.5, 20],
     [1, 1],
-    [4, 4],
+    [50, 50],
+    [20, 20],
   ])("defaultSteps %p wird zu %p", (input, expected) => {
     const s = { ...DEFAULT_SETTINGS, defaultSteps: input as unknown as number };
     expect(sanitizeSettings(s).defaultSteps).toBe(expected);
@@ -135,6 +147,18 @@ describe("sanitizeSettings (Spec §8)", () => {
     expect(sanitized.outputFolder).toBe("");
     expect(sanitized.noteFolder).toBe("");
   });
+
+  it("endpoint: fehlt in {} → \"\"", () => {
+    expect(sanitizeSettings({}).endpoint).toBe("");
+  });
+
+  it("endpoint: non-string wird zu \"\"", () => {
+    expect(sanitizeSettings({ endpoint: 42 }).endpoint).toBe("");
+  });
+
+  it("endpoint: gültiger String bleibt erhalten", () => {
+    expect(sanitizeSettings({ endpoint: "http://127.0.0.1:7860" }).endpoint).toBe("http://127.0.0.1:7860");
+  });
 });
 
 describe("Historie-Migration", () => {
@@ -153,6 +177,8 @@ describe("Historie-Migration", () => {
       width: 512,
       height: 512,
       created: "2026-07-17T10:00:00",
+      negativePrompt: "",
+      cfg: 7,
     };
     const s = sanitizeSettings({ history: [entry] });
     expect(s.history).toEqual([entry]);
@@ -170,22 +196,24 @@ describe("Historie-Migration", () => {
   });
 });
 
-describe("sanitizeSettings 0.4 (multi-model)", () => {
-  it("Defaults: selectedModel sd-turbo, Pfade leer", () => {
+describe("sanitizeSettings — tote Keys mfluxPath/modelsDir/selectedModel (seit 0.5)", () => {
+  it("Defaults: alle drei leer", () => {
     const s = sanitizeSettings({});
-    expect(s.selectedModel).toBe("sd-turbo");
+    expect(s.selectedModel).toBe("");
     expect(s.mfluxPath).toBe("");
     expect(s.modelsDir).toBe("");
   });
-  it("unbekannte selectedModel fällt auf sd-turbo zurück", () => {
-    expect(sanitizeSettings({ selectedModel: "flux99" }).selectedModel).toBe("sd-turbo");
-    expect(sanitizeSettings({ selectedModel: 7 }).selectedModel).toBe("sd-turbo");
+
+  it("überleben als Strings — kein MODELS-Katalog-Bezug mehr (Muster sectionsCollapsed)", () => {
+    const s = sanitizeSettings({ selectedModel: "flux99", mfluxPath: "/old/mflux", modelsDir: "/old/models" });
+    expect(s.selectedModel).toBe("flux99");
+    expect(s.mfluxPath).toBe("/old/mflux");
+    expect(s.modelsDir).toBe("/old/models");
   });
-  it("gültige selectedModel bleibt erhalten", () => {
-    expect(sanitizeSettings({ selectedModel: "flux2-klein-4b" }).selectedModel).toBe("flux2-klein-4b");
-  });
-  it("Nicht-String-Pfade werden leer", () => {
-    const s = sanitizeSettings({ mfluxPath: 42, modelsDir: null });
+
+  it("Nicht-String-Werte werden leer", () => {
+    const s = sanitizeSettings({ selectedModel: 7, mfluxPath: 42, modelsDir: null });
+    expect(s.selectedModel).toBe("");
     expect(s.mfluxPath).toBe("");
     expect(s.modelsDir).toBe("");
   });
@@ -195,5 +223,33 @@ describe("Historie-Migration 0.4 (width/height)", () => {
   it("sanitizeHistory migriert Alt-Einträge ohne width/height auf 512", () => {
     const s = sanitizeSettings({ history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", created: "x" }] });
     expect(s.history[0]).toMatchObject({ width: 512, height: 512 });
+  });
+});
+
+describe("Historie-Migration 0.5 (negativePrompt/cfg)", () => {
+  it("sanitizeHistory migriert Alt-Einträge ohne negativePrompt/cfg auf '' / 7", () => {
+    const s = sanitizeSettings({
+      history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", width: 512, height: 512, created: "x" }],
+    });
+    expect(s.history[0]).toMatchObject({ negativePrompt: "", cfg: 7 });
+  });
+
+  it("sanitizeHistory behält vorhandene negativePrompt/cfg-Werte", () => {
+    const s = sanitizeSettings({
+      history: [
+        {
+          prompt: "a",
+          seed: 1,
+          steps: 2,
+          model: "sd-turbo",
+          width: 512,
+          height: 512,
+          created: "x",
+          negativePrompt: "ugly",
+          cfg: 9,
+        },
+      ],
+    });
+    expect(s.history[0]).toMatchObject({ negativePrompt: "ugly", cfg: 9 });
   });
 });

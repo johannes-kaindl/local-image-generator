@@ -10,7 +10,18 @@ function recipeKey(e: HistoryEntry): string {
   // anderem Modell/Format ist ein anderes Ergebnis und darf nicht kollabieren (Spec §8).
   // JSON-Tupel als Schlüssel, damit ein Prompt mit Ziffern/Leerzeichen keine falsche
   // Kollision mit Seed/Steps erzeugt.
-  return JSON.stringify([e.prompt.trim(), e.seed, e.steps, e.model, e.width, e.height]);
+  // Seit 0.5: negativePrompt + cfg gehören ebenfalls zum Rezept (Spec §5) — ans Ende
+  // angehängt, damit bestehende Kollisions-Logik für die älteren Felder unverändert bleibt.
+  return JSON.stringify([
+    e.prompt.trim(),
+    e.seed,
+    e.steps,
+    e.model,
+    e.width,
+    e.height,
+    e.negativePrompt.trim(),
+    e.cfg,
+  ]);
 }
 
 /** Nimmt ein Rezept vorn auf; identisches Rezept wandert nach vorn statt zu doppeln.
@@ -52,6 +63,8 @@ export function deleteEntry(list: readonly HistoryEntry[], entry: HistoryEntry):
         e.model === entry.model &&
         e.width === entry.width &&
         e.height === entry.height &&
+        e.negativePrompt === entry.negativePrompt &&
+        e.cfg === entry.cfg &&
         e.created === entry.created
       ),
   );

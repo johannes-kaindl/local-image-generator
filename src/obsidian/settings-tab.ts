@@ -1,16 +1,14 @@
-// Settings (UI-STANDARD §5): Modell zuerst, Ausgabe, Presets, Gefährliches ans Ende.
+// Settings (UI-STANDARD §5): Server, Ausgabe, Presets, plus ein einmaliger Legacy-Cache-
+// Aufräumer für Bestandsinstallationen (Spec §4).
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
-import { totalApproxBytes, MODEL_FILES } from "../core/model-manifest";
-import { formatBytes } from "../core/viewmodel";
+import { STEPS } from "../core/generation";
 import { t } from "../vendor/kit/i18n";
-import { ConfirmModal } from "./confirm-modal";
 import { FolderSuggest } from "./folder-suggest";
+import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { renderPresetEditor } from "./preset-editor";
 import type LocalImageGeneratorPlugin from "../main";
 
 export class LigSettingTab extends PluginSettingTab {
-  private modelSectionEl: HTMLElement | null = null;
-
   constructor(
     app: App,
     private readonly plugin: LocalImageGeneratorPlugin,
@@ -18,23 +16,53 @@ export class LigSettingTab extends PluginSettingTab {
     super(app, plugin);
   }
 
-  // Imperatives Rendering (klassische Setting-API): state-getriebene Download-Zeilen mit
-  // partiellem refreshModel() sind nicht auf das deklarative getSettingDefinitions()-Schema
-  // (Obsidian ≥ 1.13) abbildbar. Der prefer-setting-definitions-Hinweis ist darum in
-  // eslint.config.mjs file-scoped begründet abgeschaltet. display() bleibt der einzige
-  // Render-Einstieg und delegiert an render().
+  // Imperatives Rendering (klassische Setting-API) statt des deklarativen
+  // getSettingDefinitions()-Schemas (Obsidian ≥ 1.13): die Legacy-Cache-Zeile ist
+  // state-getrieben und wird NACH einem asynchronen hasLegacyCache()-Check bedingt
+  // angehängt bzw. nach dem Löschen wieder aus dem DOM entfernt (siehe display()). Das
+  // deklarative Schema böte mit SettingDefinitionRender (obsidian.d.ts:6265-6283) eine
+  // render-Escape-Hatch für genau dieses Muster — die Zeile ist also nicht technisch
+  // unabbildbar, aber die Migration der ganzen Datei aufs deklarative Schema liegt
+  // außerhalb des Scopes von Task 7 (zurückgestellt, nicht unmöglich). Der
+  // prefer-setting-definitions-Hinweis ist darum in eslint.config.mjs file-scoped
+  // begründet abgeschaltet. display() bleibt der einzige Render-Einstieg.
   //
   // Bis 2026-07-20 waren die Sektionen zusätzlich einklappbar (collapsibleSection,
   // Kit-vendored). Aufgegeben: einklappbare Sektionen und die deklarative API schließen
   // einander aus (SettingDefinitionGroup kennt kein Collapse), und ohne Migration
   // erscheinen die Einstellungen ab 1.13 nicht in Obsidians Settings-Suche.
+  //
+  // Bis 2026-07-23 (Task 7) trug diese Datei zusätzlich eine state-getriebene Modell-
+  // Download-Sektion (refreshModel(), partielles el.empty()) — das war der ursprüngliche
+  // Grund für den Override. Diese Sektion ist mit dem Thin-Client-Umbau entfallen; die
+  // Begründung wurde durch die jetzige Legacy-Cache-Zeile ersetzt (siehe oben), nicht
+  // ersatzlos gestrichen.
   display(): void {
     this.render();
+
+    // Legacy-Cache-Hinweis (Spec §4): Bestandsinstallationen können noch ~2,5 GB alte
+    // SD-Turbo-Gewichte (0.x, In-Process-Engine) im Cache-API-Speicher haben. Async, weil
+    // caches.has() ein Promise liefert — die Zeile erscheint darum NACH dem synchronen
+    // render() als eigener, kleiner Anhang. isConnected schützt gegen ein spätes Ergebnis
+    // nach einem zwischenzeitlichen erneuten display()-Aufruf (z. B. durch Preset-Add).
+    const containerEl = this.containerEl;
+    void hasLegacyCache().then((found) => {
+      if (!found || !containerEl.isConnected) return;
+      const setting = new Setting(containerEl).setName(t("settings.legacy.delete")).addButton((b) =>
+        b
+          .setButtonText(t("settings.legacy.delete"))
+          .setWarning()
+          .onClick(async () => {
+            b.setDisabled(true);
+            await deleteLegacyCache();
+            new Notice(t("settings.legacy.done"));
+            setting.settingEl.remove();
+          }),
+      );
+    });
   }
 
-  /** Sektions-Überschrift + eigener Body-Container. Der Body ist funktional, nicht
-   *  kosmetisch: refreshModel() ruft el.empty() auf und darf dabei nur seine eigene
-   *  Sektion treffen, nicht die ganze Settings-Seite. */
+  /** Sektions-Überschrift + eigener Body-Container. */
   private section(title: string): HTMLElement {
     new Setting(this.containerEl).setName(title).setHeading();
     return this.containerEl.createDiv();
@@ -44,10 +72,7 @@ export class LigSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    this.modelSectionEl = this.section(t("settings.model.heading"));
-    this.renderModel(this.modelSectionEl);
-    this.renderFlux(this.modelSectionEl);
-
+    this.renderServer(this.section(t("settings.server.name")));
     this.renderOutput(this.section(t("settings.output.heading")));
 
     const presets = this.section(t("settings.presets.heading"));
@@ -61,131 +86,27 @@ export class LigSettingTab extends PluginSettingTab {
       },
       rerender: () => this.render(),
     });
-
-    this.renderDanger(this.section(t("settings.danger.heading")));
   }
 
-  /** Zeichnet NUR die Modell-Sektion neu — state-getrieben (this.plugin.getState().model
-   *  ist die einzige Wahrheit), überlebt Re-Renders anderer Sektionen strukturell, weil
-   *  sie nie eigenen Zustand hält. Wird von main.ts.refreshViews() bei jeder
-   *  Download-Fortschritts-Änderung aufgerufen — der isConnected-Check verhindert, dass
-   *  ein Aufruf nach einem kompletten display()-Rebuild (z.B. presets.rerender()) einen
-   *  bereits aus dem DOM entfernten Container beschreibt (Spec 2026-07-18-robustheits-
-   *  block-design.md §2.2). */
-  refreshModel(): void {
-    const el = this.modelSectionEl;
-    if (el?.isConnected) {
-      el.empty();
-      this.renderModel(el);
-      this.renderFlux(el);
-    }
-  }
-
-  private renderModel(el: HTMLElement): void {
-    new Setting(el).setName("SD-Turbo").setHeading();
-    const gb = (totalApproxBytes(MODEL_FILES) / 1e9).toFixed(1);
-    const model = this.plugin.getState().model;
-    const modelSetting = new Setting(el)
-      .setName("SD-Turbo (ONNX, fp16)")
-      .setDesc(t("settings.model.desc"));
-
-    if (model.kind === "ready") {
-      modelSetting.addExtraButton((b) => b.setIcon("circle-check").setTooltip(t("settings.model.downloadedTooltip")));
-      return;
-    }
-
-    if (model.kind === "downloading") {
-      modelSetting.addButton((b) => b.setButtonText(`${model.overallPct}%`).setDisabled(true));
-      el.createEl("p", {
-        text: `${model.fileKey} (${model.fileIndex}/${model.totalFiles}) — ${formatBytes(model.receivedBytes)} / ${formatBytes(model.totalBytes)}`,
-        cls: "setting-item-description",
-      });
-      return;
-    }
-
-    modelSetting.addButton((b) =>
-      b
-        .setButtonText(t("settings.model.download", gb))
-        .setCta()
-        .onClick(async () => {
-          try {
-            await this.plugin.downloadModel();
-            new Notice(t("notice.modelDownloaded"));
-          } catch (e) {
-            new Notice(String(e instanceof Error ? e.message : e));
-          }
-        }),
-    );
-  }
-
-  private renderFlux(el: HTMLElement): void {
-    new Setting(el).setName("FLUX.2 klein 4B (mflux)").setHeading();
-    const mflux = this.plugin.getState().mflux;
-
-    // 1) Binary-Status + Pfad-Feld
-    const status = new Setting(el).setName(t("settings.mflux.binary"));
-    status.setDesc(
-      mflux.binary !== null ? t("settings.mflux.found", mflux.binary) : t("settings.mflux.notFound"),
-    );
-    status.addText((tf) => {
-      tf.setPlaceholder(t("settings.mflux.binaryPlaceholder"))
-        .setValue(this.plugin.settings.mfluxPath)
-        .onChange(async (v) => {
-          this.plugin.settings.mfluxPath = v.trim();
-          await this.plugin.saveSettings();
-          // Re-Detect NICHT hier (würde die Section pro Tastendruck neu rendern und
-          // den Fokus killen) — läuft stattdessen einmalig beim Verlassen des Felds.
-        });
-      tf.inputEl.addEventListener("blur", () => {
-        this.plugin.refreshMfluxStatus(); // re-detect → refreshViews → refreshModel
-      });
-    });
-
-    // 2) Speicherort (Systempfad — bewusst KEIN FolderSuggest, der kennt nur Vault-Ordner)
+  private renderServer(el: HTMLElement): void {
     new Setting(el)
-      .setName(t("settings.mflux.modelsDir"))
-      .setDesc(t("settings.mflux.modelsDirDesc"))
+      .setName(t("settings.server.name"))
+      .setDesc(t("settings.server.desc"))
       .addText((tf) => {
-        tf.setPlaceholder("~/.cache/huggingface")
-          .setValue(this.plugin.settings.modelsDir)
-          .onChange(async (v) => {
-            this.plugin.settings.modelsDir = v.trim();
-            await this.plugin.saveSettings();
-            // Re-Detect NICHT hier (würde die Section pro Tastendruck neu rendern und
-            // den Fokus killen) — läuft stattdessen einmalig beim Verlassen des Felds.
-          });
-        tf.inputEl.addEventListener("blur", () => {
-          this.plugin.refreshMfluxStatus(); // Gewichte-Check gegen neuen Ort
+        tf.setPlaceholder("http://127.0.0.1:7860");
+        tf.setValue(this.plugin.settings.endpoint).onChange(async (v) => {
+          this.plugin.settings.endpoint = v.trim();
+          await this.plugin.saveSettings();
+          void this.plugin.checkServer();
         });
-      });
-
-    // 3) Gewichte: ready → Häkchen · downloading → Prozent + Detail · missing → Download-Button
-    const weights = new Setting(el).setName(t("settings.mflux.weights")).setDesc(t("settings.mflux.weightsDesc"));
-    if (mflux.weights === "ready") {
-      weights.addExtraButton((b) => b.setIcon("circle-check").setTooltip(t("settings.model.downloadedTooltip")));
-      return;
-    }
-    if (mflux.weights === "downloading") {
-      weights.addButton((b) => b.setButtonText(`${mflux.download?.pct ?? 0}%`).setDisabled(true));
-      el.createEl("p", {
-        text: `${mflux.download?.file ?? "…"} — ${mflux.download?.pct ?? 0}%`,
-        cls: "setting-item-description",
-      });
-      return;
-    }
-    weights.addButton((b) =>
-      b.setButtonText(t("settings.mflux.download"))
-        .setCta()
-        .setDisabled(mflux.binary === null) // ohne Binary kein Vorbereitungslauf
-        .onClick(async () => {
-          try {
-            await this.plugin.downloadFluxModel();
-            new Notice(t("notice.fluxDownloaded"));
-          } catch (e) {
-            new Notice(String(e instanceof Error ? e.message : e));
-          }
+      })
+      .addButton((b) =>
+        b.setButtonText(t("settings.server.test")).onClick(async () => {
+          const result = await this.plugin.checkServer();
+          if (result.kind === "ok") new Notice(t("notice.serverOk", result.modelName ?? "–"));
+          else new Notice(t("notice.serverFail"));
         }),
-    );
+      );
   }
 
   private renderOutput(el: HTMLElement): void {
@@ -228,7 +149,7 @@ export class LigSettingTab extends PluginSettingTab {
       .setDesc(t("settings.defaultStepsDesc"))
       .addSlider((s) =>
         s
-          .setLimits(1, 4, 1)
+          .setLimits(STEPS.min, STEPS.max, 1)
           .setValue(this.plugin.settings.defaultSteps)
           .setDynamicTooltip() // deprecated ab 1.13 (Wert dann immer inline), aber auf minAppVersion 1.8.7–1.12 nötig, damit der Slider-Wert überhaupt sichtbar ist
           .onChange(async (v) => {
@@ -236,20 +157,5 @@ export class LigSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
-  }
-
-  private renderDanger(el: HTMLElement): void {
-    new Setting(el).setName(t("settings.model.delete")).addButton((b) =>
-      b
-        .setButtonText(t("settings.model.delete"))
-        .setWarning()
-        .onClick(() => {
-          new ConfirmModal(this.app, t("settings.model.deleteConfirm"), t("modal.confirm"), async () => {
-            await this.plugin.modelStore.deleteAll();
-            this.plugin.onModelDeleted();
-            this.render();
-          }).open();
-        }),
-    );
   }
 }

@@ -1,7 +1,7 @@
 // Plugin-Settings — pure (Spec §5.1). Leerer outputFolder = Obsidians Attachment-Logik,
 // leerer noteFolder = Notiz landet neben dem Bild.
 
-import { DEFAULT_MODEL_ID, MODELS } from "./models";
+import { STEPS } from "./generation";
 
 /** Ein Stil-Baustein, der per Chip an den Prompt gehängt wird. */
 export interface StylePreset {
@@ -16,8 +16,12 @@ export interface StylePreset {
 /** Ein aufgezeichnetes Rezept in der Historie (volle Reproduktion). */
 export interface HistoryEntry {
   prompt: string;
+  /** Negativ-Prompt (A1111-kompatibel) — leerer String heißt "nicht gesetzt" (Spec §5). */
+  negativePrompt: string;
   seed: number;
   steps: number;
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). */
+  cfg: number;
   model: string;
   width: number;
   height: number;
@@ -28,7 +32,9 @@ export interface HistoryEntry {
 export interface LigSettings {
   outputFolder: string;
   noteFolder: string;
-  /** Startwert des Steps-Sliders (1..4) — kein Zwang, wird nicht zurückgeschrieben. */
+  /** URL des lokalen Bild-Servers (A1111-kompatibel), z. B. "http://127.0.0.1:7860". */
+  endpoint: string;
+  /** Startwert des Steps-Sliders (1..50) — kein Zwang, wird nicht zurückgeschrieben. */
   defaultSteps: number;
   /** Was der Create-Button tut: nur Bild (0.1-Verhalten) oder Bild + Notiz. */
   createMode: "image" | "note";
@@ -37,11 +43,19 @@ export interface LigSettings {
   history: HistoryEntry[];
   /** Ansicht des Historie-Tabs. */
   historyView: "recent" | "grouped";
-  /** Zuletzt gewähltes Modell (Generate-Tab-Dropdown, Spec §5). */
+  /** Legacy: totes Feld seit 0.5 (Thin-Client). Der Modell-Katalog wurde durch den
+   *  externen Server ersetzt (Spec §4/§5); kein Codepfad liest diesen Wert mehr. Das
+   *  Feld bleibt, damit gespeicherte Konfigurationen ohne Migration laden. */
   selectedModel: string;
-  /** Pfad zum mflux-generate-flux2-Binary; "" = Auto-Detect (Spec §6). */
+  /** Legacy: totes Feld seit 0.5 (Thin-Client). mflux lief in-process (Spec §6, bis 0.4);
+   *  seit dem Umbau auf einen externen A1111-kompatiblen Server (Spec §4/§5) liest kein
+   *  Codepfad diesen Wert mehr. Das Feld bleibt, damit gespeicherte Konfigurationen ohne
+   *  Migration laden. */
   mfluxPath: string;
-  /** HF_HOME für den Kindprozess; "" = HF-Standard-Cache (Spec §6). */
+  /** Legacy: totes Feld seit 0.5 (Thin-Client). HF_HOME galt nur für den früheren
+   *  in-process-mflux-Kindprozess (Spec §6, bis 0.4); seit dem Umbau auf einen externen
+   *  A1111-kompatiblen Server (Spec §4/§5) liest kein Codepfad diesen Wert mehr. Das Feld
+   *  bleibt, damit gespeicherte Konfigurationen ohne Migration laden. */
   modelsDir: string;
   /** Legacy: Auf-/Zu-Zustand der früher einklappbaren Settings-Sektionen. Seit deren
    *  Wegfall (2026-07-20) liest den Wert kein Codepfad mehr; das Feld bleibt, damit
@@ -59,12 +73,13 @@ export const DEFAULT_PRESETS: StylePreset[] = [
 export const DEFAULT_SETTINGS: LigSettings = {
   outputFolder: "",
   noteFolder: "",
-  defaultSteps: 4,
+  endpoint: "",
+  defaultSteps: STEPS.default,
   createMode: "image",
   presets: DEFAULT_PRESETS,
   history: [],
   historyView: "recent",
-  selectedModel: DEFAULT_MODEL_ID,
+  selectedModel: "",
   mfluxPath: "",
   modelsDir: "",
   sectionsCollapsed: {},
@@ -86,7 +101,14 @@ function sanitizeHistory(raw: unknown): HistoryEntry[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .filter(
-      (h): h is Omit<HistoryEntry, "width" | "height"> & { width?: unknown; height?: unknown } =>
+      (
+        h,
+      ): h is Omit<HistoryEntry, "width" | "height" | "negativePrompt" | "cfg"> & {
+        width?: unknown;
+        height?: unknown;
+        negativePrompt?: unknown;
+        cfg?: unknown;
+      } =>
         isPlainObject(h) &&
         typeof h["prompt"] === "string" &&
         typeof h["seed"] === "number" &&
@@ -99,6 +121,9 @@ function sanitizeHistory(raw: unknown): HistoryEntry[] {
       // Migration 0.3→0.4: Alt-Einträge sind alle SD-Turbo-512er (Spec §8).
       width: typeof h.width === "number" ? h.width : 512,
       height: typeof h.height === "number" ? h.height : 512,
+      // Migration 0.4→0.5: Alt-Einträge kannten weder negativePrompt noch cfg (Spec §5/§8).
+      negativePrompt: typeof h.negativePrompt === "string" ? h.negativePrompt : "",
+      cfg: typeof h.cfg === "number" ? h.cfg : 7,
     }));
 }
 
@@ -111,7 +136,9 @@ function sanitizeSectionsCollapsed(raw: unknown): Record<string, boolean> {
 }
 
 function sanitizeDefaultSteps(raw: unknown): number {
-  return typeof raw === "number" && Number.isInteger(raw) && raw >= 1 && raw <= 4 ? raw : DEFAULT_SETTINGS.defaultSteps;
+  return typeof raw === "number" && Number.isInteger(raw) && raw >= STEPS.min && raw <= STEPS.max
+    ? raw
+    : DEFAULT_SETTINGS.defaultSteps;
 }
 
 function sanitizeCreateMode(raw: unknown): "image" | "note" {
@@ -123,7 +150,7 @@ function sanitizeFolder(raw: unknown): string {
 }
 
 function sanitizeSelectedModel(raw: unknown): string {
-  return typeof raw === "string" && MODELS.some((m) => m.id === raw) ? raw : DEFAULT_MODEL_ID;
+  return typeof raw === "string" ? raw : "";
 }
 
 /** Bereinigt einen geladenen Settings-Stand (Spec §8): handeditierte oder korrupte
@@ -138,6 +165,7 @@ export function sanitizeSettings(raw: unknown): LigSettings {
   return {
     outputFolder: sanitizeFolder(s.outputFolder),
     noteFolder: sanitizeFolder(s.noteFolder),
+    endpoint: sanitizeFolder(s.endpoint),
     defaultSteps: sanitizeDefaultSteps(s.defaultSteps),
     createMode: sanitizeCreateMode(s.createMode),
     presets: sanitizePresets(s.presets),
