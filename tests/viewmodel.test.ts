@@ -1,259 +1,160 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
-import { buildViewModel, formatBytes, formatElapsed, type MfluxPanelState, type PanelState } from "../src/core/viewmodel";
+import { buildViewModel, formatElapsed, type GenParams, type PanelState } from "../src/core/viewmodel";
 
 beforeEach(() => {
   registerI18n();
   setLang("en");
 });
 
-const MFLUX_OK: MfluxPanelState = { binary: "/x/mflux-generate-flux2", weights: "ready", download: null };
+const baseParams: GenParams = {
+  prompt: "a cat",
+  negativePrompt: "",
+  seed: 1,
+  steps: 4,
+  cfg: 7,
+  model: "sd-turbo",
+  width: 512,
+  height: 512,
+  date: "2026-07-23T10:00:00",
+};
 
 const base: PanelState = {
-  gpu: "ok",
-  model: { kind: "ready" },
+  server: { kind: "ok", modelName: "sd-turbo" },
   run: { kind: "idle" },
   image: null,
   editorActive: true,
   prompt: "a cat",
-  selectedModel: "sd-turbo",
-  mflux: MFLUX_OK,
+  negativePrompt: "",
   seed: 1,
   steps: 4,
+  cfg: 7,
   width: 512,
   height: 512,
 };
 
-function fluxState(over: Partial<PanelState> = {}): PanelState {
-  return {
-    gpu: "no-webgpu", // absichtlich kaputt: darf FLUX nicht blocken
-    model: { kind: "missing" }, // SD-Turbo-Gewichte fehlen: darf FLUX nicht blocken
-    run: { kind: "idle" },
-    image: null,
-    editorActive: false,
-    prompt: "an apple",
-    selectedModel: "flux2-klein-4b",
-    mflux: MFLUX_OK,
-    seed: 1,
-    steps: 4,
-    width: 512,
-    height: 512,
-    ...over,
-  };
-}
-
-describe("buildViewModel", () => {
-  it("bereit: Generate enabled, Empty-State 'kein Bild', Status ok", () => {
-    const vm = buildViewModel(base);
-    expect(vm.generateEnabled).toBe(true);
-    expect(vm.status.cls).toBe("is-ok");
-    expect(vm.empty?.ctaLabel).toBeUndefined();
-    expect(vm.showImage).toBe(false);
-  });
-  it("kein WebGPU: Fehler-Status, kein CTA, Generate disabled", () => {
-    const vm = buildViewModel({ ...base, gpu: "no-webgpu" });
+describe("buildViewModel — server state", () => {
+  it("unconfigured: Fehler-Status, Empty mit Settings-CTA, Generate disabled", () => {
+    const vm = buildViewModel({ ...base, server: { kind: "unconfigured" } });
     expect(vm.generateEnabled).toBe(false);
     expect(vm.status.cls).toBe("is-error");
     expect(vm.status.icon).toBe("circle-x");
-    expect(vm.empty?.ctaLabel).toBeUndefined();
+    expect(vm.empty?.ctaAction).toBe("settings");
+    expect(vm.empty?.ctaLabel).toBeDefined();
   });
-  it("Modell fehlt: Empty-State MIT Download-CTA, Generate disabled", () => {
-    const vm = buildViewModel({ ...base, model: { kind: "missing" } });
+
+  it("checking: Loader-Status, Generate disabled", () => {
+    const vm = buildViewModel({ ...base, server: { kind: "checking" } });
+    expect(vm.status.icon).toBe("loader");
     expect(vm.generateEnabled).toBe(false);
-    expect(vm.empty?.ctaLabel).toContain("2.5 GB");
   });
-  it("Download läuft: Loader-Status mit Prozent + Datei-Detail, Generate disabled", () => {
-    const vm = buildViewModel({
-      ...base,
-      model: {
-        kind: "downloading",
-        overallPct: 42,
-        fileKey: "unet",
-        fileIndex: 2,
-        totalFiles: 5,
-        receivedBytes: 100,
-        totalBytes: 200,
-      },
-    });
+
+  it("unreachable: Fehler-Status, Empty mit Recheck-CTA, Generate disabled", () => {
+    const vm = buildViewModel({ ...base, server: { kind: "unreachable" } });
+    expect(vm.status.cls).toBe("is-error");
+    expect(vm.empty?.ctaAction).toBe("recheck");
+    expect(vm.generateEnabled).toBe(false);
+  });
+
+  it("ok + idle + nicht-leerer Prompt: Generate enabled, Status ready", () => {
+    const vm = buildViewModel(base);
+    expect(vm.generateEnabled).toBe(true);
+    expect(vm.status.cls).toBe("is-ok");
+    expect(vm.status.text).toBe("Ready");
+  });
+
+  it("leerer Prompt: Generate disabled trotz erreichbarem Server", () => {
+    expect(buildViewModel({ ...base, prompt: "  " }).generateEnabled).toBe(false);
+  });
+});
+
+describe("buildViewModel — run state", () => {
+  it("contacting: Loader-Status 'Contacting server', Generate disabled", () => {
+    const vm = buildViewModel({ ...base, run: { kind: "contacting" } });
+    expect(vm.status.icon).toBe("loader");
+    expect(vm.status.text).toContain("Contacting server");
+    expect(vm.generateEnabled).toBe(false);
+  });
+
+  it("generating mit pct: Text enthält Prozent", () => {
+    const vm = buildViewModel({ ...base, run: { kind: "generating", pct: 42, elapsedSec: 3 } });
     expect(vm.status.icon).toBe("loader");
     expect(vm.status.text).toContain("42");
     expect(vm.generateEnabled).toBe(false);
   });
-  it("GPU-Laden läuft: Loader-Status mit verstrichener Zeit, Generate disabled", () => {
-    const vm = buildViewModel({ ...base, run: { kind: "loading", elapsedSec: 65 } });
-    expect(vm.status.icon).toBe("loader");
+
+  it("generating ohne pct: Text enthält verstrichene Zeit", () => {
+    const vm = buildViewModel({ ...base, run: { kind: "generating", pct: null, elapsedSec: 65 } });
     expect(vm.status.text).toContain("1:05");
     expect(vm.generateEnabled).toBe(false);
   });
-  it("GPU-Laden läuft ohne Bild: kein widersprüchlicher Empty-State", () => {
-    const vm = buildViewModel({ ...base, image: null, run: { kind: "loading", elapsedSec: 5 } });
-    expect(vm.empty).toBeNull();
+
+  it("error: Fehlerstatus mit Message, Generate bei nicht-leerem Prompt wieder enabled (Retry)", () => {
+    const vm = buildViewModel({ ...base, run: { kind: "error", message: "boom" } });
+    expect(vm.status.cls).toBe("is-error");
+    expect(vm.status.text).toContain("boom");
+    expect(vm.generateEnabled).toBe(true);
   });
-  it("Generierung läuft: Step-Anzeige, Generate disabled (Lock)", () => {
-    const vm = buildViewModel({ ...base, run: { kind: "running", step: 2, total: 4 } });
-    expect(vm.status.text).toContain("2/4");
-    expect(vm.generateEnabled).toBe(false);
-  });
-  it("leerer Prompt: Generate disabled", () => {
-    expect(buildViewModel({ ...base, prompt: "  " }).generateEnabled).toBe(false);
-  });
+});
+
+describe("buildViewModel — Bild/Insert", () => {
   it("Bild da: showImage, Insert nur mit aktivem Editor", () => {
-    const withImg = {
+    const withImg: PanelState = {
       ...base,
-      image: {
-        dataUrl: "data:",
-        params: {
-          prompt: "p",
-          negativePrompt: "",
-          seed: 1,
-          steps: 4,
-          cfg: 7,
-          model: "sd-turbo",
-          width: 512,
-          height: 512,
-          date: "2026-07-16T21:52:43",
-        },
-      },
+      image: { dataUrl: "data:", params: baseParams },
     };
     expect(buildViewModel(withImg).showImage).toBe(true);
     expect(buildViewModel(withImg).insertEnabled).toBe(true);
     expect(buildViewModel({ ...withImg, editorActive: false }).insertEnabled).toBe(false);
   });
-  it("Fehler-Run: Fehlerstatus mit Message", () => {
-    const vm = buildViewModel({ ...base, run: { kind: "error", message: "boom" } });
-    expect(vm.status.cls).toBe("is-error");
-    expect(vm.status.text).toContain("boom");
-  });
-});
 
-describe("buildViewModel — mflux (FLUX.2)", () => {
-  it("FLUX generierbar trotz fehlendem WebGPU und fehlenden SD-Turbo-Gewichten", () => {
-    expect(buildViewModel(fluxState()).generateEnabled).toBe(true);
+  it("kein Bild, nicht busy: Empty-State 'kein Bild'", () => {
+    const vm = buildViewModel(base);
+    expect(vm.empty?.text).toBeDefined();
+    expect(vm.showImage).toBe(false);
   });
-  it("FLUX ohne Binary → Setup-Empty mit CTA, generate disabled", () => {
-    const vm = buildViewModel(fluxState({ mflux: { ...MFLUX_OK, binary: null } }));
-    expect(vm.generateEnabled).toBe(false);
-    expect(vm.empty?.ctaLabel).toBeDefined();
-  });
-  it("FLUX ohne Gewichte → Empty mit CTA, kein Auto-Download", () => {
-    const vm = buildViewModel(fluxState({ mflux: { ...MFLUX_OK, weights: "missing" } }));
-    expect(vm.generateEnabled).toBe(false);
-    expect(vm.empty?.ctaLabel).toBeDefined();
-  });
-  it("mflux-Download blockt Generate und zeigt Prozent-Status", () => {
-    const vm = buildViewModel(fluxState({ mflux: { ...MFLUX_OK, weights: "downloading", download: { file: "x", pct: 40 } } }));
-    expect(vm.generateEnabled).toBe(false);
-    expect(vm.status.text).toContain("40");
-  });
-  it("sd-turbo-Verhalten unverändert: no-webgpu blockt", () => {
-    expect(buildViewModel(fluxState({ selectedModel: "sd-turbo" })).generateEnabled).toBe(false);
-  });
-  it("FLUX lädt kurz: kein Kaltstart-Hinweis", () => {
-    const vm = buildViewModel(fluxState({ run: { kind: "loading", elapsedSec: 5 } }));
-    expect(vm.status.text).not.toContain("first load");
-  });
-  it("FLUX lädt ungewöhnlich lange: Status bekommt Kaltstart-Hinweis", () => {
-    const vm = buildViewModel(fluxState({ run: { kind: "loading", elapsedSec: 25 } }));
-    expect(vm.status.text).toContain("0:25");
-    expect(vm.status.text).toContain("first load");
+
+  it("kein Bild, aber generating: kein widersprüchlicher Empty-State", () => {
+    const vm = buildViewModel({ ...base, run: { kind: "generating", pct: 10, elapsedSec: 1 } });
+    expect(vm.empty).toBeNull();
   });
 });
 
 describe("buildViewModel — Generate-Gating (unverändertes Rezept)", () => {
-  it("ORT: identisches Rezept zum letzten Bild → Generate disabled, Reroll unberührt", () => {
+  it("identisches Rezept + modelName stimmt überein → Generate disabled, Reroll unberührt", () => {
     const state: PanelState = {
       ...base,
-      seed: 42,
-      steps: 4,
-      width: 512,
-      height: 512,
-      image: {
-        dataUrl: "data:",
-        params: {
-          prompt: base.prompt,
-          negativePrompt: "",
-          seed: 42,
-          steps: 4,
-          cfg: 7,
-          model: base.selectedModel,
-          width: 512,
-          height: 512,
-          date: "2026-07-19T10:00:00",
-        },
-      },
+      image: { dataUrl: "data:", params: baseParams },
     };
     expect(buildViewModel(state).generateEnabled).toBe(false);
   });
-  it("ORT: ein geändertes Feld (Seed) → Generate wieder enabled", () => {
+
+  it("identisches Rezept, aber modelName: null (unbeobachtbarer Serverwechsel) → Generate enabled", () => {
     const state: PanelState = {
       ...base,
-      seed: 42,
-      steps: 4,
-      width: 512,
-      height: 512,
-      image: {
-        dataUrl: "data:",
-        params: {
-          prompt: base.prompt,
-          negativePrompt: "",
-          seed: 42,
-          steps: 4,
-          cfg: 7,
-          model: base.selectedModel,
-          width: 512,
-          height: 512,
-          date: "2026-07-19T10:00:00",
-        },
-      },
+      server: { kind: "ok", modelName: null },
+      image: { dataUrl: "data:", params: baseParams },
     };
-    expect(buildViewModel({ ...state, seed: 43 }).generateEnabled).toBe(true);
+    expect(buildViewModel(state).generateEnabled).toBe(true);
   });
-  it("mflux: identisches Rezept zum letzten Bild → Generate disabled", () => {
-    const state = fluxState({
-      seed: 7,
-      steps: 4,
-      width: 768,
-      height: 768,
-      image: {
-        dataUrl: "data:",
-        params: {
-          prompt: "an apple",
-          negativePrompt: "",
-          seed: 7,
-          steps: 4,
-          cfg: 7,
-          model: "flux2-klein-4b",
-          width: 768,
-          height: 768,
-          date: "2026-07-19T10:00:00",
-        },
-      },
-    });
-    expect(buildViewModel(state).generateEnabled).toBe(false);
+
+  it("ein abweichendes Feld (cfg) → Generate wieder enabled", () => {
+    const state: PanelState = {
+      ...base,
+      cfg: 9,
+      image: { dataUrl: "data:", params: baseParams },
+    };
+    expect(buildViewModel(state).generateEnabled).toBe(true);
   });
-  it("mflux: geänderte Größe → Generate wieder enabled", () => {
-    const state = fluxState({
-      seed: 7,
-      steps: 4,
-      width: 768,
-      height: 768,
-      image: {
-        dataUrl: "data:",
-        params: {
-          prompt: "an apple",
-          negativePrompt: "",
-          seed: 7,
-          steps: 4,
-          cfg: 7,
-          model: "flux2-klein-4b",
-          width: 768,
-          height: 768,
-          date: "2026-07-19T10:00:00",
-        },
-      },
-    });
-    expect(buildViewModel({ ...state, width: 512, height: 512 }).generateEnabled).toBe(true);
+
+  it("abweichender negativePrompt → Generate wieder enabled", () => {
+    const state: PanelState = {
+      ...base,
+      negativePrompt: "blurry",
+      image: { dataUrl: "data:", params: baseParams },
+    };
+    expect(buildViewModel(state).generateEnabled).toBe(true);
   });
 });
 
@@ -263,13 +164,5 @@ describe("formatElapsed", () => {
     expect(formatElapsed(5)).toBe("0:05");
     expect(formatElapsed(65)).toBe("1:05");
     expect(formatElapsed(3661)).toBe("61:01");
-  });
-});
-
-describe("formatBytes", () => {
-  it("zeigt MB unter 1 GB, GB mit einer Nachkommastelle darüber", () => {
-    expect(formatBytes(500_000)).toBe("1 MB");
-    expect(formatBytes(99_000_000)).toBe("99 MB");
-    expect(formatBytes(1_730_000_000)).toBe("1.7 GB");
   });
 });

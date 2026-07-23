@@ -42,6 +42,12 @@ export const EN: Record<string, string> = {
   "status.loadingMfluxSlow":
     "Loading FLUX model… ({0}) — a first load after some time can take a few minutes",
   "status.mfluxMissing": "mflux is not set up yet",
+  "status.noEndpoint": "No image server configured",
+  "status.serverChecking": "Checking server…",
+  "status.serverUnreachable": "Server unreachable — is the API enabled?",
+  "status.contacting": "Contacting server…",
+  "status.generatingPct": "Generating… {0}%",
+  "status.generatingElapsed": "Generating… ({0})",
 
   "empty.noModel": "The model (~2.5 GB) is not downloaded yet.",
   "empty.noModelCta": "Download model (~2.5 GB)",
@@ -50,6 +56,11 @@ export const EN: Record<string, string> = {
   "empty.fluxNeedsMfluxCta": "Open setup",
   "empty.fluxNoModel": "The FLUX.2 weights (~8 GB) are not downloaded yet.",
   "empty.fluxNoModelCta": "Open settings",
+  "empty.noServer":
+    "Connect a local image server such as Draw Things (enable its API server) or AUTOMATIC1111 (--api), then enter the endpoint in the settings.",
+  "empty.noServerCta": "Open settings",
+  "empty.unreachable": "The server did not respond. Is it running and the API enabled?",
+  "empty.unreachableCta": "Retry",
 
   "notice.saveFailed": "Save failed: {0}",
   "notice.oomHint":
@@ -156,6 +167,12 @@ export const DE: Record<string, string> = {
   "status.loadingMfluxSlow":
     "Lade FLUX-Modell… ({0}) — ein erster Ladevorgang nach einer Weile kann einige Minuten dauern",
   "status.mfluxMissing": "mflux ist noch nicht eingerichtet",
+  "status.noEndpoint": "Kein Bildserver konfiguriert",
+  "status.serverChecking": "Server wird geprüft…",
+  "status.serverUnreachable": "Server nicht erreichbar — ist die API aktiviert?",
+  "status.contacting": "Server wird kontaktiert…",
+  "status.generatingPct": "Generiert… {0}%",
+  "status.generatingElapsed": "Generiert… ({0})",
 
   "empty.noModel": "Das Modell (~2,5 GB) wurde noch nicht heruntergeladen.",
   "empty.noModelCta": "Modell herunterladen (~2,5 GB)",
@@ -164,6 +181,11 @@ export const DE: Record<string, string> = {
   "empty.fluxNeedsMfluxCta": "Einrichtung öffnen",
   "empty.fluxNoModel": "Die FLUX.2-Gewichte (~8 GB) sind noch nicht heruntergeladen.",
   "empty.fluxNoModelCta": "Einstellungen öffnen",
+  "empty.noServer":
+    "Verbinde einen lokalen Bildserver wie Draw Things (API-Server aktivieren) oder AUTOMATIC1111 (--api) und trage den Endpunkt in den Einstellungen ein.",
+  "empty.noServerCta": "Einstellungen öffnen",
+  "empty.unreachable": "Der Server hat nicht geantwortet. Läuft er, und ist die API aktiviert?",
+  "empty.unreachableCta": "Erneut versuchen",
 
   "notice.saveFailed": "Speichern fehlgeschlagen: {0}",
   "notice.oomHint":
