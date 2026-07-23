@@ -4,6 +4,7 @@ import { setIcon, setTooltip } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
 import { t } from "../vendor/kit/i18n";
 import { buildViewModel } from "../core/viewmodel";
+import { CFG } from "../core/generation";
 import { getModel, MODELS, type ModelSpec, type SizeOption } from "../core/models";
 import type { HistoryEntry } from "../core/settings";
 import type { HubPanel, TabId } from "./hub";
@@ -52,7 +53,6 @@ export class GeneratePanel implements HubPanel {
     this.modelEl.value = this.host.getSettings().selectedModel;
     this.modelEl.addEventListener("change", () => {
       this.applyModel(this.modelEl.value);
-      this.host.setSelectedModel(this.modelEl.value);
     });
 
     const promptRow = root.createDiv({ cls: "lig-prompt-row" });
@@ -110,7 +110,8 @@ export class GeneratePanel implements HubPanel {
     this.generateBtn = controls.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
     this.generateBtn.addEventListener("click", () => {
       const { width, height } = this.currentSize();
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), width, height);
+      // TODO(Task 6): CFG.default bridge until the panel has a real slider
+      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), CFG.default, width, height);
     });
 
     this.emptyEl = root.createDiv({ cls: "lig-empty" });
@@ -127,7 +128,8 @@ export class GeneratePanel implements HubPanel {
       // Seed aus dem Feld und würfelt nie — so sagt jeder Knopf, was er tut.
       this.seedEl.value = String(randomSeed());
       const { width, height } = this.currentSize();
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), width, height);
+      // TODO(Task 6): CFG.default bridge until the panel has a real slider
+      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), CFG.default, width, height);
     });
     this.createBtn = actions.createEl("button", { text: t("generate.button.create"), cls: "mod-cta" });
     this.createBtn.addEventListener("click", () => this.host.saveImage("create"));
@@ -219,7 +221,6 @@ export class GeneratePanel implements HubPanel {
   applyRecipe(entry: HistoryEntry): void {
     this.modelEl.value = getModel(entry.model).id; // getModel-Fallback fängt Alt-/Fremd-IDs
     this.applyModel(this.modelEl.value, { width: entry.width, height: entry.height });
-    this.host.setSelectedModel(this.modelEl.value);
     this.promptEl.value = entry.prompt;
     this.host.setPrompt(entry.prompt);
     this.seedEl.value = String(entry.seed);
@@ -233,7 +234,8 @@ export class GeneratePanel implements HubPanel {
 
   refresh(): void {
     const { width, height } = this.currentSize();
-    this.host.setRecipe(Number(this.stepsEl.value), Number(this.seedEl.value), width, height);
+    // TODO(Task 6): CFG.default bridge until the panel has a real slider
+    this.host.setRecipe(Number(this.stepsEl.value), Number(this.seedEl.value), CFG.default, width, height);
     const state = this.host.getPanelState();
     this.renderChips();
     const vm = buildViewModel(state);
