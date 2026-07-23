@@ -31,8 +31,12 @@ export default tseslint.config(
     //
     // (2) prefer-setting-definitions: die Legacy-Cache-Zeile (Spec §4) wird NACH einem
     // asynchronen hasLegacyCache()-Check bedingt angehängt und nach dem Löschen wieder aus
-    // dem DOM entfernt (display()) — state-getrieben, nicht auf das deklarative
-    // getSettingDefinitions()-Schema abbildbar → display() bleibt.
+    // dem DOM entfernt (display()) — state-getrieben. getSettingDefinitions() böte dafür
+    // mit SettingDefinitionRender (obsidian.d.ts:6265-6283, render(setting, group) =>
+    // void | (() => void)) durchaus eine Escape-Hatch für genau dieses Muster; die Zeile
+    // ist also nicht technisch unabbildbar. Der Override bleibt trotzdem bestehen, weil
+    // die Migration der gesamten Datei aufs deklarative Schema außerhalb des Scopes von
+    // Task 7 liegt — zurückgestellt, nicht unmöglich.
     // NICHT mehr Teil der Begründung: die alten Download-Zeilen (refreshModel(), Task 5
     // entfallen) — der ursprüngliche Auslöser dieses Overrides ist weg, aber die
     // Legacy-Cache-Zeile braucht ihn aus demselben strukturellen Grund weiter.

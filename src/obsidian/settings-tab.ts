@@ -19,8 +19,11 @@ export class LigSettingTab extends PluginSettingTab {
   // Imperatives Rendering (klassische Setting-API) statt des deklarativen
   // getSettingDefinitions()-Schemas (Obsidian ≥ 1.13): die Legacy-Cache-Zeile ist
   // state-getrieben und wird NACH einem asynchronen hasLegacyCache()-Check bedingt
-  // angehängt bzw. nach dem Löschen wieder aus dem DOM entfernt (siehe display()) — das
-  // lässt sich nicht als statische Setting-Definition ausdrücken. Der
+  // angehängt bzw. nach dem Löschen wieder aus dem DOM entfernt (siehe display()). Das
+  // deklarative Schema böte mit SettingDefinitionRender (obsidian.d.ts:6265-6283) eine
+  // render-Escape-Hatch für genau dieses Muster — die Zeile ist also nicht technisch
+  // unabbildbar, aber die Migration der ganzen Datei aufs deklarative Schema liegt
+  // außerhalb des Scopes von Task 7 (zurückgestellt, nicht unmöglich). Der
   // prefer-setting-definitions-Hinweis ist darum in eslint.config.mjs file-scoped
   // begründet abgeschaltet. display() bleibt der einzige Render-Einstieg.
   //
@@ -50,6 +53,7 @@ export class LigSettingTab extends PluginSettingTab {
           .setButtonText(t("settings.legacy.delete"))
           .setWarning()
           .onClick(async () => {
+            b.setDisabled(true);
             await deleteLegacyCache();
             new Notice(t("settings.legacy.done"));
             setting.settingEl.remove();
