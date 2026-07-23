@@ -32,21 +32,8 @@ export const EN: Record<string, string> = {
   "generate.presetsLabel": "Styles",
   "generate.insertNeedsEditor": "Open a note to insert the image",
 
-  "status.checking": "Checking GPU…",
   "status.ready": "Ready",
-  "status.noWebgpu":
-    "WebGPU is not available. This plugin needs macOS or Windows with a supported GPU (Linux support depends on drivers).",
-  "status.noF16": "This GPU lacks fp16 support (shader-f16), which the model requires.",
-  "status.downloading": "Downloading model… {0}%",
-  "status.generating": "Generating… step {0}/{1}",
   "status.error": "Error: {0}",
-  "status.loadingGpu": "Loading model into GPU… ({0})",
-  "status.engineLoadFailed":
-    "Loading the model into the GPU is taking unusually long or failed silently. Click Generate to try again.",
-  "status.loadingMflux": "Loading FLUX model… ({0})",
-  "status.loadingMfluxSlow":
-    "Loading FLUX model… ({0}) — a first load after some time can take a few minutes",
-  "status.mfluxMissing": "mflux is not set up yet",
   "status.noEndpoint": "No image server configured",
   "status.serverChecking": "Checking server…",
   "status.serverUnreachable": "Server unreachable — is the API enabled?",
@@ -54,13 +41,7 @@ export const EN: Record<string, string> = {
   "status.generatingPct": "Generating… {0}%",
   "status.generatingElapsed": "Generating… ({0})",
 
-  "empty.noModel": "The model (~2.5 GB) is not downloaded yet.",
-  "empty.noModelCta": "Download model (~2.5 GB)",
   "empty.noImage": "Enter a prompt and press Generate.",
-  "empty.fluxNeedsMflux": "FLUX.2 runs via the local mflux tool, which is not installed or not found.",
-  "empty.fluxNeedsMfluxCta": "Open setup",
-  "empty.fluxNoModel": "The FLUX.2 weights (~8 GB) are not downloaded yet.",
-  "empty.fluxNoModelCta": "Open settings",
   "empty.noServer":
     "Connect a local image server such as Draw Things (enable its API server) or AUTOMATIC1111 (--api), then enter the endpoint in the settings.",
   "empty.noServerCta": "Open settings",
@@ -68,34 +49,8 @@ export const EN: Record<string, string> = {
   "empty.unreachableCta": "Retry",
 
   "notice.saveFailed": "Save failed: {0}",
-  "notice.oomHint":
-    "Generation failed. Try closing other apps — the model needs roughly 4–7 GB of free memory.",
   "notice.saved": "Saved: {0}",
   "notice.noteFailed": "Image saved to {0}, but the note failed: {1}",
-  "notice.modelDownloaded": "Model downloaded",
-
-  "settings.model.heading": "Model",
-  "settings.model.desc":
-    "SD-Turbo (ONNX, fp16) is downloaded from Hugging Face after you explicitly start it. Stored in the local browser cache, outside your vault.",
-  "settings.model.download": "Download (~{0} GB)",
-  "settings.model.downloadedTooltip": "Downloaded",
-  "settings.model.delete": "Delete model",
-  "settings.model.deleteConfirm":
-    "Delete the downloaded model files (~2.5 GB)? You can download them again anytime.",
-
-  "settings.mflux.binary": "mflux runtime",
-  "settings.mflux.found": "Found: {0}",
-  "settings.mflux.notFound":
-    "Not found. Install with `uv tool install mflux`, then reopen this tab — or enter the path to mflux-generate-flux2 below.",
-  "settings.mflux.binaryPlaceholder": "Path to mflux-generate-flux2 (optional)",
-  "settings.mflux.modelsDir": "Model storage location",
-  "settings.mflux.modelsDirDesc":
-    "Uses the shared Hugging Face cache — models already downloaded via Hugging Face are reused. Empty = default (~/.cache/huggingface). Weights: ~8 GB.",
-  "settings.mflux.weights": "FLUX.2 weights",
-  "settings.mflux.weightsDesc": "Downloaded via the explicit download here (~8 GB, from Hugging Face).",
-  "settings.mflux.download": "Download (~8 GB)",
-
-  "notice.fluxDownloaded": "FLUX.2 weights downloaded",
 
   "settings.output.heading": "Output",
   "settings.output.folder": "Image folder",
@@ -174,21 +129,8 @@ export const DE: Record<string, string> = {
   "generate.presetsLabel": "Stile",
   "generate.insertNeedsEditor": "Notiz öffnen, um das Bild einzufügen",
 
-  "status.checking": "GPU wird geprüft…",
   "status.ready": "Bereit",
-  "status.noWebgpu":
-    "WebGPU ist nicht verfügbar. Dieses Plugin benötigt macOS oder Windows mit unterstützter GPU (Linux-Unterstützung hängt von den Treibern ab).",
-  "status.noF16": "Diese GPU unterstützt kein fp16 (shader-f16), das vom Modell benötigt wird.",
-  "status.downloading": "Modell wird heruntergeladen… {0}%",
-  "status.generating": "Generiert… Schritt {0}/{1}",
   "status.error": "Fehler: {0}",
-  "status.loadingGpu": "Lädt Modell auf GPU… ({0})",
-  "status.engineLoadFailed":
-    "Das Laden des Modells auf die GPU dauert ungewöhnlich lange oder ist lautlos fehlgeschlagen. Klicke auf Generieren, um es erneut zu versuchen.",
-  "status.loadingMflux": "Lade FLUX-Modell… ({0})",
-  "status.loadingMfluxSlow":
-    "Lade FLUX-Modell… ({0}) — ein erster Ladevorgang nach einer Weile kann einige Minuten dauern",
-  "status.mfluxMissing": "mflux ist noch nicht eingerichtet",
   "status.noEndpoint": "Kein Bildserver konfiguriert",
   "status.serverChecking": "Server wird geprüft…",
   "status.serverUnreachable": "Server nicht erreichbar — ist die API aktiviert?",
@@ -196,13 +138,7 @@ export const DE: Record<string, string> = {
   "status.generatingPct": "Generiert… {0}%",
   "status.generatingElapsed": "Generiert… ({0})",
 
-  "empty.noModel": "Das Modell (~2,5 GB) wurde noch nicht heruntergeladen.",
-  "empty.noModelCta": "Modell herunterladen (~2,5 GB)",
   "empty.noImage": "Prompt eingeben und auf Generieren klicken.",
-  "empty.fluxNeedsMflux": "FLUX.2 läuft über das lokale Tool mflux, das nicht installiert oder nicht auffindbar ist.",
-  "empty.fluxNeedsMfluxCta": "Einrichtung öffnen",
-  "empty.fluxNoModel": "Die FLUX.2-Gewichte (~8 GB) sind noch nicht heruntergeladen.",
-  "empty.fluxNoModelCta": "Einstellungen öffnen",
   "empty.noServer":
     "Verbinde einen lokalen Bildserver wie Draw Things (API-Server aktivieren) oder AUTOMATIC1111 (--api) und trage den Endpunkt in den Einstellungen ein.",
   "empty.noServerCta": "Einstellungen öffnen",
@@ -210,34 +146,8 @@ export const DE: Record<string, string> = {
   "empty.unreachableCta": "Erneut versuchen",
 
   "notice.saveFailed": "Speichern fehlgeschlagen: {0}",
-  "notice.oomHint":
-    "Generierung fehlgeschlagen. Andere Apps schließen — das Modell benötigt etwa 4–7 GB freien Speicher.",
   "notice.saved": "Gespeichert: {0}",
   "notice.noteFailed": "Bild wurde unter {0} gespeichert, aber die Notiz ist fehlgeschlagen: {1}",
-  "notice.modelDownloaded": "Modell heruntergeladen",
-
-  "settings.model.heading": "Modell",
-  "settings.model.desc":
-    "SD-Turbo (ONNX, fp16) wird von Hugging Face heruntergeladen, sobald du das explizit startest. Wird im lokalen Browser-Cache gespeichert, außerhalb deines Vaults.",
-  "settings.model.download": "Herunterladen (~{0} GB)",
-  "settings.model.downloadedTooltip": "Heruntergeladen",
-  "settings.model.delete": "Modell löschen",
-  "settings.model.deleteConfirm":
-    "Heruntergeladene Modelldateien löschen (~2,5 GB)? Du kannst sie jederzeit erneut herunterladen.",
-
-  "settings.mflux.binary": "mflux-Runtime",
-  "settings.mflux.found": "Gefunden: {0}",
-  "settings.mflux.notFound":
-    "Nicht gefunden. Mit `uv tool install mflux` installieren und diesen Tab neu öffnen — oder unten den Pfad zu mflux-generate-flux2 eintragen.",
-  "settings.mflux.binaryPlaceholder": "Pfad zu mflux-generate-flux2 (optional)",
-  "settings.mflux.modelsDir": "Modell-Speicherort",
-  "settings.mflux.modelsDirDesc":
-    "Nutzt den geteilten Hugging-Face-Cache — bereits via Hugging Face geladene Modelle werden wiederverwendet. Leer = Standard (~/.cache/huggingface). Gewichte: ~8 GB.",
-  "settings.mflux.weights": "FLUX.2-Gewichte",
-  "settings.mflux.weightsDesc": "Werden beim expliziten Download hier geladen (~8 GB, von Hugging Face).",
-  "settings.mflux.download": "Herunterladen (~8 GB)",
-
-  "notice.fluxDownloaded": "FLUX.2-Gewichte heruntergeladen",
 
   "settings.output.heading": "Ausgabe",
   "settings.output.folder": "Bilderordner",

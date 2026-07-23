@@ -25,12 +25,14 @@ describe("registerI18n + t()", () => {
   });
 
   it("interpolates {0}/{1} positional args", () => {
-    expect(t("status.generating", 2, 4)).toBe("Generating… step 2/4");
+    expect(t("notice.noteFailed", "img.png", "disk full")).toBe(
+      "Image saved to img.png, but the note failed: disk full",
+    );
     expect(t("history.recipe", 123, 4, "14:32")).toBe("seed 123 · 4 steps · 14:32");
   });
 
   it("leaves unmatched placeholders untouched when an arg is missing", () => {
-    expect(t("status.downloading")).toBe("Downloading model… {0}%");
+    expect(t("notice.saveFailed")).toBe("Save failed: {0}");
   });
 });
 
