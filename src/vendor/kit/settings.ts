@@ -1,3 +1,4 @@
+// vendored from obsidian-kit@0.16.0, src/pure/settings.ts — do not hand-edit
 /** Shallow-Merge gespeicherter Plugin-Settings über Defaults. VENDORED aus
  *  obsidian-kit/src/pure/settings.ts. Default-*Werte* werden eine Ebene tief geklont
  *  (Arrays slice(), Plain-Objects Spread), damit das Ergebnis nie Referenzen mit dem
