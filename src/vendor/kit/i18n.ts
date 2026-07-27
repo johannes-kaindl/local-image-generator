@@ -1,3 +1,4 @@
+// vendored from obsidian-kit@0.16.0, src/pure/i18n.ts — do not hand-edit
 // i18n-Engine (EN/DE) — pure (kein obsidian-/DOM-Import, PROF-OBS-03/04).
 // Implementiert PROF-OBS-07 (_docs/docs/obsidian-i18n.md). Die Strings sind plugin-eigen
 // und werden via defineStrings() injiziert; die Sprach-Detektion lebt in der obsidian-Schicht

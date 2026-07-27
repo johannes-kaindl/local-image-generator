@@ -4,7 +4,7 @@
 //
 // Key-Namespaces: cmd.* (Commands) · view.* (View-Titel/Tabs) · generate.* (Generate-Panel) ·
 // status.* (Statuszeile) · empty.* (Leerzustände) · notice.* (new Notice(...)) ·
-// settings.<gruppe>.* (Settings-Tab) · history.* (History-Panel) · modal.* (ConfirmModal).
+// settings.<gruppe>.* (Settings-Tab) · history.* (History-Panel) · modal.* (confirmAction).
 import { defineStrings } from "../vendor/kit/i18n";
 
 export const EN: Record<string, string> = {

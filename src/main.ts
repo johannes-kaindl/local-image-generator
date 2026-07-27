@@ -12,7 +12,7 @@ import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
 import { parseOptionsModel, parseProgressPct, Txt2ImgClient } from "./core/txt2img";
 import type { GenParams, PanelState, ServerState } from "./core/viewmodel";
-import { ConfirmModal } from "./obsidian/confirm-modal";
+import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
 import { dataUrlToBytes } from "./obsidian/png";
@@ -99,11 +99,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         this.refreshViews();
       },
       clearHistory: () => {
-        new ConfirmModal(this.app, t("history.clearConfirm"), t("history.clear"), () => {
+        void confirmAction(this.app, {
+          message: t("history.clearConfirm"),
+          confirmLabel: t("history.clear"),
+          cancelLabel: t("modal.cancel"),
+        }).then((ok) => {
+          if (!ok) return;
           this.settings.history = [];
           void this.saveSettings();
           this.refreshViews();
-        }).open();
+        });
       },
       setHistoryView: (v) => {
         this.settings.historyView = v;
