@@ -3,7 +3,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { STEPS } from "../core/generation";
 import { t } from "../vendor/kit/i18n";
-import { FolderSuggest } from "./folder-suggest";
+import { FolderSuggest } from "../vendor/kit-obsidian/folder-suggest";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { renderPresetEditor } from "./preset-editor";
 import type LocalImageGeneratorPlugin from "../main";

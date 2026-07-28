@@ -1,12 +1,12 @@
-/** Autocomplete-Suggest für Vault-Ordner in einem Text-Input-Feld.
- *  VENDORED aus `vault-rag/src/settings.ts` (Stand 2026-07-16, dort modul-privat —
- *  hier exportiert). Zwei Details des Originals sind bewusst erhalten, weil sie beim
- *  Neubau typischerweise fehlen:
- *  (1) `dispatchEvent(new Event("input"))` — ohne das feuert Obsidians Setting-onChange
- *      nach einer Klick-Auswahl NICHT, der gewählte Ordner würde also nie gespeichert.
- *  (2) `slice(0, 20)` — deckelt die Vorschlagsliste in großen Vaults. */
 import { AbstractInputSuggest, type App, type TFolder } from "obsidian";
 
+/** Ordner-Autocomplete für ein Settings-Textfeld (REGISTRY „Ordner-Autocomplete
+ *  im Settings-Textfeld", n=4: vault-rag → lig → kuro → apple-health).
+ *  Zwei load-bearing Details, die beim Neubau typischerweise fehlen:
+ *  (1) `dispatchEvent(new Event("input"))` in `selectSuggestion` — ohne das feuert
+ *      Obsidians Setting-onChange nach einer Klick-Auswahl NICHT, der gewählte
+ *      Ordner würde also nie gespeichert.
+ *  (2) `slice(0, 20)` — deckelt die Vorschlagsliste in großen Vaults. */
 export class FolderSuggest extends AbstractInputSuggest<string> {
   constructor(
     app: App,
