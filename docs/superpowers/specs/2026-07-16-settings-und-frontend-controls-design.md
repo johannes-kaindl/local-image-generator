@@ -1,7 +1,7 @@
 # local-image-generator — Settings & Frontend-Controls (0.2)
 
 **Datum:** 2026-07-16 · **Status:** beschlossen (Brainstorming mit Jay)
-**Repo:** `/Users/Shared/code/obsidian-plugins/local-image-generator`
+**Repo:** `local-image-generator` (dieses Repo)
 **Vorgänger:** `2026-07-16-local-image-generator-mvp-design.md` (0.1, ausgeliefert)
 
 ## 1. Kontext & Ziel

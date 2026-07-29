@@ -1226,8 +1226,8 @@ EOF
 ### Task 6: Cockpit + REGISTRY nachziehen
 
 **Files:**
-- Modify: `/Users/Shared/10_ObsidianVaults/10_Pallas/25_Coding/local-image-generator/local-image-generator.md`
-- Modify: `/Users/Shared/code/obsidian-plugins/REGISTRY.md`
+- Modify: `$VAULT/25_Coding/local-image-generator/local-image-generator.md`
+- Modify: `../REGISTRY.md` (vom Repo-Root)
 
 **Interfaces:** keine (Dokumentation).
 
@@ -1255,12 +1255,12 @@ Frontmatter-Felder `letzter_commit`, `letzte_session`, `fokus` NICHT von Hand an
 
 - [ ] **Step 2: REGISTRY.md — Kit-Kandidat vermerken**
 
-In `/Users/Shared/code/obsidian-plugins/REGISTRY.md` unter dem Themenblock, der yijing-oracles `httpPostJson`/`probeEndpoint`-Timeout-Muster referenziert (grep nach `probeImageEndpoint` oder `httpPostJson` um die Zeile zu finden), eine neue Zeile im selben Tabellen-/Listenformat wie die Nachbareinträge ergänzen, die auf `local-image-generator/src/core/timeout.ts` als vierte Instanz verweist (exakte Formatierung an die unmittelbar umgebenden Zeilen der Datei anpassen — nicht blind eine neue Struktur einführen).
+In `../REGISTRY.md` (vom Repo-Root) unter dem Themenblock, der yijing-oracles `httpPostJson`/`probeEndpoint`-Timeout-Muster referenziert (grep nach `probeImageEndpoint` oder `httpPostJson` um die Zeile zu finden), eine neue Zeile im selben Tabellen-/Listenformat wie die Nachbareinträge ergänzen, die auf `local-image-generator/src/core/timeout.ts` als vierte Instanz verweist (exakte Formatierung an die unmittelbar umgebenden Zeilen der Datei anpassen — nicht blind eine neue Struktur einführen).
 
 - [ ] **Step 3: Committen**
 
 ```bash
-git add /Users/Shared/10_ObsidianVaults/10_Pallas/25_Coding/local-image-generator/local-image-generator.md /Users/Shared/code/obsidian-plugins/REGISTRY.md
+git add "$VAULT/25_Coding/local-image-generator/local-image-generator.md" ../REGISTRY.md
 git commit -m "$(cat <<'EOF'
 docs(cockpit,registry): Robustheits-Block dokumentiert, raceTimeout als 4. Kit-Kandidat vermerkt
 

@@ -1,7 +1,7 @@
 # local-image-generator — MVP-Design (0.1)
 
 **Datum:** 2026-07-16 · **Status:** beschlossen (Brainstorming mit Jay, Ansatz A)
-**Repo:** `/Users/Shared/code/obsidian-plugins/local-image-generator` (eigenständig, PROF-OBS-09)
+**Repo:** `local-image-generator` (dieses Repo; eigenständig, PROF-OBS-09)
 
 ## 1. Kontext & Ziel
 

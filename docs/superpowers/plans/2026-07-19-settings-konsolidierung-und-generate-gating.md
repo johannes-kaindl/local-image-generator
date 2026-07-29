@@ -767,7 +767,7 @@ EOF
 
 Run:
 ```bash
-OBSIDIAN_PLUGIN_DIR="/Users/Shared/10_ObsidianVaults/10_Pallas/.obsidian/plugins/local-image-generator" npm run deploy
+OBSIDIAN_PLUGIN_DIR="$VAULT/.obsidian/plugins/local-image-generator" npm run deploy
 ```
 Expected: Build + Kopie erfolgreich, keine Fehlerausgabe.
 

@@ -2135,7 +2135,7 @@ EOF
 
 ```bash
 npm run gate
-OBSIDIAN_PLUGIN_DIR="/Users/Shared/10_ObsidianVaults/10_Pallas/.obsidian/plugins/local-image-generator" npm run deploy
+OBSIDIAN_PLUGIN_DIR="$VAULT/.obsidian/plugins/local-image-generator" npm run deploy
 ```
 
 Expected: Gate grün, drei Dateien kopiert (`main.js`, `manifest.json`, `styles.css`).
