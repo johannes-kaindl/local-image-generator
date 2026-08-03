@@ -32,10 +32,22 @@ describe("parseOptionsModel", () => {
   it("liest sd_model_checkpoint", () => {
     expect(parseOptionsModel({ sd_model_checkpoint: "flux.2-klein" })).toBe("flux.2-klein");
   });
+  // Draw Things nennt das Feld `model` statt `sd_model_checkpoint` — verifiziert am
+  // laufenden Server (0.5.0-Smoke, 2026-08-03: GET /sdapi/v1/options → model:
+  // "flux_2_dev_i8x.ckpt", kein sd_model_checkpoint). Ohne diesen Zweig blieb der
+  // Modellname null und landete als "unknown" im Frontmatter der Ergebnis-Notiz.
+  it("liest Draw Things' model-Feld", () => {
+    expect(parseOptionsModel({ model: "flux_2_dev_i8x.ckpt" })).toBe("flux_2_dev_i8x.ckpt");
+  });
+  it("bevorzugt sd_model_checkpoint, wenn beide Felder da sind", () => {
+    expect(parseOptionsModel({ sd_model_checkpoint: "a1111.safetensors", model: "andere.ckpt" })).toBe("a1111.safetensors");
+  });
   it("null bei fremder Form", () => {
     expect(parseOptionsModel({})).toBeNull();
     expect(parseOptionsModel(null)).toBeNull();
     expect(parseOptionsModel("x")).toBeNull();
+    expect(parseOptionsModel({ model: 42 })).toBeNull();
+    expect(parseOptionsModel({ model: "" })).toBeNull();
   });
 });
 

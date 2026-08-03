@@ -44,11 +44,18 @@ export class Txt2ImgClient implements ImageBackend {
   }
 }
 
-/** Aktives Modell aus GET /sdapi/v1/options — null, wenn der Server das Feld nicht liefert
- *  (Draw Things liefert die Options-Form nur teilweise; null → UI zeigt "(im Server gewählt)"). */
+/** Aktives Modell aus GET /sdapi/v1/options. Zwei Schreibweisen im Feld:
+ *  A1111/Forge/SD.Next liefern `sd_model_checkpoint`, Draw Things liefert `model`
+ *  (verifiziert am laufenden Server, 2026-08-03: `model: "flux_2_dev_i8x.ckpt"`, kein
+ *  sd_model_checkpoint). `sd_model_checkpoint` hat Vorrang — es ist das spezifischere
+ *  A1111-Feld, `model` ist im Options-Objekt ein generischerer Name.
+ *  null nur, wenn keins von beiden brauchbar ist → UI zeigt "(im Server gewählt)". */
 export function parseOptionsModel(json: unknown): string | null {
-  const v = (json as { sd_model_checkpoint?: unknown } | null)?.sd_model_checkpoint;
-  return typeof v === "string" && v !== "" ? v : null;
+  const o = json as { sd_model_checkpoint?: unknown; model?: unknown } | null;
+  for (const v of [o?.sd_model_checkpoint, o?.model]) {
+    if (typeof v === "string" && v !== "") return v;
+  }
+  return null;
 }
 
 /** Fortschritt aus GET /sdapi/v1/progress als ganze Prozent — null bei fremder Form
