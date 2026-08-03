@@ -6,8 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.5.0] — 2026-07-23
-
 ### Breaking
 
 - **In-process image generation is gone.** Both the SD-Turbo engine
@@ -51,12 +49,23 @@ All notable changes to this project are documented here. The format follows
 - Bundle size dropped from ~34 MB (including the bundled ONNX-runtime-web
   WASM runtime) to ~39.7 KB, since no inference runtime or model code ships
   with the plugin anymore.
+- Confirmation dialogs now follow the shared UI convention (cancel on the
+  left, standard button container).
 
 ### Removed
 
 - SD-Turbo (ONNX/WebGPU) and FLUX.2 klein 4B (`mflux`) engines, the model
   catalog, and all associated settings (model download, `mflux` path, FLUX
   weights location).
+
+### Fixed
+
+- **Draw Things' model name is now detected.** Draw Things reports the active
+  model under `model` in `/sdapi/v1/options`, while A1111, Forge and SD.Next
+  use `sd_model_checkpoint`; only the latter was read. As a result the status
+  hint stayed at "(chosen in server)" and — more importantly — every generated
+  note got `model: unknown` in its frontmatter, the very field meant to make a
+  recipe reproducible.
 
 ## [0.4.4] — 2026-07-23
 
