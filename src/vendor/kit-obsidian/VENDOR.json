@@ -1,7 +1,17 @@
 {
   "note": "Verbatim snapshots. Never hand-edit. Re-copy from obsidian-kit to update.",
   "modules": [
-    { "file": "confirm.ts", "source": "obsidian-kit", "version": "0.16.1", "sha": "b7aaf7c" },
-    { "file": "folder-suggest.ts", "source": "obsidian-kit", "version": "0.18.0", "sha": "988f4fd" }
+    {
+      "file": "confirm.ts",
+      "source": "obsidian-kit",
+      "version": "0.22.0",
+      "sha": "d87e9e2"
+    },
+    {
+      "file": "folder-suggest.ts",
+      "source": "obsidian-kit",
+      "version": "0.18.0",
+      "sha": "988f4fd"
+    }
   ]
 }

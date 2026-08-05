@@ -3,6 +3,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { STEPS } from "../core/generation";
 import { t } from "../vendor/kit/i18n";
+import { applyDestructive } from "../vendor/kit-obsidian/confirm";
 import { FolderSuggest } from "../vendor/kit-obsidian/folder-suggest";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { renderPresetEditor } from "./preset-editor";
@@ -48,17 +49,19 @@ export class LigSettingTab extends PluginSettingTab {
     const containerEl = this.containerEl;
     void hasLegacyCache().then((found) => {
       if (!found || !containerEl.isConnected) return;
-      const setting = new Setting(containerEl).setName(t("settings.legacy.delete")).addButton((b) =>
-        b
-          .setButtonText(t("settings.legacy.delete"))
-          .setWarning()
-          .onClick(async () => {
-            b.setDisabled(true);
-            await deleteLegacyCache();
-            new Notice(t("settings.legacy.done"));
-            setting.settingEl.remove();
-          }),
-      );
+      const setting = new Setting(containerEl).setName(t("settings.legacy.delete")).addButton((b) => {
+        b.setButtonText(t("settings.legacy.delete"));
+        // Nicht setWarning(): ab Obsidian 1.13 deprecated und im Store-Review angemahnt.
+        // setDestructive() gibt es erst ab 1.13 — applyDestructive prüft zur Laufzeit und
+        // fällt darunter auf die native mod-warning-Klasse zurück.
+        applyDestructive(b);
+        b.onClick(async () => {
+          b.setDisabled(true);
+          await deleteLegacyCache();
+          new Notice(t("settings.legacy.done"));
+          setting.settingEl.remove();
+        });
+      });
     });
   }
 
