@@ -7,7 +7,7 @@
     "dev": "node esbuild.config.mjs",
     "build": "tsc --noEmit && node esbuild.config.mjs --production",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/check-no-abs-paths.mjs && vitest run --passWithNoTests",
+    "test": "node scripts/check-no-abs-paths.mjs && node scripts/check-no-nul-bytes.mjs && vitest run --passWithNoTests",
     "check:pure": "node scripts/check-pure.mjs",
     "check:clean": "node scripts/check-clean.mjs",
     "lint": "eslint src && npm run check:pure",
