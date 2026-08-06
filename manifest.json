@@ -1,7 +1,7 @@
 {
   "id": "local-image-generator",
   "name": "Local Image Generator",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "minAppVersion": "1.8.7",
   "description": "Generate images with your local Draw Things or A1111-compatible server — private, on-device, no cloud.",
   "author": "Johannes Kaindl",
