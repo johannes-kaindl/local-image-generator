@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Internal: the two HTTP helpers share one `withTimeout` from the bundled kit
+  instead of each carrying its own `Promise.race`. No behaviour change.
+- Internal: the release script now refuses to build unless `HEAD` sits on the
+  tag being released and the tree is clean — a build from a moved working tree
+  can otherwise ship code the tag does not contain.
+
+### Note
+
+- The `main.js` asset of the 0.5.1 GitHub release was replaced shortly after
+  publication. The original upload had been built from a working tree that had
+  moved past the tag, so it contained code absent from `0.5.1`. The replacement
+  is a clean `npm ci` build of the tagged source, byte-identical under Node 20
+  and Node 24. The Forgejo release was unaffected.
+
 ## [0.5.1] — 2026-08-06
 
 ### Changed
