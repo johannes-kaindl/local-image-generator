@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-06
+
 ### Breaking
 
 - **In-process image generation is gone.** Both the SD-Turbo engine
