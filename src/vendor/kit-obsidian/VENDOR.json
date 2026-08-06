@@ -12,6 +12,12 @@
       "source": "obsidian-kit",
       "version": "0.18.0",
       "sha": "988f4fd"
+    },
+    {
+      "file": "settings_walker.ts",
+      "source": "obsidian-kit",
+      "version": "0.25.0",
+      "sha": "1ca3861"
     }
   ]
 }
