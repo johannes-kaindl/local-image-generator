@@ -71,6 +71,28 @@ if (!tagExists) {
   console.log(`release: Tag ${target} existiert bereits → Resume (nur Build + Forgejo-Release).`);
 }
 
+// 6b. Der Build gleich unten läuft im ARBEITSBAUM, nicht in einem Checkout des Tags. Steht
+// HEAD woanders oder liegt Uncommittetes herum, landet Code im Release-Asset, der im Tag
+// nicht existiert — und der Store-Scanner meldet „Build output does not match the released
+// main.js artifact", weil er selbst aus dem Tag baut.
+//
+// Nicht theoretisch: bei 0.5.1 (2026-08-06) committete eine PARALLELE Session 23 Minuten nach
+// dem Tag in denselben Arbeitsbaum (f401e53, withTimeout-Vendoring). Der danach von Hand
+// erzeugte Build trug diesen fremden Stand ins GitHub-Release — kostete die Höchstwertung im
+// Review und eine Stunde Suche. Der Guard greift besonders im Resume-Pfad, wo der
+// Sauberkeits-Check oben übersprungen wird.
+if (!dryRun) {
+  const tagCommit = sh("git", ["rev-list", "-n", "1", target]);
+  const headCommit = sh("git", ["rev-parse", "HEAD"]);
+  if (tagCommit !== headCommit) {
+    die(`HEAD (${headCommit.slice(0, 8)}) steht nicht auf Tag ${target} (${tagCommit.slice(0, 8)}) — ` +
+        `der Build würde einen anderen Stand ins Release-Asset schreiben. Erst \`git checkout ${target}\`.`);
+  }
+  if (sh("git", ["status", "--porcelain"]) !== "") {
+    die("Arbeitsbaum nicht sauber — der Build würde Uncommittetes ins Release-Asset schreiben.");
+  }
+}
+
 // 7. Build.
 run("npm", ["run", "build"]);
 
