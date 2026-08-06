@@ -50,6 +50,20 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 9 | Die Ergebnis-Notiz bettet das Bild ein | das Produkt, nicht der Zustand |
 | 10 | Historien-Klick stellt Prompt **und** Seed her | Jays 0.2-Befund („merkt sich nur den Prompt") |
 | 11 | „Reroll" würfelt neu und startet | der Knopf, der sich vom Nachbarn unterscheiden muss |
+| 12 | Die Einstellungen erscheinen in der Settings-**Suche** | der Store-Linter prüft nur, DASS `getSettingDefinitions()` existiert — nicht, ob die Zeilen beim Nutzer ankommen |
+
+Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
+Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
+würde die Befund-Rückverweise weiter unten („Punkt 4 war ein Falsch-Rot", „Punkt 3 und 8")
+stillschweigend auf andere Prüfungen zeigen lassen.
+
+Er holt seine Erwartung aus `getSettingDefinitions()` selbst statt aus einer Literal-Liste
+— sonst misst er nach dem nächsten Umbenennen oder in einer anderen UI-Sprache am eigenen
+Gedächtnis vorbei. (Beim Bau genau das zweimal passiert: gesucht wurde „Ausgabeordner", die
+Zeile heißt „Bilderordner" — das las sich zwei Runden lang wie ein Produktdefekt.) Zeilen mit
+falschem `visible`-Prädikat sind ausgenommen; sie sollen ja gerade **nicht** auftauchen.
+Dazu eine Negativkontrolle: findet die Suche auch einen Unsinnsbegriff, beweist ein Treffer
+nichts. Fehlt die Suche ganz (Obsidian < 1.13), wird der Punkt übersprungen statt rot.
 
 **Nicht automatisiert** — dafür bleibt die Hand-Runde: „sieht gut aus", Bildqualität,
 Layout-Gefühl, Theme-Ästhetik.

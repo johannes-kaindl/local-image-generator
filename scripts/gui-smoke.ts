@@ -487,10 +487,102 @@ async function main(): Promise<void> {
       generateReady.found ? (generateReady.enabled ? `Seed ${seedUsed}` : "Knopf ist gesperrt") : "Knopf nicht gefunden",
     );
 
+    // --- 12. Die Einstellungen sind über die Settings-SUCHE auffindbar -------
+    // Trägt die Nummer 12 und läuft trotzdem hier: er braucht keine Generierung, gehört
+    // also in den --quick-Teil, aber eine Umnummerierung von 5–11 würde die Befund-
+    // Rückverweise in docs/SMOKE.md („Punkt 4 war ein Falsch-Rot", „Punkt 3 und 8")
+    // stillschweigend auf andere Prüfungen zeigen lassen. Nummern sind hier Namen, keine
+    // Reihenfolge.
+    //
+    // Was hier misslingen kann und sonst NICHTS meldet: Der Store-Linter prüft nur, DASS
+    // getSettingDefinitions() existiert — nicht, ob die Zeilen beim Nutzer in der Suche
+    // ankommen. Genau das war der Befund, der 0.5.0 auf „Satisfactory" hielt.
+    //
+    // Die Erwartung kommt aus der Definition selbst, nicht aus einer Literal-Liste: sonst
+    // misst der Prüfpunkt beim nächsten Umbenennen oder in einer anderen UI-Sprache am
+    // eigenen Gedächtnis vorbei. (Beim Bau dieses Punktes zweimal genau so danebengegriffen:
+    // gesucht wurde „Ausgabeordner", die Zeile heißt „Bilderordner" — das las sich zwei
+    // Runden lang wie ein Produktdefekt.) Unsichtbare Zeilen (visible-Prädikat, z. B. der
+    // Legacy-Cache-Aufräumer ohne Alt-Gewichte) sind ausgenommen — sie SOLLEN nicht auftauchen.
+    const searchable = await cdp.evaluate<{
+      skip?: string;
+      gesucht: string[];
+      gefunden: string[];
+      fehlend: string[];
+      negativkontrolle: boolean;
+    }>(`
+      const tab = (app.setting.pluginTabs ?? []).find((t) => t.id === ${JSON.stringify(PLUGIN_ID)});
+      if (!tab || typeof tab.getSettingDefinitions !== "function") {
+        return { skip: "kein deklarativer Settings-Tab", gesucht: [], gefunden: [], fehlend: [], negativkontrolle: false };
+      }
+      const sichtbar = (d) => {
+        const v = d.visible;
+        return v === undefined || v === true || (typeof v === "function" && v());
+      };
+      const namen = tab.getSettingDefinitions()
+        .filter(sichtbar)
+        .flatMap((d) => (d.type === "group" || d.type === "list" ? (d.items ?? []) : [d]))
+        .filter(sichtbar)
+        .map((d) => d.name)
+        .filter((n) => typeof n === "string" && n.length > 0);
+
+      app.setting.open();
+      app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
+      await new Promise((r) => setTimeout(r, 500));
+
+      // Am Tab-Container greifen, nicht am globalen document: bei mehreren Vault-Fenstern
+      // hängt das Settings-Modal in einem EIGENEN Fenster (Falle (4) in docs/SMOKE.md).
+      const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
+      const win = doc.defaultView;
+      const input = doc.querySelector(".setting-search-container input");
+      if (!input) {
+        app.setting.close();
+        return { skip: "keine Settings-Suche in dieser Obsidian-Version", gesucht: namen, gefunden: [], fehlend: [], negativkontrolle: false };
+      }
+
+      // Den Wert über den nativen Setter schreiben: eine direkte Zuweisung an .value
+      // bemerkt Obsidians Eingabe-Beobachter nicht.
+      const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
+      const treffer = async (q) => {
+        setter.call(input, "");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 150));
+        setter.call(input, q);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 600));
+        const box = doc.querySelector(".setting-search-results");
+        return !!box && box.textContent.includes(q);
+      };
+
+      const gefunden = [];
+      const fehlend = [];
+      for (const n of namen) ((await treffer(n)) ? gefunden : fehlend).push(n);
+      // Gegenprobe: findet die Suche ALLES, beweist ein Treffer nichts.
+      const negativkontrolle = !(await treffer("zzz-gibt-es-nicht-zzz"));
+
+      setter.call(input, "");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      app.setting.close();
+      return { gesucht: namen, gefunden, fehlend, negativkontrolle };
+    `);
+    if (searchable.skip) {
+      console.log(`  – 12. Settings-Suche übersprungen — ${searchable.skip}`);
+    } else {
+      record(
+        "12. Die Einstellungen erscheinen in Obsidians Settings-Suche",
+        searchable.fehlend.length === 0 && searchable.negativkontrolle && searchable.gesucht.length > 0,
+        searchable.fehlend.length > 0
+          ? `nicht gefunden: ${searchable.fehlend.join(", ")}`
+          : !searchable.negativkontrolle
+            ? "Gegenprobe fiel durch — die Suche liefert auf jede Eingabe Treffer"
+            : `${searchable.gefunden.length}/${searchable.gesucht.length} Zeilen gefunden`,
+      );
+    }
+
     // Die Punkte 5–11 brauchen eine echte Generierung. Auf einem FLUX.2-Server kostet
     // das auch bei 4 Steps rund neun Minuten pro Bild — zweimal im Lauf. --quick lässt
-    // sie aus und prüft nur die UI-Verdrahtung (1–4): der Modus für die Schleife während
-    // einer UI-Änderung. Ein Freigabe-Smoke läuft IMMER vollständig.
+    // sie aus und prüft nur die UI-Verdrahtung (1–4 und 12): der Modus für die Schleife
+    // während einer UI-Änderung. Ein Freigabe-Smoke läuft IMMER vollständig.
     if (quick) {
       console.log("\n(--quick: Punkte 5–11 übersprungen — sie brauchen eine echte Generierung)");
     } else {
