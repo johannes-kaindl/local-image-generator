@@ -46,7 +46,8 @@ match Obsidian's own language setting — no separate language option to set.
 ## Installation
 
 1. Install and enable the plugin from Obsidian's Community Plugins browser
-   (or manually — see [Releases](../../releases)).
+   (or manually — see
+   [Releases](https://github.com/johannes-kaindl/local-image-generator/releases)).
 2. Set up a local image server (see below) and note its URL.
 3. Open **Settings → Local Image Generator**, enter that URL in **Server
    endpoint**, and click **Test connection** to confirm the plugin can reach
