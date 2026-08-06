@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Settings now appear in Obsidian's settings search** (1.13 and later). The
+  settings tab was migrated to the declarative settings API: a single
+  `getSettingDefinitions()` describes every row, and the classic imperative
+  renderer draws that same structure as a fallback for Obsidian 1.8.7–1.12.
+  Nothing about the visible settings changes; they just became findable by
+  typing their name instead of only by opening the tab. This was the one
+  warning that kept the 0.5.0 store review at "Satisfactory" instead of
+  "Passed".
+- The two folder fields (image output, note output) use Obsidian's own folder
+  suggester on 1.13 and later, and the plugin's bundled one below that.
+
 ## [0.5.0] — 2026-08-06
 
 ### Breaking
