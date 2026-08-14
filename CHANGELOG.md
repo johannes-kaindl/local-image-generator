@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-08-14
+
 ### Changed
 
 - Internal: the two HTTP helpers share one `withTimeout` from the bundled kit
