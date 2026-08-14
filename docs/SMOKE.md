@@ -16,8 +16,19 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
    ```
 
 2. **Ein laufender A1111-kompatibler Bildserver** auf dem Endpunkt aus den Plugin-Settings
-   (Draw Things, AUTOMATIC1111, Forge, SD.Next). Fehlt er, **bricht der Treiber ab**, statt
-   rote Prüfpunkte zu melden — ein abwesender Server ist kein Plugin-Defekt.
+   (Draw Things, AUTOMATIC1111, Forge, SD.Next) — ein abwesender Server ist kein
+   Plugin-Defekt, und der Treiber meldet ihn auch nicht als einen. Er prüft die
+   Erreichbarkeit **vorab** und sagt an, was fehlt:
+
+   - **Voller Lauf:** Abbruch mit Ansage — die Punkte 5–11 erzeugen ein echtes Bild.
+   - **`--quick`:** läuft weiter, überspringt die Punkte 2, 3 und 4. Gemessen werden 1 und 12
+     — die Punkte, die ohne jede Server-Verbindung eine Aussage haben. Punkt 4 gehört dazu,
+     obwohl er nur die Bedienbarkeit eines Knopfes prüft: `generateEnabled` verlangt
+     `server.kind === "ok"`, der Knopf ist ohne Server also zurecht gesperrt.
+
+   Übersprungene Punkte stehen in der Abschlusszeile (`… · N übersprungen (NICHT gemessen)`),
+   damit ein Teil-Lauf nicht als bestandener Smoke zitiert wird. Antwortet der Server dagegen
+   **falsch** (HTTP-Fehler, kein Modellname), bleibt es ein Abbruch: das ist ein Befund.
 
 3. **Deployter Stand:**
 
@@ -102,6 +113,37 @@ aufräumen wollte.
 ## Durchläufe
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
+
+### 2026-08-14 · 0.5.2 · Obsidian 1.13.7 · **ohne** Bild-Server
+
+**`--quick`: 2/2 grün · 3 übersprungen.** Punkt 12 lief hier zum ersten Mal überhaupt im
+Treiber — er war beim Bau (2026-08-06) nie ausgeführt worden, weil der Server tot war und
+der Treiber deshalb schon vor dem ersten Prüfpunkt abbrach. Ergebnis: **6/6 Settings-Zeilen
+in der Suche**, Negativkontrolle sauber. Damit ist die Wirkung der Settings-Migration am
+Produkt gemessen, nicht nur am Store-Urteil abgelesen.
+
+**Gegenprobe** (eigenes `getSettingDefinitions()` umbenannt, deployt, Plugin per CDP neu
+geladen): **Punkt 12 rot, Punkt 1 grün** — kein Kollateralschaden. Danach zurückgesetzt,
+neu deployt, neu geladen: wieder grün. Der Prüfpunkt ist als Detektor belegt.
+
+**Zwei Befunde im Treiber**, beide durch den Server-Guard aufgedeckt:
+
+1. **Punkt 4 war server-abhängig, ohne es zu wissen.** Der erste Lauf mit Guard meldete ihn
+   rot („Knopf ist gesperrt") — zu Unrecht: `generateEnabled` verlangt `server.kind === "ok"`
+   (`src/core/viewmodel.ts`), ohne Server ist der Knopf zurecht tot. Der Prüfpunkt warf dem
+   Plugin also vor, die fehlende Umgebung korrekt abzubilden. Jetzt wird er mit übersprungen.
+2. **Der Typ-Guard von Punkt 12 war toter Code.** `typeof tab.getSettingDefinitions ===
+   "function"` ist unter 1.13 **immer** wahr: Obsidian bringt die Methode in
+   `PluginSettingTab` selbst mit. Aufgefallen erst an der Gegenprobe — nach dem Rückbau hiess
+   die eigene Methode anders, und der Ausdruck blieb trotzdem wahr. Geprüft wird jetzt, ob
+   das Plugin sie auf dem Prototyp seiner Klasse **selbst definiert**; genau das meint der
+   Store-Linter. Zudem war dieser Fall als `skip` geführt — der gesuchte Defekt wäre als
+   Nichtmessung verbucht worden, die Gegenprobe hätte ihn nicht rot gesehen.
+
+Der Vault-Zustand nachher geprüft: kein `_lig-gui-smoke`, Settings auf den echten Werten,
+Historie unverändert bei 20 Einträgen, `community-plugins.json` unberührt (das Plugin war in
+Pallas deaktiviert und wurde per `enablePlugin()` nur in den Speicher geladen — das
+persistiert nicht).
 
 ### 2026-08-06 · 0.5.0 (Freigabe-Smoke) · Obsidian 1.13.5 · Draw Things, FLUX.2 dev int8
 

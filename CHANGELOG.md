@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Internal: the GUI smoke driver no longer dies on a missing image server. It probes
+  reachability up front and says what is missing; `--quick` then runs the checks that do not
+  need a server and lists the rest as skipped rather than failed. A server that answers
+  *wrongly* is still an abort — that is a finding, not a missing prerequisite.
+
+### Fixed
+
+- Internal: the settings-search check (12) could not detect the very defect it was written
+  for. It treated a missing `getSettingDefinitions()` as "skipped", and its type guard was
+  dead code — Obsidian 1.13 supplies the method on `PluginSettingTab` itself, so the check
+  was always true. It now tests whether the plugin defines it, and reports a miss as red.
+
 ## [0.5.2] — 2026-08-14
 
 ### Changed

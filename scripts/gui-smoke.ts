@@ -24,8 +24,16 @@
  * ```
  *
  * Dazu ein **laufender A1111-kompatibler Bildserver** (Draw Things, AUTOMATIC1111, Forge,
- * SD.Next) auf dem Endpunkt, der in den Plugin-Settings steht. Ohne ihn bricht der Treiber
- * ab, statt rote Prüfpunkte zu melden — ein fehlender Server ist kein Plugin-Defekt.
+ * SD.Next) auf dem Endpunkt, der in den Plugin-Settings steht — ein fehlender Server ist kein
+ * Plugin-Defekt, und der Treiber behandelt ihn auch nicht so: er prüft die Erreichbarkeit
+ * vorab und sagt an, was fehlt. Ein vollständiger Lauf bricht dann ab (die Punkte 5–11
+ * erzeugen ein echtes Bild); `--quick` läuft weiter und überspringt die Punkte 2, 3 und 4 —
+ * sie vergleichen gegen den Server oder hängen an einer bestehenden Verbindung. Übersprungene
+ * Punkte stehen in der Abschlusszeile, damit ein Teil-Lauf nicht als bestandener Smoke
+ * zitiert wird.
+ *
+ * Antwortet der Server dagegen FALSCH (HTTP-Fehler, kein Modellname), bleibt es ein Abbruch:
+ * das ist ein Befund, keine fehlende Umgebung.
  *
  * Dann, mit deployter Plugin-Version (`npm run deploy`):
  *
@@ -191,6 +199,16 @@ function record(name: string, passed: boolean, detail: string): void {
   console.log(`${passed ? "  ✓" : "  ✗"} ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
+/** Nicht gemessene Prüfpunkte — getrennt von `results`, weil sie weder grün noch rot sind.
+ *  Sie stehen trotzdem in der Abschlusszeile: ein Lauf, der die Hälfte auslässt, darf sich
+ *  nicht wie ein vollständiger lesen. */
+const skipped: Check[] = [];
+
+function skip(name: string, grund: string): void {
+  skipped.push({ name, passed: false, detail: grund });
+  console.log(`  – ${name} — übersprungen: ${grund}`);
+}
+
 /** Im Renderer: warten, bis `check()` wahr wird (Rendering ist asynchron). */
 const waitFor = (body: string, timeoutMs = 8000): string => `
   const deadline = Date.now() + ${timeoutMs};
@@ -246,6 +264,36 @@ async function serverModelName(endpoint: string): Promise<string | null> {
   const body = (await response.json()) as Record<string, unknown>;
   const raw = body["sd_model_checkpoint"] ?? body["model"];
   return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+}
+
+/** Ergebnis des Server-Guards. Die Unterscheidung ist der ganze Zweck: ein Server, der NICHT
+ *  ANTWORTET, ist eine fehlende Umgebungsbedingung — der Treiber konnte nicht messen. Ein
+ *  Server, der FALSCH antwortet (HTTP-Fehler, kein Modellname), ist ein Befund und bleibt ein
+ *  Abbruch. Ohne diese Trennung meldet ein abgeschalteter Bild-Server sich als Defekt am
+ *  Prüfling, und die Suche beginnt an der falschen Stelle. */
+type ServerProbe = { reachable: true; model: string } | { reachable: false; grund: string };
+
+/** Antwortet der Bild-Server? Nur Transportfehler (Server aus, falscher Port, Timeout) gelten
+ *  als „nicht erreichbar"; alles, was der Server selbst sagt, wird durchgereicht. */
+async function probeServer(endpoint: string): Promise<ServerProbe> {
+  let model: string | null;
+  try {
+    model = await serverModelName(endpoint);
+  } catch (error: unknown) {
+    // `fetch` wirft bei ECONNREFUSED/DNS/Timeout — die eigentliche Ursache steht in `cause`,
+    // die äußere Meldung ist nur „fetch failed" und benennt nichts.
+    if (error instanceof Error && error.message.startsWith("Server antwortet mit HTTP")) throw error;
+    const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : null;
+    const text = error instanceof Error ? error.message : String(error);
+    return { reachable: false, grund: cause ? `${text} (${cause})` : text };
+  }
+  if (model === null) {
+    throw new Error(
+      `Der Server unter ${endpoint} nennt weder \`model\` noch \`sd_model_checkpoint\`. ` +
+        `Ohne bekanntes Erwartungs-Modell ist Punkt 2/3 nicht prüfbar.`,
+    );
+  }
+  return { reachable: true, model };
 }
 
 async function main(): Promise<void> {
@@ -308,15 +356,29 @@ async function main(): Promise<void> {
     registerI18n();
     setLang(pickLang(rawLang));
 
-    // Unabhängiges Orakel: was sagt der Server selbst?
-    const expectedModel = await serverModelName(endpoint);
-    if (expectedModel === null) {
+    // Unabhängiges Orakel: was sagt der Server selbst? Zugleich der Guard für die
+    // Umgebungsbedingung „Bild-Server läuft" — geprüft an der Quelle, die sie kennt, mit
+    // Ansage statt Abbruch mitten im Lauf. Ein abgeschalteter Server ist keine Aussage über
+    // das Plugin: die server-freien Punkte laufen weiter, die anderen werden übersprungen.
+    const probe = await probeServer(endpoint);
+    const expectedModel = probe.reachable ? probe.model : null;
+    if (probe.reachable) {
+      console.log(`Server meldet Modell: ${expectedModel}`);
+    } else if (quick) {
+      console.log(
+        `⚠ Bild-Server unter ${endpoint} antwortet nicht — ${probe.grund}.\n` +
+          `  Die Punkte 2, 3 und 4 brauchen ihn und werden übersprungen; 1 und 12 laufen.`,
+      );
+    } else {
+      // Ein Freigabe-Smoke läuft vollständig oder gar nicht: Punkte 5–11 erzeugen ein echtes
+      // Bild, das ist ohne Server gegenstandslos. Lieber hier klar abbrechen als eine
+      // Teilmessung liefern, die später als „Smoke war grün" zitiert wird.
       throw new Error(
-        `Der Server unter ${endpoint} nennt weder \`model\` noch \`sd_model_checkpoint\`. ` +
-          `Ohne bekanntes Erwartungs-Modell ist Punkt 3/8 nicht prüfbar.`,
+        `Bild-Server unter ${endpoint} antwortet nicht — ${probe.grund}.\n` +
+          `  Ein vollständiger Smoke braucht ihn (Punkte 2, 3 und 5–11 messen gegen den Server).\n` +
+          `  Server starten — oder \`--quick\` fahren: das misst die server-freien Punkte 1 und 12.`,
       );
     }
-    console.log(`Server meldet Modell: ${expectedModel}`);
     console.log(`Lauf: ${steps} Steps · ${size.width}×${size.height}\n`);
 
     // --- Szene herstellen ---------------------------------------------------
@@ -366,90 +428,97 @@ async function main(): Promise<void> {
     );
     record("1. Hub öffnet sich mit dem Generate-Panel", panel !== null && panel >= 2, `${panel ?? 0} Prompt-Felder (Prompt + Negativ)`);
 
-    // --- 2. „Verbindung testen" meldet den Modellnamen ----------------------
-    // Der echte Klick im echten Settings-Tab, nicht plugin.checkServer(): geprüft wird die
-    // Kette Knopf → checkServer → Notice, nicht die Funktion allein.
-    const testLabel = t("settings.server.test");
-    // ⚠️ NICHT im globalen `document` suchen. Sind mehrere Obsidian-Fenster desselben Vaults
-    // offen, öffnet `app.setting.open()` das Modal im AKTUELLEN Fenster der App — das muss
-    // nicht das Fenster sein, an dem CDP hängt. Gemessen 2026-08-06: `app.setting.activeTab.id`
-    // war korrekt "local-image-generator" und `s.win.document` enthielt das Modal, während
-    // `document.querySelectorAll(".modal")` leer blieb. Das las sich als „Modal hat sich nicht
-    // geöffnet" — ein Umgebungs-Artefakt, das wie ein Plugin-Defekt aussieht.
-    //
-    // Gegriffen wird deshalb am Tab-Container selbst (fenster-unabhängig) und, für die Notice,
-    // über alle beteiligten Dokumente. Geprüft wird dadurch unverändert die echte Kette:
-    // Obsidians Settings-Maschine baut den Tab, wir klicken den echten Knopf.
-    const noticeText = await cdp.evaluate<string | null>(`
-      app.setting.open();
-      app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
-      const docs = () => [...new Set([
-        document,
-        app.setting?.win?.document,
-        app.setting?.activeTab?.containerEl?.ownerDocument,
-      ].filter(Boolean))];
-      const findButton = () => {
-        const scope = app.setting?.activeTab?.containerEl ?? app.setting?.containerEl;
-        if (!scope) return null;
-        return [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === ${JSON.stringify(testLabel)}) ?? null;
-      };
-      // NICHT \`deadline\` nennen: das eingespleißte waitFor() unten deklariert denselben
-      // Namen im selben Scope — beides zusammen ergibt einen SyntaxError, der als
-      // "Renderer: Uncaught" ankommt. Eine Falle des String-Splicing-Entwurfs, die jeden
-      // trifft, der neben einem waitFor() eine eigene Warteschleife schreibt.
-      const buttonDeadline = Date.now() + 8000;
-      let button = findButton();
-      while (!button && Date.now() < buttonDeadline) {
-        await new Promise((r) => setTimeout(r, 100));
-        button = findButton();
-      }
-      if (!button) {
-        const tab = app.setting?.activeTab?.id ?? null;
-        return tab === ${JSON.stringify(PLUGIN_ID)}
-          ? "(Settings-Tab offen, aber kein Knopf " + ${JSON.stringify(testLabel)} + ")"
-          : "(falscher Settings-Tab aktiv: " + tab + ")";
-      }
-      // Alte Notices erst abräumen — sonst liest der Vergleich unten womöglich eine
-      // Meldung, die schon vor dem Klick dastand (Prüfpunkt ohne Gegenstand).
-      for (const d of docs()) d.querySelectorAll(".notice").forEach((n) => n.remove());
-      button.click();
-      ${waitFor(
-        `
-        for (const d of docs()) {
-          const notice = d.querySelector(".notice");
-          if (notice) return notice.textContent.trim();
+    // Punkt 2 und 3 vergleichen gegen das, was der SERVER meldet — ohne ihn haben sie
+    // keinen Gegenstand. Übersprungen, nicht rot: der Prüfling ist hier nicht gefragt.
+    if (expectedModel === null) {
+      skip("2. „Verbindung testen“ meldet den Modellnamen des Servers", "Bild-Server nicht erreichbar");
+      skip("3. Generate-Panel zeigt den echten Modellnamen (Bug 1d1c046)", "Bild-Server nicht erreichbar");
+    } else {
+      // --- 2. „Verbindung testen" meldet den Modellnamen ----------------------
+      // Der echte Klick im echten Settings-Tab, nicht plugin.checkServer(): geprüft wird die
+      // Kette Knopf → checkServer → Notice, nicht die Funktion allein.
+      const testLabel = t("settings.server.test");
+      // ⚠️ NICHT im globalen `document` suchen. Sind mehrere Obsidian-Fenster desselben Vaults
+      // offen, öffnet `app.setting.open()` das Modal im AKTUELLEN Fenster der App — das muss
+      // nicht das Fenster sein, an dem CDP hängt. Gemessen 2026-08-06: `app.setting.activeTab.id`
+      // war korrekt "local-image-generator" und `s.win.document` enthielt das Modal, während
+      // `document.querySelectorAll(".modal")` leer blieb. Das las sich als „Modal hat sich nicht
+      // geöffnet" — ein Umgebungs-Artefakt, das wie ein Plugin-Defekt aussieht.
+      //
+      // Gegriffen wird deshalb am Tab-Container selbst (fenster-unabhängig) und, für die Notice,
+      // über alle beteiligten Dokumente. Geprüft wird dadurch unverändert die echte Kette:
+      // Obsidians Settings-Maschine baut den Tab, wir klicken den echten Knopf.
+      const noticeText = await cdp.evaluate<string | null>(`
+        app.setting.open();
+        app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
+        const docs = () => [...new Set([
+          document,
+          app.setting?.win?.document,
+          app.setting?.activeTab?.containerEl?.ownerDocument,
+        ].filter(Boolean))];
+        const findButton = () => {
+          const scope = app.setting?.activeTab?.containerEl ?? app.setting?.containerEl;
+          if (!scope) return null;
+          return [...scope.querySelectorAll("button")].find((b) => b.textContent.trim() === ${JSON.stringify(testLabel)}) ?? null;
+        };
+        // NICHT \`deadline\` nennen: das eingespleißte waitFor() unten deklariert denselben
+        // Namen im selben Scope — beides zusammen ergibt einen SyntaxError, der als
+        // "Renderer: Uncaught" ankommt. Eine Falle des String-Splicing-Entwurfs, die jeden
+        // trifft, der neben einem waitFor() eine eigene Warteschleife schreibt.
+        const buttonDeadline = Date.now() + 8000;
+        let button = findButton();
+        while (!button && Date.now() < buttonDeadline) {
+          await new Promise((r) => setTimeout(r, 100));
+          button = findButton();
         }
-        return 0;
-      `,
-        15_000,
-      )}
-    `);
-    record(
-      "2. „Verbindung testen“ meldet den Modellnamen des Servers",
-      noticeText !== null && noticeText.includes(expectedModel),
-      noticeText === null ? "keine Notice erschienen" : noticeText,
-    );
-    await cdp.evaluate(`app.setting.close(); return true;`);
+        if (!button) {
+          const tab = app.setting?.activeTab?.id ?? null;
+          return tab === ${JSON.stringify(PLUGIN_ID)}
+            ? "(Settings-Tab offen, aber kein Knopf " + ${JSON.stringify(testLabel)} + ")"
+            : "(falscher Settings-Tab aktiv: " + tab + ")";
+        }
+        // Alte Notices erst abräumen — sonst liest der Vergleich unten womöglich eine
+        // Meldung, die schon vor dem Klick dastand (Prüfpunkt ohne Gegenstand).
+        for (const d of docs()) d.querySelectorAll(".notice").forEach((n) => n.remove());
+        button.click();
+        ${waitFor(
+          `
+          for (const d of docs()) {
+            const notice = d.querySelector(".notice");
+            if (notice) return notice.textContent.trim();
+          }
+          return 0;
+        `,
+          15_000,
+        )}
+      `);
+      record(
+        "2. „Verbindung testen“ meldet den Modellnamen des Servers",
+        noticeText !== null && noticeText.includes(expectedModel),
+        noticeText === null ? "keine Notice erschienen" : noticeText,
+      );
+      await cdp.evaluate(`app.setting.close(); return true;`);
 
-    // --- 3. DER BEFUND: das Generate-Panel zeigt den echten Modellnamen -----
-    // Regression zu `1d1c046`: parseOptionsModel las nur `sd_model_checkpoint`, Draw Things
-    // meldet `model` → modelName blieb null → hier stand der Platzhalter „(in der
-    // Server-App gewählt)". Verglichen wird gegen das, was der SERVER sagt (Orakel oben).
-    const modelInfo = await cdp.evaluate<string | null>(
-      waitFor(`
-        const el = document.querySelector(".lig-model-info");
-        return el && el.textContent.trim() !== "" ? el.textContent.trim() : 0;
-      `),
-    );
-    record(
-      "3. Generate-Panel zeigt den echten Modellnamen (Bug 1d1c046)",
-      modelInfo === t("generate.modelInfo", expectedModel),
-      modelInfo === null
-        ? "Modellzeile leer"
-        : modelInfo === t("generate.modelInApp")
-          ? `Platzhalter statt Name — erwartet „${expectedModel}"`
-          : modelInfo,
-    );
+      // --- 3. DER BEFUND: das Generate-Panel zeigt den echten Modellnamen -----
+      // Regression zu `1d1c046`: parseOptionsModel las nur `sd_model_checkpoint`, Draw Things
+      // meldet `model` → modelName blieb null → hier stand der Platzhalter „(in der
+      // Server-App gewählt)". Verglichen wird gegen das, was der SERVER sagt (Orakel oben).
+      const modelInfo = await cdp.evaluate<string | null>(
+        waitFor(`
+          const el = document.querySelector(".lig-model-info");
+          return el && el.textContent.trim() !== "" ? el.textContent.trim() : 0;
+        `),
+      );
+      record(
+        "3. Generate-Panel zeigt den echten Modellnamen (Bug 1d1c046)",
+        modelInfo === t("generate.modelInfo", expectedModel),
+        modelInfo === null
+          ? "Modellzeile leer"
+          : modelInfo === t("generate.modelInApp")
+            ? `Platzhalter statt Name — erwartet „${expectedModel}"`
+            : modelInfo,
+      );
+    }
 
     // --- Rezept in die echten Felder schreiben ------------------------------
     // Über DOM + `input`-Event, nicht über den Plugin-State: nur so laufen dieselben
@@ -481,11 +550,26 @@ async function main(): Promise<void> {
       const b = document.querySelector(".lig-generate");
       return { found: !!b, enabled: !!b && !b.disabled };
     `);
-    record(
-      "4. „Generieren“ ist mit gesetztem Prompt bedienbar",
-      generateReady.found && generateReady.enabled,
-      generateReady.found ? (generateReady.enabled ? `Seed ${seedUsed}` : "Knopf ist gesperrt") : "Knopf nicht gefunden",
-    );
+    // Auch dieser Punkt hängt am Server, wenn auch nur mittelbar: `generateEnabled` verlangt
+    // `server.kind === "ok"` (src/core/viewmodel.ts). Ohne erreichbaren Server ist der Knopf
+    // ZURECHT gesperrt — ihn dann rot zu melden, hiesse dem Plugin vorzuwerfen, dass es die
+    // fehlende Umgebung korrekt abbildet. Beim ersten Lauf mit dem Guard genau so passiert.
+    if (expectedModel === null) {
+      skip(
+        "4. „Generieren“ ist mit gesetztem Prompt bedienbar",
+        "Bild-Server nicht erreichbar — ohne Verbindung ist der Knopf zurecht gesperrt",
+      );
+    } else {
+      record(
+        "4. „Generieren“ ist mit gesetztem Prompt bedienbar",
+        generateReady.found && generateReady.enabled,
+        generateReady.found
+          ? generateReady.enabled
+            ? `Seed ${seedUsed}`
+            : "Knopf ist gesperrt"
+          : "Knopf nicht gefunden",
+      );
+    }
 
     // --- 12. Die Einstellungen sind über die Settings-SUCHE auffindbar -------
     // Trägt die Nummer 12 und läuft trotzdem hier: er braucht keine Generierung, gehört
@@ -504,16 +588,29 @@ async function main(): Promise<void> {
     // gesucht wurde „Ausgabeordner", die Zeile heißt „Bilderordner" — das las sich zwei
     // Runden lang wie ein Produktdefekt.) Unsichtbare Zeilen (visible-Prädikat, z. B. der
     // Legacy-Cache-Aufräumer ohne Alt-Gewichte) sind ausgenommen — sie SOLLEN nicht auftauchen.
+    // `skip` und `befund` sind bewusst zwei Felder, keine zwei Texte in einem: fehlt die
+    // Settings-SUCHE (Obsidian < 1.13), konnte nicht gemessen werden — fehlt dagegen
+    // `getSettingDefinitions()`, IST das der Befund, den 0.5.0 auf „Satisfactory" hielt.
+    // Ihn als „übersprungen" zu führen hiesse, den gesuchten Defekt als Nichtmessung zu
+    // verbuchen: die Gegenprobe (Migration zurückgebaut) liefe dann durch, ohne rot zu werden.
     const searchable = await cdp.evaluate<{
       skip?: string;
+      befund?: string;
       gesucht: string[];
       gefunden: string[];
       fehlend: string[];
       negativkontrolle: boolean;
     }>(`
+      const leer = { gesucht: [], gefunden: [], fehlend: [], negativkontrolle: false };
       const tab = (app.setting.pluginTabs ?? []).find((t) => t.id === ${JSON.stringify(PLUGIN_ID)});
-      if (!tab || typeof tab.getSettingDefinitions !== "function") {
-        return { skip: "kein deklarativer Settings-Tab", gesucht: [], gefunden: [], fehlend: [], negativkontrolle: false };
+      if (!tab) return { befund: "kein Settings-Tab registriert", ...leer };
+      // NICHT \`typeof tab.getSettingDefinitions === "function"\` prüfen: Obsidian 1.13 bringt
+      // die Methode in PluginSettingTab selbst mit, der Ausdruck ist also IMMER wahr und der
+      // Guard tot. Gemessen 2026-08-14 an der Gegenprobe: nach dem Rückbau der Migration hiess
+      // die eigene Methode anders — und \`typeof tab.getSettingDefinitions\` blieb "function".
+      // Gefragt ist, ob das PLUGIN sie definiert; das steht auf dem Prototyp seiner Klasse.
+      if (!Object.prototype.hasOwnProperty.call(Object.getPrototypeOf(tab), "getSettingDefinitions")) {
+        return { befund: "das Plugin definiert getSettingDefinitions() nicht — es erbt nur Obsidians Vorgabe (der Store-Befund von 0.5.0)", ...leer };
       }
       const sichtbar = (d) => {
         const v = d.visible;
@@ -566,16 +663,20 @@ async function main(): Promise<void> {
       return { gesucht: namen, gefunden, fehlend, negativkontrolle };
     `);
     if (searchable.skip) {
-      console.log(`  – 12. Settings-Suche übersprungen — ${searchable.skip}`);
+      skip("12. Die Einstellungen erscheinen in Obsidians Settings-Suche", searchable.skip);
+    } else if (searchable.befund) {
+      record("12. Die Einstellungen erscheinen in Obsidians Settings-Suche", false, searchable.befund);
     } else {
       record(
         "12. Die Einstellungen erscheinen in Obsidians Settings-Suche",
         searchable.fehlend.length === 0 && searchable.negativkontrolle && searchable.gesucht.length > 0,
-        searchable.fehlend.length > 0
-          ? `nicht gefunden: ${searchable.fehlend.join(", ")}`
-          : !searchable.negativkontrolle
-            ? "Gegenprobe fiel durch — die Suche liefert auf jede Eingabe Treffer"
-            : `${searchable.gefunden.length}/${searchable.gesucht.length} Zeilen gefunden`,
+        searchable.gesucht.length === 0
+          ? "getSettingDefinitions() liefert keine Zeilen — nichts, was in der Suche stehen könnte"
+          : searchable.fehlend.length > 0
+            ? `nicht gefunden: ${searchable.fehlend.join(", ")}`
+            : !searchable.negativkontrolle
+              ? "Gegenprobe fiel durch — die Suche liefert auf jede Eingabe Treffer"
+              : `${searchable.gefunden.length}/${searchable.gesucht.length} Zeilen gefunden`,
       );
     }
 
@@ -798,7 +899,14 @@ async function main(): Promise<void> {
   }
 
   const failed = results.filter((check) => !check.passed);
-  console.log(`\n${results.length - failed.length}/${results.length} grün`);
+  // Die Übersprungenen gehören in dieselbe Zeile wie die grünen. Sonst wird aus „3/3 grün"
+  // beim Zitieren ein bestandener Smoke, obwohl ein Drittel nie gemessen wurde.
+  const summe = `${results.length - failed.length}/${results.length} grün`;
+  console.log(`\n${summe}${skipped.length > 0 ? ` · ${skipped.length} übersprungen (NICHT gemessen)` : ""}`);
+  if (skipped.length > 0) {
+    console.log("Übersprungen:");
+    for (const check of skipped) console.log(`  – ${check.name}: ${check.detail}`);
+  }
   if (failed.length > 0) {
     console.log("Rot:");
     for (const check of failed) console.log(`  - ${check.name}: ${check.detail}`);
