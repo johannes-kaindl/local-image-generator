@@ -10,6 +10,12 @@ A1111-compatible HTTP API. Everything stays on your machine: your prompts and
 images travel between two local processes you control — Obsidian and your
 image server — and nowhere else.
 
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/gitea/v/release/jkaindl/local-image-generator?gitea_url=https%3A%2F%2Fgit.jkaindl.de&label=release)](https://git.jkaindl.de/jkaindl/local-image-generator/releases)
+[![Obsidian](https://img.shields.io/badge/obsidian-1.8.7%2B-purple)](https://obsidian.md)
+
+*Auch auf Deutsch verfügbar: [`README.de.md`](README.de.md).*
+
 ## Features
 
 - Open the generator from the ribbon icon or the **Open generator** command.

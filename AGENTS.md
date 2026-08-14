@@ -8,17 +8,25 @@ Conventions for AI assistants working in this repo.
 
 ## What this is
 
-Obsidian community plugin that generates images **in-process** — SD-Turbo via
-onnxruntime-web (WebGPU), no external server, no cloud. One sidebar hub view,
-one curated model, weights downloaded on explicit opt-in into the Cache API
-(outside the vault).
+Obsidian community plugin: eine **Oberflaeche** fuer Bilderzeugung (Prompt, Stil-Chips,
+Verlauf, Ablage im Vault) vor einem **externen, lokalen Bild-Server**, den der Nutzer
+selbst betreibt — Draw Things, AUTOMATIC1111, Forge oder SD.Next ueber deren gemeinsame
+A1111-kompatible HTTP-API. **Das Plugin erzeugt selbst keine Bilder** und laedt keine
+Modellgewichte: dem Server gehoeren Modell und Hardware, dem Plugin die Bedienung.
+Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History).
+
+**Bis 0.4 war das anders** — da lief SD-Turbo per onnxruntime-web im Prozess, spaeter
+zusaetzlich mflux als Kindprozess. Beides ist mit 0.5 entfallen; was davon noch im Code
+steht, ist Aufraeumen (`src/obsidian/legacy-cache.ts`) oder totes Settings-Feld
+(`mfluxPath`, dokumentiert in `src/core/settings.ts`). Details unter *Historie* unten —
+die Notizen bleiben stehen, weil sie erklaeren, warum diese Reste existieren.
 
 ## Workflow conventions
 
 - **Gate:** `npm run gate` (typecheck + vitest + check:pure + build) — vor jedem Commit grün.
 - **Pure-Core-Schnitt:** `src/core/` und `src/vendor/kit/` importieren NIE `obsidian`
-  (Gate: `scripts/check-pure.mjs`). `src/obsidian/model-store.ts` ist browser-API-only,
-  ebenfalls obsidian-frei (nicht vom Gate erfasst — manuell halten).
+  (Gate: `scripts/check-pure.mjs`). `src/obsidian/legacy-cache.ts` ist browser-API-only
+  (Cache API), ebenfalls obsidian-frei — nicht vom Gate erfasst, manuell halten.
 - **Commit style:** Conventional Commits (deutsch), AI-Commits mit Co-Authored-By-Trailer.
 - **Deploy (lokal):** `OBSIDIAN_PLUGIN_DIR=<vault>/.obsidian/plugins/local-image-generator npm run deploy`
 - **Dach-Regeln gelten:** Kit-first (`../AGENTS.md`, `../REGISTRY.md`), UI-STANDARD (`../UI-STANDARD.md`).
@@ -42,19 +50,36 @@ one curated model, weights downloaded on explicit opt-in into the Cache API
 
 ## Architecture notes / Gotchas
 
+- **Drei Endpunkte, mehr nicht:** `POST /sdapi/v1/txt2img` erzeugt,
+  `GET /sdapi/v1/progress` liefert den Fortschritt (1-s-Polling), `GET /sdapi/v1/options`
+  nennt das aktive Modell und dient als Verbindungstest. Alles Weitere gehoert dem
+  Server, nicht uns.
+- **`requestUrl` kennt weder Abort noch Timeout** (`src/obsidian/http.ts`). Ohne das
+  selbst gesetzte kurze Zeitlimit haengt das Panel an einem toten Server ewig, statt ihn
+  als unerreichbar zu melden. Diese Zeile nicht "vereinfachen".
+- **Ein Server ohne `/progress` ist kein Fehlerfall:** liefert er 404 oder eine fremde
+  Form, faellt die Anzeige auf unbestimmt zurueck — der Lauf selbst bleibt gueltig.
+- **Der Server bestimmt das Modell.** Das Plugin schickt generische Parameter und zeigt
+  den gemeldeten Modellnamen als Statushinweis; es waehlt nie ein Modell aus.
+- **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
+  Provider-API 0.2 rastet darauf ein.
+
+## Historie: die in-process-Engine (bis 0.4)
+
+Ueberholt seit 0.5 (Thin-Client). Steht hier, weil es die Reste im Code erklaert und
+weil eine spaetere eigene Engine dieselben Fallen wiederfaende:
+
 - **WASM-Paarung:** Die inline gebundelte ORT-WASM-Variante MUSS zum Glue des importierten
-  Bundles passen. ORT 1.27 `onnxruntime-web/webgpu` → `asyncify`, NICHT `jsep`. Bei
-  ORT-Upgrades prüfen: `grep -o '[a-z.-]*\.wasm' node_modules/onnxruntime-web/dist/ort.webgpu.bundle.min.mjs`.
-  Falsche Paarung = stiller Ewig-Hänger (uncaught rejection, create() resolved nie).
+  Bundles passen. ORT 1.27 `onnxruntime-web/webgpu` → `asyncify`, NICHT `jsep`. Falsche
+  Paarung = stiller Ewig-Haenger (uncaught rejection, create() resolved nie).
 - **fp16-Gewichte ≠ fp16-Inputs:** Die Engine passt Feed-Dtypes an `Session.inputTypes`
   (aus ort `inputMetadata`) an. Nie Dtypes hardcoden.
 - **Tokenizer:** CLIP-BPE exact-match (kein `</w>`-Fallback), Pad-Token 0 (OpenCLIP/sd-turbo-
   Referenz, MS-Demo index.js L256).
-- **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
-  Provider-API 0.2 und die spätere Kindprozess-Engine (Flux) rasten darauf ein.
 - **Referenz:** microsoft/onnxruntime-inference-examples `js/sd-turbo/index.js` (nicht main.js).
-- **mflux-Kindprozess (0.4):** FLUX.2 klein läuft über `mflux-generate-flux2` (User-
-  installiert, Auto-Detect in mflux-detect.ts (core, Kandidatenliste + Begründung),
-  IO-Bindung in mflux-host.ts — Electron erbt keinen Shell-PATH). tqdm
-  schreibt Fortschritt auf **stderr mit `\r`** — splitChunks/parseMfluxLine (core) sind
-  die einzige Stelle, die das Format kennt. Quantisierung fest `--quantize 8`.
+- **mflux-Kindprozess (0.4):** FLUX.2 klein lief ueber `mflux-generate-flux2` (User-
+  installiert, Auto-Detect in mflux-detect.ts, IO-Bindung in mflux-host.ts — Electron erbt
+  keinen Shell-PATH). tqdm schreibt Fortschritt auf **stderr mit `\r`**. Uebrig ist davon
+  nur das tote Settings-Feld `mfluxPath`.
+- **Uebrig im Code:** `src/obsidian/legacy-cache.ts` findet und loescht die ~2,5 GB
+  SD-Turbo-Gewichte, die Bestandsinstallationen noch in der Cache API haben.
