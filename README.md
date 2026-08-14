@@ -10,7 +10,7 @@ A1111-compatible HTTP API. Everything stays on your machine: your prompts and
 images travel between two local processes you control — Obsidian and your
 image server — and nowhere else.
 
-## What it does
+## Features
 
 - Open the generator from the ribbon icon or the **Open generator** command.
 - Type a prompt, optionally a **negative prompt** (what to avoid), pick a
@@ -102,7 +102,7 @@ line and settings both show the server's active model name once connected.
   or download any model weights; the server app you run owns the model,
   its hardware requirements, and its own disk footprint.
 
-## Settings
+## Configuration
 
 **Settings → Local Image Generator**:
 
@@ -122,6 +122,30 @@ line and settings both show the server's active model name once connected.
   Cache API, this row lets you delete them in one click. They serve no
   purpose anymore since generation moved to your external server. See
   [How network and storage are used](#how-network-and-storage-are-used).
+
+## How it works
+
+The plugin is a **thin client**: it owns the interface — prompt, presets, history,
+where files land — and your server app owns the model, the hardware and the actual
+generation. Both halves stay replaceable that way.
+
+A generation is one `POST /sdapi/v1/txt2img` against the endpoint you configured,
+carrying nothing but the generic parameters shown in the panel (prompt, negative
+prompt, size, steps, CFG, seed). While it runs, the panel polls
+`GET /sdapi/v1/progress` once a second for a percentage — a server that does not
+offer that endpoint simply shows an indeterminate state instead of failing. The
+connection test and the model name in the status line come from
+`GET /sdapi/v1/options`.
+
+All three calls go through Obsidian's own `requestUrl`, which is not subject to
+browser CORS rules, and carry a short timeout of their own: `requestUrl` knows
+neither abort nor timeout, so without one an unreachable server would hang the panel
+forever rather than report that it is unreachable.
+
+The returned image is decoded and written into your vault as an ordinary attachment.
+The recipe behind it (prompt, seed, steps, size, CFG, time) goes into the plugin's
+local data file, which is what the History tab reads — the image file itself carries
+no dependency on the plugin.
 
 ## How network and storage are used
 
