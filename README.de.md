@@ -19,6 +19,10 @@ Bild-Server — und nirgendwo sonst.
 
 ## Features
 
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/generate-panel.png" alt="Das Generator-Panel in Obsidians rechter Seitenleiste: Felder für Prompt und Negativ-Prompt, Stil-Chips, Regler für Größe, Schritte, Guidance und Seed sowie der Hinweis, einen lokalen Bild-Server zu verbinden." width="456">
+</p>
+
 - Den Generator über das Ribbon-Icon oder den Befehl **Generator öffnen** aufrufen.
 - Einen Prompt eingeben, optional einen **Negativ-Prompt** (was vermieden werden soll),
   eine **Größe** aus 7 kuratierten Seitenverhältnissen wählen (quadratisch, hoch, quer)
@@ -47,6 +51,10 @@ Bild-Server — und nirgendwo sonst.
 
 Die Oberfläche gibt es auf Englisch und Deutsch und folgt automatisch der
 Spracheinstellung von Obsidian — eine eigene Sprachoption gibt es nicht.
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/style-chips.png" alt="Die Stil-Chips unter dem Prompt-Feld: Sumi-e, Watercolor, Photo und Oil." width="380">
+</p>
 
 ## Installation
 
@@ -108,6 +116,10 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
   Hardware-Anforderungen und seinen Speicherbedarf.
 
 ## Konfiguration
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/settings.png" alt="Die Einstellungen des Plugins: Server-Endpunkt mit Testknopf, Bilder- und Notizordner, Modus des Create-Knopfes, Standard-Schrittzahl und die editierbare Liste der Stil-Chips." width="515">
+</p>
 
 **Einstellungen → Local Image Generator**:
 

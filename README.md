@@ -18,6 +18,10 @@ image server — and nowhere else.
 
 ## Features
 
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/generate-panel.png" alt="The generator panel in Obsidian's right sidebar: prompt and negative prompt fields, style chips, size, steps, guidance and seed controls, and a hint to connect a local image server." width="456">
+</p>
+
 - Open the generator from the ribbon icon or the **Open generator** command.
 - Type a prompt, optionally a **negative prompt** (what to avoid), pick a
   **size** from 7 curated aspect ratios (square, portrait, landscape), and
@@ -48,6 +52,10 @@ image server — and nowhere else.
 
 The interface is available in English and German, switching automatically to
 match Obsidian's own language setting — no separate language option to set.
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/style-chips.png" alt="The style chips under the prompt field: Sumi-e, Watercolor, Photo and Oil." width="380">
+</p>
 
 ## Installation
 
@@ -109,6 +117,10 @@ line and settings both show the server's active model name once connected.
   its hardware requirements, and its own disk footprint.
 
 ## Configuration
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/settings.png" alt="The plugin settings: server endpoint with a test button, image and note folders, the Create button mode, default steps, and the editable list of style chips." width="515">
+</p>
 
 **Settings → Local Image Generator**:
 
