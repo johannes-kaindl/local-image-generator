@@ -114,6 +114,20 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-17 · 0.5.2 · Obsidian 1.13.7 · **ohne** Bild-Server (nach der Brücken-Migration)
+
+`--quick`: **2/2 grün · 3 übersprungen** — identisch zum Lauf vom 2026-08-14. Der Treiber
+trägt die CDP-Brücke seit diesem Lauf nicht mehr inline, sondern importiert sie aus
+`obsidian-plugins/tools/obsidian-cdp/`; `attachTo("workspace", …)` wählt das Fenster jetzt
+über die Sache (nur das Hauptfenster hat einen Workspace) statt über den lokalisierten
+Titel. Beim Anschluss fielen zwei Typfehler **in der zentralen Brücke** auf, die nur unter
+`noUncheckedIndexedAccess` sichtbar sind — dort behoben, nicht hier umgangen.
+
+**Weiterhin offen: der vollständige Freigabe-Smoke** (Punkte 2, 3 und 5–11). Er braucht
+einen laufenden Bild-Server; Draw Things' API-Server ist nur in dessen Oberfläche
+einschaltbar (die App rendert in Metal — weder Menübefehl noch Voreinstellung auf der
+Platte, per Skript nicht erreichbar).
+
 ### 2026-08-14 · 0.5.2 · Obsidian 1.13.7 · **ohne** Bild-Server
 
 **`--quick`: 2/2 grün · 3 übersprungen.** Punkt 12 lief hier zum ersten Mal überhaupt im
