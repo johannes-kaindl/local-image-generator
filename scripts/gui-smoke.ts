@@ -47,6 +47,11 @@
  */
 
 import { execFileSync } from "node:child_process";
+// Die CDP-Brücke liegt seit 2026-08-16 zentral im Dach (tools/obsidian-cdp/) und wird
+// importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
+// sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
+// ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
+import { Cdp, attachTo } from "../../tools/obsidian-cdp/cdp.js";
 import { SIZES, STEPS } from "../src/core/generation";
 import { registerI18n } from "../src/i18n/strings";
 import { pickLang, setLang, t } from "../src/vendor/kit/i18n";
@@ -56,133 +61,6 @@ const PLUGIN_ID = "local-image-generator";
  *  (außer mit `--keep`) — so muss der Treiber keine Dateien aus fremden Ordnern fischen. */
 const SMOKE_FOLDER = "_lig-gui-smoke";
 const SMOKE_PROMPT = "gui smoke test, a single grey pebble on white paper";
-
-// --- CDP-Minimalbrücke ------------------------------------------------------
-// Node ≥21 bringt `WebSocket` global mit — keine Dependency nötig.
-
-interface CdpTarget {
-  type: string;
-  title: string;
-  url: string;
-  webSocketDebuggerUrl?: string;
-}
-
-interface CdpResponse {
-  id?: number;
-  result?: {
-    result?: { value?: unknown };
-    // ABWEICHUNG zur Vorlage: dort wird nur `text` gelesen — das ist bei einer geworfenen
-    // Ausnahme wörtlich "Uncaught" und sagt nichts. Die eigentliche Meldung steht in
-    // `exception.description`. Gemessen 2026-08-06 beim ersten Fehlschlag im Settings-Modal.
-    exceptionDetails?: { text?: string; exception?: { description?: string } };
-  };
-  error?: { message?: string };
-}
-
-class Cdp {
-  private nextId = 1;
-  private readonly pending = new Map<number, { ok: (v: CdpResponse) => void; fail: (e: Error) => void }>();
-
-  private constructor(private readonly socket: WebSocket) {
-    socket.addEventListener("message", (event: MessageEvent) => {
-      const message = JSON.parse(String(event.data)) as CdpResponse;
-      if (message.id === undefined) return; // Event, kein Antwort-Frame
-      const waiter = this.pending.get(message.id);
-      if (!waiter) return;
-      this.pending.delete(message.id);
-      if (message.error) waiter.fail(new Error(message.error.message ?? "CDP-Fehler"));
-      else waiter.ok(message);
-    });
-  }
-
-  static async attach(port: number, vault?: string): Promise<Cdp> {
-    let targets: CdpTarget[];
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
-      targets = (await response.json()) as CdpTarget[];
-    } catch {
-      throw new Error(
-        `Kein Debug-Port auf ${port}. Obsidian mit --remote-debugging-port=${port} neu starten ` +
-          `(siehe Kopfkommentar).`,
-      );
-    }
-
-    // Das Hauptfenster ist die Seite mit Obsidians app-Schema; Popouts und DevTools
-    // tragen andere URLs. Ohne diese Auswahl landet man im falschen Renderer.
-    const pages = targets.filter(
-      (t) => t.type === "page" && t.url.startsWith("app://obsidian.md") && t.webSocketDebuggerUrl,
-    );
-    if (pages.length === 0) {
-      const seen = targets.map((t) => `${t.type} ${t.url}`).join("\n  ") || "(keine)";
-      throw new Error(`Kein Obsidian-Fenster unter den Targets gefunden:\n  ${seen}`);
-    }
-
-    // Mehrere offene Vaults sind der Normalfall, nicht die Ausnahme. Blind das erste
-    // Fenster zu nehmen hiesse, den Smoke im falschen Vault zu fahren — und der
-    // Fehlschlag saehe aus wie ein Plugin-Defekt ("Plugin nicht aktiv"). Der Titel
-    // traegt den Vault-Namen ("<Notiz> - <Vault> - Obsidian x.y.z").
-    const matching = vault
-      ? pages.filter((t) => t.title.toLowerCase().includes(vault.toLowerCase()))
-      : pages;
-    if (matching.length === 0) {
-      throw new Error(
-        `Kein Fenster passt zu --vault ${vault}. Offen:\n  ${pages.map((t) => t.title).join("\n  ")}`,
-      );
-    }
-    if (matching.length > 1) {
-      throw new Error(
-        `Mehrere Obsidian-Fenster offen — mit --vault <name> eines waehlen:\n  ` +
-          matching.map((t) => t.title).join("\n  "),
-      );
-    }
-    // ABWEICHUNG zur Vorlage: dieses Repo fährt `noUncheckedIndexedAccess`. Die beiden
-    // Längen-Prüfungen oben erzwingen bereits genau ein Element — das `!` macht das für
-    // den Compiler sichtbar, statt eine tote Zweigstelle zu erfinden.
-    const page = matching[0]!;
-    // Der Filter oben garantiert die URL, der Typ nicht — der Guard haelt beides zusammen.
-    if (!page.webSocketDebuggerUrl) throw new Error(`Fenster ohne Debugger-URL: ${page.title}`);
-    console.log(`Fenster: ${page.title}`);
-
-    const socket = new WebSocket(page.webSocketDebuggerUrl);
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", () => reject(new Error("WebSocket-Verbindung fehlgeschlagen")), {
-        once: true,
-      });
-    });
-    return new Cdp(socket);
-  }
-
-  send(method: string, params: Record<string, unknown> = {}): Promise<CdpResponse> {
-    const id = this.nextId++;
-    this.socket.send(JSON.stringify({ id, method, params }));
-    return new Promise((ok, fail) => {
-      this.pending.set(id, { ok, fail });
-      setTimeout(() => {
-        if (!this.pending.delete(id)) return;
-        fail(new Error(`Zeitüberschreitung: ${method}`));
-      }, 30_000);
-    });
-  }
-
-  /** Ausdruck im Renderer auswerten. Wirft die Renderer-Ausnahme weiter, statt sie
-   *  als `undefined` zu verschlucken — sonst liest sich ein kaputter Ausdruck wie ein
-   *  fehlgeschlagener Prüfpunkt. */
-  async evaluate<T>(expression: string): Promise<T> {
-    const message = await this.send("Runtime.evaluate", {
-      expression: `(async () => { ${expression} })()`,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    const details = message.result?.exceptionDetails;
-    if (details) throw new Error(`Renderer: ${details.exception?.description ?? details.text ?? "Ausnahme"}`);
-    return message.result?.result?.value as T;
-  }
-
-  close(): void {
-    this.socket.close();
-  }
-}
 
 // --- Prüfpunkte -------------------------------------------------------------
 
@@ -314,7 +192,16 @@ async function main(): Promise<void> {
   const generateTimeoutMs = Number(flag("timeout") ?? 900) * 1000;
 
   console.log(`GUI-Smoke — Obsidian auf Port ${port}`);
-  const cdp = await Cdp.attach(port, vault);
+  // `attachTo` unterscheidet Haupt- und Einstellungen-Fenster an der Sache (nur das
+  // Hauptfenster trägt einen Workspace), nicht am lokalisierten Titel.
+  const cdp = await attachTo("workspace", port, vault);
+  if (!cdp) {
+    throw new Error(
+      `Kein Obsidian-Hauptfenster auf Port ${port}` +
+        (vault ? ` für Vault „${vault}“` : "") +
+        ". Läuft Obsidian mit --remote-debugging-port? (siehe Kopfkommentar)",
+    );
+  }
 
   // Alle Vorwerte AUSSERHALB des try: das finally muss sie auch nach einem Abbruch mitten
   // im Lauf zurückschreiben können — sonst bliebe der Vault im Smoke-Zustand stehen.
