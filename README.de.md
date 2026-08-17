@@ -17,6 +17,10 @@ Bild-Server — und nirgendwo sonst.
 > **Hinweis:** Diese Übersetzung folgt der englischen [`README.md`](README.md).
 > Bei Abweichungen gilt die englische Fassung.
 
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/hero.png" alt="Obsidian mit einem erzeugten Bild: die Notiz in der Mitte zeigt das fertige Bild, das Generator-Panel rechts dasselbe Ergebnis samt Prompt, Größe, Schritten, Guidance und Seed." width="600">
+</p>
+
 ## Features
 
 <p align="center">
@@ -104,6 +108,14 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
    der Erzeugung im Frontmatter entstehen soll, vorher die Auswahl
    **Anlegen-Schaltfläche** in den Einstellungen auf **Bild + Notiz** stellen.
 5. Frühere Erzeugungen findest du jederzeit im Reiter **Verlauf**.
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/history.png" alt="Der History-Reiter mit zwei Läufen, jeder mit Prompt, Seed, Schrittzahl und Uhrzeit, nach Aktualität sortiert." width="456">
+</p>
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/result-note.png" alt="Eine Ergebnis-Notiz: das Rezept im Frontmatter — Prompt, Seed, Schritte, CFG, Modell, Größe und Bilddatei — darunter das eingebettete Bild." width="496">
+</p>
 
 ## Voraussetzungen
 

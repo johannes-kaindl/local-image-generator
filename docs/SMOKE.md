@@ -114,6 +114,21 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-17 · 0.5.2 · Obsidian 1.13.7 · Draw Things, FLUX.2 klein 9B · **12/12 grün**
+
+**Der erste vollständige Freigabe-Smoke seit 0.5.0.** Alle zwölf Prüfpunkte grün, darunter
+erstmals die ganze Generierungs-Kette: Bild in der Karte (280 KB Data-URL), Ergebnis-Notiz
+mit `model: flux_2_klein_9b_kv_f16.ckpt` im Frontmatter, eingebettetes Bild, Historien-Klick
+stellt Prompt **und** Seed wieder her, Reroll würfelt neu (1292222129 → 169117011) und
+startet.
+
+Möglich wurde das, nachdem in Draw Things ein Modell aktiviert wurde, das der Server auch
+laden kann — der Lauf davor scheiterte an einem Modellnamen, den die App meldete und die
+Engine nicht kannte.
+
+Vault-Zustand nachher geprüft: kein `_lig-gui-smoke`, Settings auf den echten Werten,
+Historie unverändert bei 20 Einträgen.
+
 ### 2026-08-17 · 0.5.2 · Obsidian 1.13.7 · Draw Things **mit** API, aber ohne ladbares Modell
 
 **7 grün, 1 rot, 4 nicht erreicht.** Erstmals seit dem 2026-08-06 wieder gegen einen

@@ -30,16 +30,24 @@ bleibt Handarbeit.
 | `style-chips.png` | detail (380 px) | `README.md`, `README.de.md` | Nur die Stil-Leiste („Styles") mit den mitgelieferten Chips. Zeigt das Merkmal, das den Prompt-Aufbau abkürzt: ein Klick hängt den Stiltext an den Prompt an. |
 | `settings.png` | feature (515 px) | `README.md`, `README.de.md` | Den Einstellungen-Tab **ganz**: Server-Endpunkt mit `Test connection`, Bilder- und Notizordner, `Create button`, Standard-Schrittzahl und die editierbare Stil-Liste. **Ausgeblendet wird dabei genau eine Zeile** — der Aufräumer für SD-Turbo-Altgewichte. Er erscheint laut `visible`-Prädikat nur, wenn im app-weiten Cache noch Gewichte aus der Zeit vor 0.5 liegen; auf dem Rechner des Maintainers ist das so, in einer frischen Installation nie. Ohne diesen Eingriff zeigte das Bild die Aufnahme-Umgebung statt des Produkts. |
 
-### Offen — brauchen einen laufenden Bild-Server
+### Die drei Motive mit erzeugtem Bild
 
-Diese Motive stehen bewusst hier statt zu fehlen; `shots:check` meldet sie bei jedem Lauf,
-bis sie aufgenommen sind.
+Sie brauchen einen laufenden Bild-Server und entstanden am 2026-08-17 gegen Draw Things
+(`flux_2_klein_9b_kv_f16.ckpt`, 4 Steps, 512×512). Die Seeds stehen fest im Rezept: zwei
+Aufnahmen sollen dasselbe Bild ergeben.
 
-| Datei | Klasse | muss zeigen | Stand |
+| Datei | Klasse | referenziert von | muss zeigen |
 |---|---|---|---|
-| `hero.png` | hero | Das ganze Obsidian-Fenster: Hub rechts mit fertigem Bild in der Ergebnis-Karte, daneben die Notiz, in die es eingefügt wurde. Das Verkaufsbild — es zeigt in einem Blick, wofür es das Plugin gibt. | offen (2026-08-17): kein Bild-Server verfügbar |
-| `history.png` | detail | Den History-Reiter mit mehreren echten Läufen — Prompt-Zeile, Seed und Parameter je Eintrag, gruppiert. Muss echte Läufe zeigen: ein nachgebauter Verlauf wäre eine Behauptung über ein Ergebnis, das nie erzeugt wurde. | offen (2026-08-17): kein Bild-Server verfügbar |
-| `result-note.png` | feature | Eine Ergebnis-Notiz im Vault: eingebettetes Bild plus das Rezept im Frontmatter (`model`, `seed`, `steps`, `cfg`) — der Teil, der einen Lauf reproduzierbar macht. | offen (2026-08-17): kein Bild-Server verfügbar |
+| `hero.png` | hero (600 px) | `README.md`, `README.de.md` | Das ganze Obsidian-Fenster: die Notiz mit dem fertigen Bild in der Mitte, rechts das Panel mit demselben Ergebnis samt Prompt, Größe, Schritten, Guidance und Seed. Das Verkaufsbild — es zeigt in einem Blick, wofür es das Plugin gibt. |
+| `history.png` | detail (456 px) | `README.md`, `README.de.md` | Den History-Reiter mit **mehreren echten Läufen**, je Zeile Prompt, Seed, Schrittzahl und Uhrzeit, dazu die Umschalter „Recent / By prompt" und „Clear all". Verschiedene Seeds je Zeile: zwei gleiche sähen aus wie ein Copy-Paste-Fehler. |
+| `result-note.png` | feature (496 px) | `README.md`, `README.de.md` | Eine Ergebnis-Notiz: das Rezept im Frontmatter (`prompt`, `seed`, `steps`, `cfg`, `model`, Maße, Bilddatei) und darunter das eingebettete Bild. Der Ausschnitt wird im Rezept auf H/B ≤ 1.55 begrenzt, damit die Klassen-Grenze hält, ohne nachträglich zu schneiden. |
+
+**Was der Lauf dafür am Prüfling tut** — und warum das keine Kosmetik ist: Er setzt den
+Endpunkt und ruft `checkServer()`, weil `generateEnabled` `server.kind === "ok"` verlangt;
+ohne diesen Aufruf bleibt der Knopf gesperrt und das Rezept wartet auf ein Bild, das nicht
+kommen kann. Für `hero` schaltet er `createMode` auf `note` (sonst gäbe es keine Notiz),
+für `history` zurück auf `image`. Alles davon ist Nutzer-Konfiguration, kein
+Produktverhalten.
 
 ## Fixture
 

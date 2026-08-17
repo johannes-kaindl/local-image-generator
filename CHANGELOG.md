@@ -8,11 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- The README now shows the plugin instead of describing it: the generator panel, the
-  style chips and the settings tab. The images are produced by `npm run shots`, a tracked
-  recipe that drives a running Obsidian — not by hand, so they can be renewed when the UI
-  changes. Three further motifs (`hero`, `history`, `result-note`) need a running image
-  server and are listed as open in `docs/images/README.md`.
+- The README now shows the plugin instead of describing it: a full-window shot with a
+  generated image, the generator panel, the style chips, the history list, a result note
+  with its recipe in the frontmatter, and the settings tab. All six are produced by
+  `npm run shots`, a tracked recipe that drives a running Obsidian — not by hand, so they
+  can be renewed when the UI changes. The three motifs that show a generated image were
+  recorded against a real image server with fixed seeds, so a second run yields the same
+  pictures.
 
 ### Changed
 

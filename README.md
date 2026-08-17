@@ -16,6 +16,10 @@ image server — and nowhere else.
 
 *Auch auf Deutsch verfügbar: [`README.de.md`](README.de.md).*
 
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/hero.png" alt="Obsidian with a generated image: the note in the middle shows the finished picture, the generator panel on the right holds the same result with its prompt, size, steps, guidance and seed." width="600">
+</p>
+
 ## Features
 
 <p align="center">
@@ -105,6 +109,14 @@ line and settings both show the server's active model name once connected.
    button** dropdown to **Image + note** in settings first if you also want
    a note with the generation's details in its frontmatter.
 5. Revisit past generations any time from the **History** tab.
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/history.png" alt="The History tab listing two runs, each with its prompt, seed, step count and time, sorted by recency." width="456">
+</p>
+
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/result-note.png" alt="A result note: the recipe in its frontmatter — prompt, seed, steps, cfg, model, size and the image filename — followed by the embedded picture." width="496">
+</p>
 
 ## Requirements
 
