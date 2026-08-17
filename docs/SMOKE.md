@@ -114,6 +114,40 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-17 · 0.5.2 · Obsidian 1.13.7 · Draw Things **mit** API, aber ohne ladbares Modell
+
+**7 grün, 1 rot, 4 nicht erreicht.** Erstmals seit dem 2026-08-06 wieder gegen einen
+erreichbaren Server gefahren: **Punkt 2 und 3 sind gemessen** (Verbindungstest und echter
+Modellname, beide grün). Punkt 7 ist rot — und das ist ein Zustand des Servers, nicht des
+Prüflings: Draw Things meldet unter `/sdapi/v1/options` das Modell `flux_2_dev_i8x.ckpt`,
+weist es bei `/sdapi/v1/txt2img` aber mit **HTTP 422 „Unrecognized model name"** zurück. Die
+Datei existiert nicht mehr; im Modellordner liegt `flux_2_klein_9b_kv_f16.ckpt`. Das aktive
+Modell lässt sich nur in der App wechseln (`POST /sdapi/v1/options` → 404).
+
+**Das Plugin verhält sich dabei richtig**: die Statuszeile zeigt binnen Sekunden
+„Fehler: txt2img HTTP 422", kein Hänger, kein stiller Fehlschlag.
+
+**Zwei Befunde im Treiber** — beide erst durch diesen Serverzustand sichtbar:
+
+1. **Punkt 5 meldete grün, obwohl nie ein Lauf startete.** Er prüfte „Text ≠ Bereit", und ein
+   Fehlertext erfüllt das. Der Prüfpunkt kannte nur ein falsches Ende (Statuszeile bewegt sich
+   nicht), nicht das zweite (sie bewegt sich in einen Fehler).
+2. **Punkt 7 saß die volle Frist ab — zwanzig Minuten**, während der Grund die ganze Zeit in
+   der Statuszeile stand. Schlimmer als die Wartezeit war die Meldung: „kein Bild innerhalb
+   der Frist" liest sich wie ein langsamer Server und verschweigt, dass der Prüfling den
+   Grund längst genannt hatte.
+
+Beide haben jetzt **zwei Ausgänge** (dieselbe Regel wie beim Server-Guard, CORE-TEST-02 g):
+Punkt 5 ist rot, wenn der „gestartete Lauf" ein Fehlertext ist; Punkt 7 bricht ab, sobald das
+Plugin einen Fehlschlag meldet, und zitiert ihn. Verifiziert im selben Lauf: aus zwanzig
+Minuten Frist wurden Sekunden, und die rote Zeile nennt jetzt den Servertext.
+
+**Offen bleiben 8–11** (Ergebnis-Notiz, Bild-Einbettung, Historien-Klick, Reroll). Sie
+brauchen ein erzeugtes Bild — also ein Modell, das der Server auch laden kann.
+
+Vault-Zustand nachher geprüft: kein `_lig-gui-smoke`, Settings auf den echten Werten,
+Historie unverändert bei 20 Einträgen.
+
 ### 2026-08-17 · 0.5.2 · Obsidian 1.13.7 · **ohne** Bild-Server (nach der Brücken-Migration)
 
 `--quick`: **2/2 grün · 3 übersprungen** — identisch zum Lauf vom 2026-08-14. Der Treiber

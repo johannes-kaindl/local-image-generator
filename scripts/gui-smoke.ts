@@ -87,6 +87,19 @@ function skip(name: string, grund: string): void {
   console.log(`  – ${name} — übersprungen: ${grund}`);
 }
 
+/**
+ * Meldet die Statuszeile einen Fehlschlag?
+ *
+ * Der Prüfling schreibt Fehler als `status.error` („Fehler: <text>") in dieselbe Zeile, in
+ * der sonst der Fortschritt steht. Ein Prüfpunkt, der nur auf „Text ≠ Bereit" prüft, hält
+ * das für einen gestarteten Lauf — gemessen 2026-08-17: Punkt 5 meldete grün, während die
+ * Zeile bereits „Fehler: txt2img HTTP 422" trug und nie eine Generierung lief.
+ */
+function istFehler(text: string): boolean {
+  const praefix = t("status.error", "").trim();
+  return praefix !== "" && text.startsWith(praefix);
+}
+
 /** Im Renderer: warten, bis `check()` wahr wird (Rendering ist asynchron). */
 const waitFor = (body: string, timeoutMs = 8000): string => `
   const deadline = Date.now() + ${timeoutMs};
@@ -589,8 +602,12 @@ async function main(): Promise<void> {
       `);
       record(
         "5. Der Klick auf „Generieren“ startet einen sichtbaren Lauf",
-        started !== null,
-        started ?? `Statuszeile blieb auf „${readyText}"`,
+        started !== null && !istFehler(started),
+        started === null
+          ? `Statuszeile blieb auf „${readyText}"`
+          : istFehler(started)
+            ? `kein Lauf — der Server lehnte sofort ab: „${started}"`
+            : started,
       );
 
       // --- 6. Die Statuszeile lebt während des Laufs --------------------------
@@ -624,16 +641,34 @@ async function main(): Promise<void> {
               status: status ? status.textContent.trim() : "",
             };
           `),
-        (r) => r.visible && r.length > 5000,
+        // Zwei Ausgänge, nicht einer: das Bild ODER ein gemeldeter Fehlschlag. Ohne den
+        // zweiten sitzt der Prüfpunkt die volle Frist ab, obwohl das Ergebnis nach Sekunden
+        // feststeht — am 2026-08-17 zwanzig Minuten lang, während „Fehler: txt2img HTTP 422"
+        // sichtbar in der Statuszeile stand. Die Wartezeit war nicht das Schlimmste daran:
+        // „kein Bild innerhalb der Frist" liest sich wie ein langsamer Server und verschweigt,
+        // dass der Prüfling den Grund die ganze Zeit angezeigt hat.
+        (r) => (r.visible && r.length > 5000) || istFehler(r.status),
         generateTimeoutMs,
         "warte auf das Bild",
       );
+      const laufFehler = image !== null && istFehler(image.status) ? image.status : null;
       record(
         "7. Die Generierung liefert ein Bild in die Karte",
-        image !== null,
-        image === null ? "kein Bild innerhalb der Frist" : `${Math.round(image.length / 1024)} KB Data-URL`,
+        image !== null && laufFehler === null,
+        laufFehler !== null
+          ? `Lauf gescheitert, gemeldet vom Plugin: „${laufFehler}"`
+          : image === null
+            ? "kein Bild innerhalb der Frist (und kein gemeldeter Fehler — der Lauf hängt)"
+            : `${Math.round(image.length / 1024)} KB Data-URL`,
       );
-      if (image === null) throw new Error("Ohne Bild sind die Punkte 8–10 gegenstandslos — Abbruch.");
+      if (image === null || laufFehler !== null) {
+        throw new Error(
+          laufFehler !== null
+            ? `Ohne Bild sind die Punkte 8–10 gegenstandslos. Das Plugin meldet: „${laufFehler}" — ` +
+              "das ist ein Zustand des Servers, nicht des Prüflings."
+            : "Ohne Bild sind die Punkte 8–10 gegenstandslos — Abbruch.",
+        );
+      }
 
       // --- 8. DIE NUTZLAST DES BUGS: die Ergebnis-Notiz ------------------------
       // `1d1c046` schrieb `model: unknown` ins Frontmatter JEDER Notiz — also genau in das

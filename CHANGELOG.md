@@ -23,6 +23,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Internal: two smoke checks treated a reported failure as progress. Check 5 ("a run starts
+  visibly") only tested "status text is not Ready", which an error message satisfies, and
+  check 7 waited out its full deadline — twenty minutes in the run that surfaced this —
+  while the reason sat in the status line the whole time. Both now have a second exit: a
+  failure the plugin reports is quoted, not waited out.
 - Internal: the settings-search check (12) could not detect the very defect it was written
   for. It treated a missing `getSettingDefinitions()` as "skipped", and its type guard was
   dead code — Obsidian 1.13 supplies the method on `PluginSettingTab` itself, so the check
