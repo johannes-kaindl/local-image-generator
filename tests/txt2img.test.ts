@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseOptionsModel, parseProgressPct, Txt2ImgClient } from "../src/core/txt2img";
+import { parseOptionsModel, parseProgressPct, ProgressPoller, Txt2ImgClient } from "../src/core/txt2img";
 
 const req = { prompt: "a cat", negativePrompt: "blurry", width: 768, height: 512, steps: 20, seed: 42, cfg: 7 };
 
@@ -59,5 +59,42 @@ describe("parseProgressPct", () => {
     expect(parseProgressPct({})).toBeNull();
     expect(parseProgressPct(null)).toBeNull();
     expect(parseProgressPct({ progress: "x" })).toBeNull();
+  });
+});
+
+describe("ProgressPoller", () => {
+  const url = "http://127.0.0.1:7860/sdapi/v1/progress";
+  function poller(get: (url: string) => Promise<{ status: number; json: unknown }>) {
+    const calls: string[] = [];
+    const p = new ProgressPoller("http://127.0.0.1:7860/", async (u) => { calls.push(u); return get(u); });
+    return { p, calls };
+  }
+
+  it("liefert bei 200 die Prozent und fragt weiter", async () => {
+    const { p, calls } = poller(async () => ({ status: 200, json: { progress: 0.25 } }));
+    expect(await p.poll()).toBe(25);
+    expect(await p.poll()).toBe(25);
+    expect(calls).toEqual([url, url]);
+  });
+
+  it("stellt nach dem ersten 404 das Fragen ein — Server kennt den Endpunkt nicht", async () => {
+    const { p, calls } = poller(async () => ({ status: 404, json: undefined }));
+    expect(await p.poll()).toBeNull();
+    expect(await p.poll()).toBeNull();
+    expect(calls).toHaveLength(1);
+  });
+
+  it("fragt nach einem Timeout weiter — vorübergehende Störung", async () => {
+    const { p, calls } = poller(async () => { throw new Error("timeout after 1000 ms"); });
+    expect(await p.poll()).toBeNull();
+    expect(await p.poll()).toBeNull();
+    expect(calls).toHaveLength(2);
+  });
+
+  it("fragt nach einem 5xx weiter — vorübergehende Störung", async () => {
+    const { p, calls } = poller(async () => ({ status: 503, json: undefined }));
+    expect(await p.poll()).toBeNull();
+    expect(await p.poll()).toBeNull();
+    expect(calls).toHaveLength(2);
   });
 });

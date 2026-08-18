@@ -64,3 +64,31 @@ export function parseProgressPct(json: unknown): number | null {
   const v = (json as { progress?: unknown } | null)?.progress;
   return typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) : null;
 }
+
+export type HttpGetJson = (url: string) => Promise<{ status: number; json: unknown }>;
+
+/** Ein Poller pro Lauf für GET /sdapi/v1/progress. Draw Things kennt den Endpunkt nicht
+ *  (404, gemessen 2026-08-04 und 2026-08-17) — nach dem ersten 404 wird nicht mehr gefragt,
+ *  sonst gingen pro Bild ~240 garantiert vergebliche Anfragen gegen einen rechnenden
+ *  Server. Nur 404 heißt „kennt den Endpunkt nicht"; Timeout und 5xx sind vorübergehend
+ *  und schalten nichts ab. poll() liefert immer null statt zu werfen — die Statuszeile
+ *  zählt dann Sekunden. */
+export class ProgressPoller {
+  private unsupported = false;
+
+  constructor(
+    private readonly endpoint: string,
+    private readonly get: HttpGetJson,
+  ) {}
+
+  async poll(): Promise<number | null> {
+    if (this.unsupported) return null;
+    try {
+      const { status, json } = await this.get(`${normalizeEndpoint(this.endpoint)}/sdapi/v1/progress`);
+      if (status === 404) { this.unsupported = true; return null; }
+      return status === 200 ? parseProgressPct(json) : null;
+    } catch {
+      return null;
+    }
+  }
+}

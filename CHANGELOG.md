@@ -18,6 +18,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The progress poll stops asking after the first `404` on `/sdapi/v1/progress`. Draw Things
+  does not implement that endpoint, so on a four-minute FLUX run the plugin fired roughly
+  240 requests that were guaranteed to fail — against a server busy rendering. The status
+  line still counts seconds; a timeout or a `5xx` is treated as transient and keeps polling.
 - Internal: the GUI smoke driver no longer dies on a missing image server. It probes
   reachability up front and says what is missing; `--quick` then runs the checks that do not
   need a server and lists the rest as skipped rather than failed. A server that answers

@@ -10,7 +10,7 @@ import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
 import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
-import { parseOptionsModel, parseProgressPct, Txt2ImgClient } from "./core/txt2img";
+import { parseOptionsModel, ProgressPoller, Txt2ImgClient } from "./core/txt2img";
 import type { GenParams, PanelState, ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
@@ -205,25 +205,20 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.state.run = { kind: "contacting" };
     this.refreshViews();
     // Fortschritt: 1-s-Polling auf /sdapi/v1/progress; liefert der Server keins (404,
-    // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden.
+    // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden. Nach dem
+    // ersten 404 fragt der Poller nicht mehr (Draw Things) — der Zähler läuft trotzdem.
     let elapsed = 0;
+    const poller = new ProgressPoller(this.settings.endpoint, (u) => httpGetJson(u, 1000));
     const tick = window.setInterval(() => {
       if (this.unloaded) return; // Plugin entladen → keine späten State-Mutationen mehr
       elapsed += 1;
       if (this.state.run.kind !== "generating" && this.state.run.kind !== "contacting") return;
-      void httpGetJson(`${normalizeEndpoint(this.settings.endpoint)}/sdapi/v1/progress`, 1000)
-        .then((r) => {
-          if (this.unloaded) return;
-          if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
-            this.state.run = { kind: "generating", pct: r.status === 200 ? parseProgressPct(r.json) : null, elapsedSec: elapsed };
-          this.refreshViews();
-        })
-        .catch(() => {
-          if (this.unloaded) return;
-          if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
-            this.state.run = { kind: "generating", pct: null, elapsedSec: elapsed };
-          this.refreshViews();
-        });
+      void poller.poll().then((pct) => {
+        if (this.unloaded) return;
+        if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
+          this.state.run = { kind: "generating", pct, elapsedSec: elapsed };
+        this.refreshViews();
+      });
     }, 1000);
     let succeeded = false;
     try {
