@@ -59,6 +59,14 @@ die Notizen bleiben stehen, weil sie erklaeren, warum diese Reste existieren.
   als unerreichbar zu melden. Diese Zeile nicht "vereinfachen".
 - **Ein Server ohne `/progress` ist kein Fehlerfall:** liefert er 404 oder eine fremde
   Form, faellt die Anzeige auf unbestimmt zurueck — der Lauf selbst bleibt gueltig.
+  Seit `598f050` fragt der `ProgressPoller` (`src/core/txt2img.ts`, eine Instanz pro Lauf)
+  nach dem **ersten 404 nicht mehr** — Draw Things kennt den Endpunkt nicht, und ~240
+  vergebliche Anfragen pro Bild sind Last auf einem rechnenden Server. Nur 404 schaltet ab;
+  Timeout und 5xx sind voruebergehend und pollen weiter. Nicht "vereinheitlichen".
+- **GUI-Smoke ohne echten Bild-Server:** `node scripts/mock-a1111.mjs` stellt die drei
+  Endpunkte auf Port 7861 (`/progress` → 404, zaehlt Anfragen in `.mock-a1111-counts.json`);
+  Plugin-Endpunkt darauf stellen, `npm run smoke:gui` fahren. Draw Things' API-Server ist ein
+  Schalter in der App-Oberflaeche — `open -a "Draw Things"` allein oeffnet Port 7860 nicht.
 - **Der Server bestimmt das Modell.** Das Plugin schickt generische Parameter und zeigt
   den gemeldeten Modellnamen als Statushinweis; es waehlt nie ein Modell aus.
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die

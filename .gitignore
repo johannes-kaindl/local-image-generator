@@ -7,3 +7,6 @@ main.js
 .superpowers/
 .worktrees/
 .shots.mjs
+
+# Zaehler des A1111-Mocks (scripts/mock-a1111.mjs)
+.mock-a1111-counts.json
