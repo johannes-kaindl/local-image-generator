@@ -40,6 +40,10 @@
  * ```bash
  * npm run smoke:gui -- --vault <name>
  * npm run smoke:gui -- --vault <name> --port 9222 --steps 8 --keep
+ * npm run smoke:gui -- --vault <name> --builtin                # + Punkte 13–16 (eingebaute Engine)
+ *   (braucht `npm run smoke:assets` in einem zweiten Terminal — lokaler Asset-Server auf 7862;
+ *    --assets <url> nennt eine andere Basis. Der Lauf löscht und lädt die Modell-Dateien des
+ *    Plugin-Caches neu — deshalb nur gegen den lokalen Server, nie gegen das HF-Repo.)
  * ```
  *
  * ⚠️ Chromium drosselt das Rendering nicht-fokussierter Fenster: ohne `Page.bringToFront`
@@ -51,7 +55,7 @@ import { execFileSync } from "node:child_process";
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
-import { Cdp, attachTo } from "../../tools/obsidian-cdp/cdp.js";
+import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 import { SIZES, STEPS } from "../src/core/generation";
 import { registerI18n } from "../src/i18n/strings";
 import { pickLang, setLang, t } from "../src/vendor/kit/i18n";
@@ -187,6 +191,170 @@ async function probeServer(endpoint: string): Promise<ServerProbe> {
   return { reachable: true, model };
 }
 
+/**
+ * Punkte 13–16: die eingebaute Engine — vom Modell-Download bis zur Ergebnis-Notiz. Läuft nach
+ * den Server-Punkten im selben Panel; die Settings (Ordner, createMode) stehen noch auf Smoke.
+ */
+async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs: number): Promise<void> {
+  const readyText = t("status.ready");
+  const engineState = () =>
+    cdp.evaluate<{ kind: string; file?: string; received?: number; total?: number; message?: string; reason?: string }>(
+      `return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].getEngineState();`,
+    );
+  const statusText = () =>
+    cdp.evaluate<string>(`const el = document.querySelector(".lig-status-text"); return el ? el.textContent.trim() : "";`);
+
+  // --- 13. Modus umstellen ---------------------------------------------------
+  await cdp.evaluate(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    p.settings.assetBaseUrl = ${JSON.stringify(assetsBase)};
+    await p.saveSettings();
+    await p.setEngine("builtin");
+    return true;
+  `);
+  let st = await pollUntil(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", 500);
+  if (st?.kind === "gpu-missing") {
+    record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16 gegenstandslos`);
+    for (const n of ["14. Download über den Panel-Knopf endet auf „bereit“", "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "16. Zurück auf „Server“ bringt die Regler zurück"])
+      skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
+    return;
+  }
+  // Ein vorhandener Download wird entfernt, damit Punkt 14 den echten Weg misst — erlaubt,
+  // weil die Quelle der lokale Server ist (siehe Kopfkommentar).
+  if (st?.kind === "ready") {
+    await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(); return true;`);
+    st = await pollUntil(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", 500);
+  }
+  const negHidden = await cdp.evaluate<boolean>(`return !!document.querySelector(".lig-negative-row")?.classList.contains("is-hidden");`);
+  const ctaLabel = await cdp.evaluate<string>(`const b = document.querySelector(".lig-empty button"); return b && !b.classList.contains("is-hidden") ? b.textContent.trim() : "";`);
+  const notDownloaded = t("status.notDownloaded");
+  const status13 = await statusText();
+  record(
+    "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
+    st?.kind === "not-downloaded" && status13 === notDownloaded && negHidden && ctaLabel !== "",
+    st?.kind !== "not-downloaded"
+      ? `Engine-Zustand ${JSON.stringify(st)}`
+      : `Status „${status13}" · Negativ-Prompt ausgeblendet: ${negHidden} · CTA „${ctaLabel}"`,
+  );
+  if (st?.kind !== "not-downloaded") {
+    skip("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
+    skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 13 nicht erreicht");
+    skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
+    return;
+  }
+
+  // --- 14. Download über den Panel-Knopf -------------------------------------
+  const t0 = Date.now();
+  await clickReal(cdp, `document.querySelector(".lig-empty button")`);
+  let sawProgress = false;
+  const done14 = await pollUntil(
+    async () => {
+      const e = await engineState();
+      if (e.kind === "downloading" && (e.received ?? 0) > 0) sawProgress = true;
+      return e;
+    },
+    // „not-downloaded" ist der STARTzustand — als Ende zählt er erst nach gesehenem Fortschritt
+    // (Abbruch). Gemessen 2026-08-19: ohne diese Bedingung endete der Prüfpunkt sofort rot.
+    (e) => e.kind === "ready" || e.kind === "error" || (sawProgress && e.kind === "not-downloaded"),
+    15 * 60_000,
+    "warte auf den Modell-Download",
+    1000,
+  );
+  const status14 = await statusText();
+  record(
+    "14. Download über den Panel-Knopf endet auf „bereit“",
+    done14?.kind === "ready" && sawProgress && status14 === readyText,
+    done14 === null
+      ? "Download nach 15 min nicht fertig"
+      : done14.kind === "ready"
+        ? `${Math.round((Date.now() - t0) / 1000)} s · Fortschritt gesehen: ${sawProgress} · Status „${status14}"`
+        : `Engine-Zustand ${JSON.stringify(done14)}`,
+  );
+  if (done14?.kind !== "ready") {
+    skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 14 nicht erreicht");
+    skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
+    return;
+  }
+
+  // --- 15. Bild + Notiz ------------------------------------------------------
+  const notesBefore = await cdp.evaluate<number>(`return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`);
+  await cdp.evaluate(`
+    const ta = document.querySelector(".lig-panel textarea.lig-prompt");
+    ta.value = ${JSON.stringify(SMOKE_PROMPT + ", built-in")}; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    const seed = document.querySelector(".lig-panel input.lig-seed");
+    seed.value = "4242"; seed.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  `);
+  const t1 = Date.now();
+  // Wie Punkt 7: es zählt nur ein NEUES Bild, nicht das aus dem Reroll von Punkt 11.
+  const imageBefore15 = await cdp.evaluate<string>(`const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`);
+  await clickReal(cdp, `document.querySelector(".lig-generate")`);
+  let sawLoading = false;
+  const image15 = await pollUntil(
+    async () => {
+      const r = await cdp.evaluate<{ length: number; status: string; sig: string }>(`
+        const img = document.querySelector(".lig-image");
+        const status = document.querySelector(".lig-status-text");
+        return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
+      `);
+      if (r.status.includes("GPU")) sawLoading = true;
+      return r;
+    },
+    (r) => (r.length > 5000 && r.sig !== imageBefore15 && r.status === readyText) || istFehler(r.status),
+    generateTimeoutMs,
+    "warte auf das Bild der eingebauten Engine",
+    500,
+  );
+  let note15: { model: string | null; steps: number | null } | null = null;
+  if (image15 !== null && !istFehler(image15.status)) {
+    const createLabel = t("generate.button.create");
+    await cdp.evaluate(`
+      const button = [...document.querySelectorAll(".lig-actions button")].find((b) => b.textContent.trim() === ${JSON.stringify(createLabel)});
+      if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
+      button.click(); return true;
+    `);
+    const body = await pollUntil(
+      () =>
+        cdp.evaluate<string | null>(`
+          const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
+          if (files.length <= ${notesBefore}) return null;
+          files.sort((a, b) => b.stat.ctime - a.stat.ctime);
+          return await app.vault.cachedRead(files[0]);
+        `),
+      (b) => b !== null,
+      60_000,
+      "warte auf die Ergebnis-Notiz",
+      1000,
+    );
+    if (body) {
+      const model = body.match(/^model:\s*(.+)$/m)?.[1]?.trim() ?? null;
+      const stepsRaw = body.match(/^steps:\s*(\d+)$/m)?.[1];
+      note15 = { model, steps: stepsRaw ? Number(stepsRaw) : null };
+    }
+  }
+  record(
+    "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
+    image15 !== null && !istFehler(image15.status) && note15?.model === "sd-turbo" && (note15.steps ?? 99) <= 4,
+    image15 === null
+      ? "kein Bild innerhalb der Frist"
+      : istFehler(image15.status)
+        ? `Lauf gescheitert, gemeldet vom Plugin: „${image15.status}"`
+        : `${Math.round((Date.now() - t1) / 1000)} s · ${Math.round(image15.length / 1024)} KB · Ladephase gesehen: ${sawLoading} · Notiz: ${JSON.stringify(note15)}`,
+  );
+
+  // --- 16. Zurück auf Server -------------------------------------------------
+  await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].setEngine("server"); return true;`);
+  await new Promise((r) => setTimeout(r, 1000));
+  const back = await cdp.evaluate<{ neg: boolean; cfg: boolean; max: string }>(`
+    return {
+      neg: !document.querySelector(".lig-negative-row")?.classList.contains("is-hidden"),
+      cfg: !document.querySelector(".lig-cfg")?.classList.contains("is-hidden"),
+      max: document.querySelector(".lig-steps")?.max ?? "",
+    };
+  `);
+  record("16. Zurück auf „Server“ bringt die Regler zurück", back.neg && back.cfg && back.max === String(STEPS.max), `Negativ ${back.neg} · CFG ${back.cfg} · Steps-Max ${back.max}`);
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const flag = (name: string): string | undefined => {
@@ -196,6 +364,8 @@ async function main(): Promise<void> {
   const port = Number(flag("port") ?? 9222);
   const keep = argv.includes("--keep");
   const quick = argv.includes("--quick");
+  const builtin = argv.includes("--builtin");
+  const assetsBase = flag("assets") ?? "http://127.0.0.1:7862";
   const vault = flag("vault");
   // Wenige Steps und die kleinste Größe: der Smoke prüft die Kette, nicht die Bildqualität.
   // Bei FLUX.2 dev kostet der Default (20) rund vier Minuten pro Bild — zweimal im Lauf.
@@ -218,7 +388,7 @@ async function main(): Promise<void> {
 
   // Alle Vorwerte AUSSERHALB des try: das finally muss sie auch nach einem Abbruch mitten
   // im Lauf zurückschreiben können — sonst bliebe der Vault im Smoke-Zustand stehen.
-  let previous: { createMode: string; outputFolder: string; noteFolder: string; history: unknown[] } | null = null;
+  let previous: { createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string } | null = null;
   let createdFolder = false;
 
   try {
@@ -284,18 +454,24 @@ async function main(): Promise<void> {
     // --- Szene herstellen ---------------------------------------------------
     // Ausgabe in einen eigenen Ordner lenken und createMode auf "note" stellen, damit
     // Punkt 8 die Ergebnis-Notiz überhaupt zu sehen bekommt. Vorwerte gemerkt (finally).
-    previous = await cdp.evaluate<{ createMode: string; outputFolder: string; noteFolder: string; history: unknown[] }>(`
+    // Punkte 1–11 messen den Server-Pfad; die eingebaute Engine kommt in 13–16 dran. Der Modus
+    // wird deshalb hier auf „server" gestellt und im finally zurückgeschrieben (setEngine räumt
+    // GPU-Sessions ab und prüft den Server neu — genau wie ein Klick im Dropdown).
+    previous = await cdp.evaluate<{ createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
       const before = {
         createMode: p.settings.createMode,
         outputFolder: p.settings.outputFolder,
         noteFolder: p.settings.noteFolder,
         history: JSON.parse(JSON.stringify(p.settings.history)),
+        engine: p.settings.engine,
+        assetBaseUrl: p.settings.assetBaseUrl,
       };
       p.settings.createMode = "note";
       p.settings.outputFolder = ${JSON.stringify(SMOKE_FOLDER)};
       p.settings.noteFolder = ${JSON.stringify(SMOKE_FOLDER)};
       await p.saveSettings();
+      if (p.settings.engine !== "server") await p.setEngine("server");
       return before;
     `);
 
@@ -589,6 +765,13 @@ async function main(): Promise<void> {
     } else {
       // --- 5. Der Lauf startet sichtbar ---------------------------------------
       const readyText = t("status.ready");
+      // Stand des Bildes VOR dem Klick: Punkt 7 muss ein NEUES Bild sehen, nicht das aus dem
+      // vorigen Lauf, das die Karte noch zeigt, wenn das Plugin zwischen zwei Läufen nicht neu
+      // geladen wurde. Gemessen 2026-08-19: ohne diesen Vergleich war 7 sofort grün, 8 las die
+      // Notiz des alten Bildes (model: sd-turbo statt des Mock-Servers) und 10 klickte in eine
+      // Historie, in der der neue Lauf noch gar nicht angekommen war — dieselbe Falle wie beim
+      // Aufnahme-Rezept am 2026-08-17 („ist ein Bild da" ≠ „ist ein NEUES Bild da").
+      const imageBefore = await cdp.evaluate<string>(`const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`);
       const started = await cdp.evaluate<string | null>(`
         document.querySelector(".lig-generate").click();
         ${waitFor(
@@ -631,7 +814,7 @@ async function main(): Promise<void> {
       // --- 7. Das Bild kommt an ------------------------------------------------
       const image = await pollUntil(
         () =>
-          cdp.evaluate<{ visible: boolean; length: number; status: string }>(`
+          cdp.evaluate<{ visible: boolean; length: number; status: string; sig: string }>(`
             const card = document.querySelector(".lig-card");
             const img = document.querySelector(".lig-image");
             const status = document.querySelector(".lig-status-text");
@@ -639,6 +822,7 @@ async function main(): Promise<void> {
               visible: !!card && !card.classList.contains("is-hidden"),
               length: img && img.src.startsWith("data:image/png") ? img.src.length : 0,
               status: status ? status.textContent.trim() : "",
+              sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "",
             };
           `),
         // Zwei Ausgänge, nicht einer: das Bild ODER ein gemeldeter Fehlschlag. Ohne den
@@ -647,7 +831,7 @@ async function main(): Promise<void> {
         // sichtbar in der Statuszeile stand. Die Wartezeit war nicht das Schlimmste daran:
         // „kein Bild innerhalb der Frist" liest sich wie ein langsamer Server und verschweigt,
         // dass der Prüfling den Grund die ganze Zeit angezeigt hat.
-        (r) => (r.visible && r.length > 5000) || istFehler(r.status),
+        (r) => (r.visible && r.length > 5000 && r.sig !== imageBefore) || istFehler(r.status),
         generateTimeoutMs,
         "warte auf das Bild",
       );
@@ -787,6 +971,26 @@ async function main(): Promise<void> {
         console.log("    ⚠️ Der Reroll-Lauf war nach der Frist noch aktiv — die Historie kann einen Extra-Eintrag behalten.");
       }
     }
+
+    // --- 13–16. Die eingebaute Engine (Spec 0.6) ------------------------------
+    // Nur mit --builtin und nur gegen einen erreichbaren lokalen Asset-Server: der Block löscht
+    // die Modell-Dateien aus dem Plugin-Cache und lädt sie neu (2,5 GB) — gegen das HF-Repo
+    // wäre das ein Missbrauch der Leitung, gegen den lokalen Server dauert es rund eine Minute.
+    if (!builtin) {
+      console.log("\n(ohne --builtin: Punkte 13–16 übersprungen — sie brauchen den lokalen Asset-Server)");
+    } else if (quick) {
+      console.log("\n(--quick: Punkte 13–16 übersprungen — sie brauchen Download und Generierung)");
+    } else {
+      const assetsUp = await fetch(`${assetsBase.replace(/\/+$/, "")}/sd-turbo/tokenizer/vocab.json`, { method: "HEAD", signal: AbortSignal.timeout(3000) })
+        .then((r) => r.status === 200)
+        .catch(() => false);
+      if (!assetsUp) {
+        for (const n of ["13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", "14. Download über den Panel-Knopf endet auf „bereit“", "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "16. Zurück auf „Server“ bringt die Regler zurück"])
+          skip(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);
+      } else {
+        await runBuiltinChecks(cdp, assetsBase, generateTimeoutMs);
+      }
+    }
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.
@@ -800,7 +1004,9 @@ async function main(): Promise<void> {
           p.settings.outputFolder = before.outputFolder;
           p.settings.noteFolder = before.noteFolder;
           p.settings.history = before.history;
+          p.settings.assetBaseUrl = before.assetBaseUrl;
           await p.saveSettings();
+          if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
           p.refreshViews();
           return true;
         `)

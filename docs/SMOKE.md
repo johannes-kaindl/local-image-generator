@@ -36,11 +36,20 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
    OBSIDIAN_PLUGIN_DIR="<vault>/.obsidian/plugins/local-image-generator" npm run deploy
    ```
 
+4. **Für die eingebaute Engine (Punkte 13–16, seit 0.6) ein lokaler Asset-Server** — in einem
+   zweiten Terminal `npm run smoke:assets` (serviert `dist-assets/`, also die eigene Konversion
+   aus `tools/convert-sd-turbo.sh` plus ORT-WASM, auf `http://127.0.0.1:7862` mit CORS). Die
+   Punkte laufen nur mit `--builtin` **und** erreichbarem Asset-Server; sie **löschen die
+   Modell-Dateien aus dem Plugin-Cache und laden sie neu** (2,5 GB) — deshalb nie gegen das
+   HF-Repo, sondern nur gegen diesen Server. Der Server-Teil (1–11) läuft ohne Bild-Server
+   gegen `node scripts/mock-a1111.mjs` (Port 7861, Plugin-Endpunkt darauf stellen).
+
 Dann:
 
 ```bash
 npm run smoke:gui -- --vault <vault-name>
 npm run smoke:gui -- --vault <name> --steps 8 --timeout 1200 --keep
+npm run smoke:gui -- --vault <name> --builtin          # + 13–16, braucht npm run smoke:assets
 ```
 
 `--steps` (Default 4) und die fest kleinste Größe halten den Lauf kurz: geprüft wird die
@@ -62,6 +71,10 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 10 | Historien-Klick stellt Prompt **und** Seed her | Jays 0.2-Befund („merkt sich nur den Prompt") |
 | 11 | „Reroll" würfelt neu und startet | der Knopf, der sich vom Nachbarn unterscheiden muss |
 | 12 | Die Einstellungen erscheinen in der Settings-**Suche** | der Store-Linter prüft nur, DASS `getSettingDefinitions()` existiert — nicht, ob die Zeilen beim Nutzer ankommen |
+| 13 | Engine auf „Eingebaut" — Panel zeigt den Modellzustand, Negativ-Prompt weg, CTA da | der Moduswechsel muss die Regler ehrlich machen (Spec 0.6 §6) |
+| 14 | Download über den **Panel**-Knopf endet auf „bereit" | der Zero-Setup-Weg darf nicht in den Settings versteckt sein; Fortschritt muss sichtbar sein |
+| 15 | Die eingebaute Engine liefert ein Bild, die Notiz trägt `model: sd-turbo` und `steps ≤ 4` | Ende-zu-Ende ohne Server: Ladephase, Schritte, Rezept-Ehrlichkeit |
+| 16 | Zurück auf „Server" bringt die Regler zurück | der Wechsel darf nichts hinterlassen |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -102,6 +115,10 @@ Alles davon wird vorher gemerkt und im `finally` zurückgeschrieben — auch nac
 - `createMode` → `"note"` (sonst gäbe es keine Notiz zu prüfen)
 - `outputFolder` / `noteFolder` → `_lig-gui-smoke`
 - **die Historie** — der Lauf schreibt zwei Einträge, die niemand bestellt hat
+- `engine` → `"server"` für 1–11 (und zurück), mit `--builtin` außerdem `assetBaseUrl` → der
+  lokale Asset-Server; **der Modell-Cache** der eingebauten Engine wird in Punkt 13 geleert und
+  in 14 neu gefüllt — er wird NICHT zurückgesetzt (ein Wiederholungslauf überspringt den Download
+  nicht, weil 13 ihn wieder leert; das ist Absicht: 14 misst den echten Weg)
 
 Der Ordner `_lig-gui-smoke` wird angelegt und gelöscht. **Existiert er bereits, bricht der
 Treiber ab** statt zu löschen: ein vorgefundener Ordner könnte fremde Dateien tragen.
@@ -113,6 +130,27 @@ aufräumen wollte.
 ## Durchläufe
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
+
+### 2026-08-19 · 0.6.0-dev · Obsidian 1.12.4 (Electron 39) · A1111-Mock + lokaler Asset-Server · **16/16 grün**
+
+Erster Lauf mit den Punkten 13–16 (eingebaute Engine, Spec 0.6). Baseline: 12/12 vom
+2026-08-18 (`598f050`). Server-Teil gegen `scripts/mock-a1111.mjs`, Engine-Teil gegen
+`scripts/mock-assets.mjs` mit der eigenen SD-Turbo-Konversion. Gemessen: Download + SHA-256 der
+2,5 GB in 30 s (lokal), Bild der eingebauten Engine in 10 s (warm; kalt 19,5 s mit 8 s
+Modell-Laden), Notiz `model: sd-turbo`, `steps: 4`. Der Lauf wurde **ohne** Plugin-Reload
+zwischen zwei Läufen gefahren — absichtlich der härteste Fall.
+
+Drei Befunde in den Prüfwerkzeugen, keiner im Plugin:
+
+1. **Punkt 14 endete sofort rot**, weil das Poll-Prädikat `not-downloaded` als Endzustand nahm —
+   das war der **Start**zustand. Jetzt gilt er erst nach gesehenem Fortschritt (Abbruch) als Ende.
+2. **Punkt 7 nahm das Bild des vorigen Laufs.** Ohne Reload zeigt die Karte noch das letzte Bild;
+   „ist ein Bild da" war grün, bevor der neue Lauf fertig war — 8 las die alte Notiz-Quelle
+   (`model: sd-turbo` statt Mock), 10 klickte in eine Historie ohne den neuen Eintrag. Dieselbe
+   Falle wie beim Aufnahme-Rezept am 2026-08-17. Punkt 7 und 15 verlangen jetzt ein **neues** Bild
+   (Signatur vor dem Klick gemerkt).
+3. **Der A1111-Mock lieferte für jeden Seed dieselben Bytes** — damit gab es nie ein „neues" Bild,
+   Punkt 7 saß die Frist ab. Der Mock ist jetzt seed-treu wie ein echter Server.
 
 ### 2026-08-17 · 0.5.2 · Obsidian 1.13.7 · Draw Things, FLUX.2 klein 9B · **12/12 grün**
 

@@ -1,7 +1,7 @@
 // A1111-Mock für den GUI-Smoke ohne echten Bild-Server (Ersatz-Abnahme, 2026-08-18).
 // Kennt die drei Endpunkte, die das Plugin nutzt: /options (Modellname), /progress
 // (404 wie Draw Things — Anfragen werden gezählt), /txt2img (wartet DELAY_MS, liefert ein
-// 256×256-Rausch-PNG, groß genug für Smoke-Punkt 7). Zähler landen in .mock-a1111-counts.json.
+// 256×256-Rausch-PNG aus dem Seed der Anfrage, groß genug für Smoke-Punkt 7). Zähler landen in .mock-a1111-counts.json.
 //
 //   node scripts/mock-a1111.mjs                # Port 7861
 //   MOCK_PORT=7862 MOCK_DELAY_MS=3000 node scripts/mock-a1111.mjs
@@ -31,9 +31,8 @@ function chunk(type, data) {
   const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([t, data])));
   return Buffer.concat([len, t, data, crc]);
 }
-function noisePng(size = 256) {
-  let seed = 7;
-  const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) & 0xff;
+function noisePng(size = 256, seed = 7) {
+  const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 16) & 0xff;
   const rows = [];
   for (let y = 0; y < size; y++) {
     const row = Buffer.alloc(1 + size * 3);
@@ -49,7 +48,9 @@ function noisePng(size = 256) {
   ]).toString("base64");
 }
 
-const png = noisePng();
+// Seed-treu wie ein echter Server: anderer Seed → anderes Bild. Sonst sähe ein Prüfpunkt,
+// der auf ein NEUES Bild wartet (Smoke 7/15), nie eines (gemessen 2026-08-19).
+const pngFor = (seed) => noisePng(256, Number.isFinite(seed) ? seed : 7);
 const counts = { options: 0, progress: 0, txt2img: 0 };
 const persist = () => writeFileSync(COUNTS_FILE, JSON.stringify(counts));
 const json = (res, status, body) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
@@ -60,7 +61,13 @@ http.createServer((req, res) => {
   if (path === "/sdapi/v1/progress") { counts.progress++; persist(); return json(res, 404, { detail: "Not Found" }); }
   if (path === "/sdapi/v1/txt2img") {
     counts.txt2img++; persist();
-    req.on("data", () => {}); req.on("end", () => setTimeout(() => json(res, 200, { images: [png] }), DELAY_MS));
+    let body = "";
+    req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      let seed = 7;
+      try { seed = Number(JSON.parse(body).seed); } catch { /* kein JSON → Default */ }
+      setTimeout(() => json(res, 200, { images: [pngFor(seed)] }), DELAY_MS);
+    });
     return;
   }
   res.writeHead(404); res.end();
