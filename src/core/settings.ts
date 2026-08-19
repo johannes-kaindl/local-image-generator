@@ -2,6 +2,9 @@
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
+import { DEFAULT_ASSET_BASE_URL } from "./model-manifest";
+
+export type EngineChoice = "builtin" | "server";
 
 /** Ein Stil-Baustein, der per Chip an den Prompt gehängt wird. */
 export interface StylePreset {
@@ -30,6 +33,15 @@ export interface HistoryEntry {
 }
 
 export interface LigSettings {
+  /** Welches Backend Bilder erzeugt (Spec 0.6 §2/§6): die eingebaute SD-Turbo-Engine (WebGPU,
+   *  Modell per Klick nachgeladen — Default, zero-setup) oder ein lokaler A1111-kompatibler
+   *  Server (Draw Things, A1111, Forge, SD.Next). Bestandsnutzer mit Endpunkt landen per
+   *  migrateSettings() im Server-Modus. */
+  engine: EngineChoice;
+  /** Basis-URL der Modell-/Runtime-Assets für den Download (Spec 0.6 §3). Default ist das
+   *  eigene HF-Repo; änderbar für Spiegel oder einen lokalen Server (GUI-Smoke). Der Cache
+   *  hängt nicht an der URL (cacheKey ist hash-gebunden). */
+  assetBaseUrl: string;
   outputFolder: string;
   noteFolder: string;
   /** URL des lokalen Bild-Servers (A1111-kompatibel), z. B. "http://127.0.0.1:7860". */
@@ -71,6 +83,8 @@ export const DEFAULT_PRESETS: StylePreset[] = [
 ];
 
 export const DEFAULT_SETTINGS: LigSettings = {
+  engine: "builtin",
+  assetBaseUrl: DEFAULT_ASSET_BASE_URL,
   outputFolder: "",
   noteFolder: "",
   endpoint: "",
@@ -153,6 +167,27 @@ function sanitizeSelectedModel(raw: unknown): string {
   return typeof raw === "string" ? raw : "";
 }
 
+function sanitizeEngine(raw: unknown): EngineChoice {
+  return raw === "server" ? "server" : "builtin";
+}
+
+function sanitizeAssetBaseUrl(raw: unknown): string {
+  const v = typeof raw === "string" ? raw.trim() : "";
+  return v === "" ? DEFAULT_ASSET_BASE_URL : v;
+}
+
+/** 0.5 → 0.6 (Spec 0.6 §8): das Feld `engine` ist neu. Fehlt es, bleibt ein Nutzer mit
+ *  eingetragenem Endpunkt im Server-Modus — niemand verliert seine Konfiguration; alle anderen
+ *  bekommen die eingebaute Engine (Zero-Setup-Default). Läuft VOR mergeSettings, sonst hätte
+ *  der Default "builtin" die Entscheidung schon getroffen. Pure. */
+export function migrateSettings(raw: unknown): unknown {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const s = raw as Record<string, unknown>;
+  if (s["engine"] !== undefined) return raw;
+  const endpoint = typeof s["endpoint"] === "string" ? s["endpoint"].trim() : "";
+  return { ...s, engine: endpoint !== "" ? "server" : "builtin" };
+}
+
 /** Bereinigt einen geladenen Settings-Stand (Spec §8): handeditierte oder korrupte
  *  `data.json` darf nicht in vier verschiedenen Renderstellen (Chips, Preset-Editor,
  *  Collapsible-Storage, Historie-Push) auf falsche Formannahmen treffen. Fällt Feld für
@@ -163,6 +198,8 @@ export function sanitizeSettings(raw: unknown): LigSettings {
   // Input zu misstrauen — die Feld-Sanitizer erwarten daher alle `unknown`.
   const s = (raw ?? {}) as Record<string, unknown>;
   return {
+    engine: sanitizeEngine(s.engine),
+    assetBaseUrl: sanitizeAssetBaseUrl(s.assetBaseUrl),
     outputFolder: sanitizeFolder(s.outputFolder),
     noteFolder: sanitizeFolder(s.noteFolder),
     endpoint: sanitizeFolder(s.endpoint),

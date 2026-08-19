@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mergeSettings } from "../src/vendor/kit/settings";
-import { DEFAULT_SETTINGS, DEFAULT_PRESETS, sanitizeSettings, type LigSettings } from "../src/core/settings";
+import { DEFAULT_SETTINGS, DEFAULT_PRESETS, migrateSettings, sanitizeSettings, type LigSettings } from "../src/core/settings";
+import { DEFAULT_ASSET_BASE_URL } from "../src/core/model-manifest";
 
 describe("settings", () => {
   it("liefert Defaults bei null/undefined raw", () => {
@@ -40,6 +41,8 @@ describe("settings", () => {
 describe("sanitizeSettings (Spec §8)", () => {
   it("lässt einen gesunden Settings-Stand unverändert durch", () => {
     const healthy: LigSettings = {
+      engine: "server",
+      assetBaseUrl: "http://127.0.0.1:7862",
       outputFolder: "Art",
       noteFolder: "Inbox",
       defaultSteps: 2,
@@ -251,5 +254,26 @@ describe("Historie-Migration 0.5 (negativePrompt/cfg)", () => {
       ],
     });
     expect(s.history[0]).toMatchObject({ negativePrompt: "ugly", cfg: 9 });
+  });
+});
+
+describe("engine-Migration (0.6)", () => {
+  it("fehlt engine und ein Endpunkt ist gesetzt → server (0.5-Nutzer bleiben, wo sie sind)", () => {
+    const s = sanitizeSettings(migrateSettings({ endpoint: "http://127.0.0.1:7860" }));
+    expect(s.engine).toBe("server");
+  });
+  it("fehlt engine ohne Endpunkt → builtin (Zero-Setup-Default)", () => {
+    expect(sanitizeSettings(migrateSettings({})).engine).toBe("builtin");
+    expect(sanitizeSettings(migrateSettings(null)).engine).toBe("builtin");
+  });
+  it("vorhandenes engine bleibt; Unsinn fällt auf builtin zurück", () => {
+    expect(sanitizeSettings(migrateSettings({ engine: "server" })).engine).toBe("server");
+    expect(sanitizeSettings(migrateSettings({ engine: "builtin", endpoint: "http://x" })).engine).toBe("builtin");
+    expect(sanitizeSettings({ engine: "toaster" }).engine).toBe("builtin");
+  });
+  it("assetBaseUrl: Default ist das HF-Repo, Leerstring fällt auf Default, Trailing-Slash bleibt roh (assetUrl normalisiert)", () => {
+    expect(sanitizeSettings({}).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
+    expect(sanitizeSettings({ assetBaseUrl: "  " }).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
+    expect(sanitizeSettings({ assetBaseUrl: "http://127.0.0.1:7862/" }).assetBaseUrl).toBe("http://127.0.0.1:7862/");
   });
 });
