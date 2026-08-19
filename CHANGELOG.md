@@ -8,6 +8,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The built-in engine is back — without any external software.** A new **Engine**
+  setting chooses between *Built-in (SD-Turbo)* and *Server (Draw Things / A1111)*.
+  Built-in is the default for new installs: SD-Turbo runs on your GPU inside Obsidian
+  through onnxruntime-web/WebGPU. The model (≈ 2.5 GB: text encoder, UNet, VAE decoder,
+  tokenizer) plus the ONNX Runtime WASM are downloaded **only when you click Download**
+  — from the panel or the settings — streamed into the browser's Cache API outside your
+  vault, and every file is verified against a SHA-256 pinned in the plugin before use.
+  Cancel keeps finished files; **Remove** deletes them all. The model files are the
+  plugin's **own ONNX conversion** of the official `stabilityai/sd-turbo` weights (fp16
+  weights, fp32 inputs/outputs; `tools/convert-sd-turbo.sh`, reproducible, no
+  third-party conversion) under the Stability AI Community License, published in the
+  plugin's model repository on Hugging Face together with license and notice.
+  Measured on an M5 Pro: first image 19.5 s (8 s of that is loading the model into
+  the GPU, shown as its own phase), warm images in about 10 s.
+- In built-in mode the panel shows only what SD-Turbo honours — prompt, steps (1–4),
+  seed, style chips — and hides negative prompt, CFG and the size picker; the result
+  note records `model: sd-turbo`, `cfg: 1` and 512 × 512. Switching to a server brings
+  the full controls back.
+- **Advanced → Download source** lets you point the model download at a mirror or a
+  local server; downloaded files stay valid regardless of the URL.
+- Existing 0.5 users with a server endpoint configured stay in server mode after the
+  update; everyone else starts with the built-in engine.
+- The GUI smoke gained four checks for the built-in engine (mode switch, download via
+  the panel button, image + note with `model: sd-turbo`, switching back) — run against
+  a local asset server (`npm run smoke:assets`) with the plugin's own conversion.
 - The README now shows the plugin instead of describing it: a full-window shot with a
   generated image, the generator panel, the style chips, the history list, a result note
   with its recipe in the frontmatter, and the settings tab. All six are produced by

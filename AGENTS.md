@@ -9,21 +9,32 @@ Conventions for AI assistants working in this repo.
 ## What this is
 
 Obsidian community plugin: eine **Oberflaeche** fuer Bilderzeugung (Prompt, Stil-Chips,
-Verlauf, Ablage im Vault) vor einem **externen, lokalen Bild-Server**, den der Nutzer
-selbst betreibt — Draw Things, AUTOMATIC1111, Forge oder SD.Next ueber deren gemeinsame
-A1111-kompatible HTTP-API. **Das Plugin erzeugt selbst keine Bilder** und laedt keine
-Modellgewichte: dem Server gehoeren Modell und Hardware, dem Plugin die Bedienung.
-Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History).
+Verlauf, Ablage im Vault) vor **zwei austauschbaren Backends** (seit 0.6, Spec im Cockpit
+`_SDD/2026-08-19-eingebaute-engine-zwei-backends-design.md`):
 
-**Bis 0.4 war das anders** — da lief SD-Turbo per onnxruntime-web im Prozess, spaeter
-zusaetzlich mflux als Kindprozess. Beides ist mit 0.5 entfallen; was davon noch im Code
-steht, ist Aufraeumen (`src/obsidian/legacy-cache.ts`) oder totes Settings-Feld
-(`mfluxPath`, dokumentiert in `src/core/settings.ts`). Details unter *Historie* unten —
-die Notizen bleiben stehen, weil sie erklaeren, warum diese Reste existieren.
+- **Eingebaut (Default):** SD-Turbo im Renderer ueber `onnxruntime-web/webgpu`. Modell
+  (eigene fp16-ONNX-Konversion, ~2,5 GB) + ORT-WASM werden **nur nach Klick** aus dem
+  eigenen HF-Repo in die Cache API gestreamt, SHA-256 gegen das generierte Manifest
+  geprueft. 512 px, Steps 1–4, kein Negativ/CFG (Keine-Attrappen-Linie).
+- **Server:** Draw Things, AUTOMATIC1111, Forge oder SD.Next ueber deren gemeinsame
+  A1111-kompatible HTTP-API — dem Server gehoeren Modell und Hardware, volle Regler.
+
+Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History). Beide Backends
+implementieren `ImageBackend` (`src/core/txt2img.ts`); `main.ts` routet nach
+`settings.engine`. **Bis 0.4 lief eine aeltere Fassung der Engine im Prozess (plus mflux als
+Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; die Reste
+(`legacy-cache.ts` fuer die 0.4-Gewichte, totes Settings-Feld `mfluxPath`) bleiben erklaert.
 
 ## Workflow conventions
 
-- **Gate:** `npm run gate` (typecheck + vitest + check:pure + build) — vor jedem Commit grün.
+- **Gate:** `npm run gate` (typecheck + check:manifest + vitest + lint + check:pure + build +
+  check:clean) — vor jedem Commit grün.
+- **Assets (eingebaute Engine):** `tools/convert-sd-turbo.sh` (uv-Venv, optimum + ORT-fp16-
+  Konverter) erzeugt `dist-assets/` (gitignored), `npm run assets` hasht sie und schreibt
+  `src/core/engine-manifest.generated.ts` (**nie von Hand**), `npm run assets:verify` prueft
+  I/O-Namen/Dtypes/Shapes mit onnxruntime-node, `npm run assets:upload` laedt ins HF-Repo.
+  Nach jedem `onnxruntime-web`-Upgrade: `npm run assets` + Manifest mitcommitten, WASM neu
+  hochladen — `check:manifest` bricht sonst das Gate.
 - **Pure-Core-Schnitt:** `src/core/` und `src/vendor/kit/` importieren NIE `obsidian`
   (Gate: `scripts/check-pure.mjs`). `src/obsidian/legacy-cache.ts` ist browser-API-only
   (Cache API), ebenfalls obsidian-frei — nicht vom Gate erfasst, manuell halten.
@@ -50,7 +61,32 @@ die Notizen bleiben stehen, weil sie erklaeren, warum diese Reste existieren.
 
 ## Architecture notes / Gotchas
 
-- **Drei Endpunkte, mehr nicht:** `POST /sdapi/v1/txt2img` erzeugt,
+- **WASM-Paarung (wieder aktiv seit 0.6):** das ORT-WASM-Binary MUSS zum Glue des importierten
+  Bundles passen — `onnxruntime-web/webgpu` referenziert `ort-wasm-simd-threaded.asyncify.wasm`,
+  nicht jsep. Falsche Paarung = stiller Ewig-Haenger. `scripts/build-assets.mjs` liest den
+  Namen aus dem Bundle und hasht genau diese Datei; `check:manifest` bewacht es.
+- **Feeds an die Session anpassen, nie hardcoden:** `Session.inputTypes` (Dtype) UND
+  `Session.inputShapes` (Rang). Die eigene Konversion deklariert `timestep` als 0-d-Skalar
+  (`shape []`) — `dims [1]` bricht das UNet mit „Gemm: must be 2 dimensional" (gemessen
+  2026-08-19, erster Live-Lauf). `scripts/verify-model.mjs` zeigt Dtypes + Shapes.
+- **Download per `activeWindow.fetch` + `tee()`, nicht XHR** (`src/obsidian/model-store.ts`):
+  speicherkonstantes Streaming einer 1,7-GB-Datei in die Cache API geht nur mit
+  ReadableStream; XHR hielte alles im Puffer. PROF-OBS-12-Fall „unvermeidbar", Store-Linter
+  bestaetigt (globales `fetch` bleibt gebannt). SHA-256 laeuft chunkweise im Stream
+  (`src/core/sha256.ts`, ~200 MB/s).
+- **Cache-Namen nicht verwechseln:** 0.6-Assets liegen in `local-image-generator-assets` mit
+  hash-gebundenen, URL-unabhaengigen Schluesseln; `legacy-cache.ts` loescht weiterhin nur
+  `local-image-generator-models` (0.4). Die zwei kollidieren nicht.
+- **`new Function(` im Bundle ist die ORT-Glue (Emscripten-embind)** — BEHAVIOR-Disclosure
+  einer gebuendelten Dependency, notenneutral (publishing.md); `check-clean` laesst es
+  begruendet zu, `eval(` bleibt verboten. Bundle ~175 KB.
+- **ORT nimmt den eingebetteten Glue-Pfad nur mit gesetztem `env.wasm.wasmBinary` und
+  `numThreads = 1`** — sonst versucht es `import()` einer URL (Code-Nachladen). `initOrt()`
+  muss vor der ersten Session laufen (`ort-host.ts` wirft sonst).
+- **Settings-Tab: bedingte Zeilen weglassen, nicht `visible:false`** — Obsidian 1.13 cacht
+  `getSettingDefinitions()` und wertet Praedikate nicht neu aus; nach Modus-/Zustandswechsel
+  `refreshUi()` (gemessen 2026-08-19: Server-Zeile blieb im builtin-Modus stehen).
+- **Drei Endpunkte, mehr nicht (Server-Modus):** `POST /sdapi/v1/txt2img` erzeugt,
   `GET /sdapi/v1/progress` liefert den Fortschritt (1-s-Polling), `GET /sdapi/v1/options`
   nennt das aktive Modell und dient als Verbindungstest. Alles Weitere gehoert dem
   Server, nicht uns.
@@ -72,10 +108,12 @@ die Notizen bleiben stehen, weil sie erklaeren, warum diese Reste existieren.
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
   Provider-API 0.2 rastet darauf ein.
 
-## Historie: die in-process-Engine (bis 0.4)
+## Historie: die in-process-Engine (bis 0.4) und der Thin-Client (0.5)
 
-Ueberholt seit 0.5 (Thin-Client). Steht hier, weil es die Reste im Code erklaert und
-weil eine spaetere eigene Engine dieselben Fallen wiederfaende:
+0.5 hatte die Engine ganz entfernt (Store-Warnungen durch `child_process`/`fs`/34-MB-Bundle);
+0.6 hat sie **im Renderer** zurueckgeholt — ohne mflux, ohne Inline-WASM, mit Assets vom eigenen
+HF-Repo (Spike 2026-08-19: Nachladen kostet nur `info`). Die Notizen unten bleiben, weil die
+zurueckgeholte Pipeline genau diese Fallen traegt:
 
 - **WASM-Paarung:** Die inline gebundelte ORT-WASM-Variante MUSS zum Glue des importierten
   Bundles passen. ORT 1.27 `onnxruntime-web/webgpu` → `asyncify`, NICHT `jsep`. Falsche
