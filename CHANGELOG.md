@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-19
+
 ### Added
 
 - **The built-in engine is back — without any external software.** A new **Engine**
