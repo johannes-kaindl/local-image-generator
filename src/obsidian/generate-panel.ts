@@ -32,7 +32,7 @@ export class GeneratePanel implements HubPanel {
   private emptyEl!: HTMLElement;
   private emptyTextEl!: HTMLElement;
   private emptyCtaEl!: HTMLButtonElement;
-  private emptyCtaAction: "settings" | "recheck" | undefined;
+  private emptyCtaAction: "settings" | "recheck" | "download" | "cancel-download" | undefined;
   private imageCard!: HTMLElement;
   private imgEl!: HTMLImageElement;
   private regenBtn!: HTMLButtonElement;

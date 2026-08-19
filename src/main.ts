@@ -32,6 +32,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // verhindern nur die späte Nebenwirkung.
   private unloaded = false;
   private state: PanelState = {
+    mode: "server", // in onload aus settings.engine gesetzt
+    engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
     run: { kind: "idle" },
     image: null,
