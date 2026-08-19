@@ -1,0 +1,108 @@
+import { describe, expect, it } from "vitest";
+import type { Session } from "../src/core/engine";
+import { BUILTIN_MODEL, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
+import { LocalEngineBackend, type LocalEngineDeps } from "../src/obsidian/local-engine";
+import type { ModelStore } from "../src/obsidian/model-store";
+
+// Fake-Sessions wie in tests/engine.test.ts — fp32-IO (unsere Konversion), int64-ids.
+function fakeSession(inputs: string[], out: string, dims: number[], type: Record<string, string>): Session {
+  return {
+    inputNames: inputs,
+    outputNames: [out],
+    inputTypes: type,
+    run: async () => ({ [out]: { data: new Float32Array(dims.reduce((a, b) => a * b, 1)), dims } }),
+    release: async () => {},
+  };
+}
+
+function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
+  const state = { released: 0 };
+  const store = {
+    getBuffer: async (f: AssetFile) => { log.push(`buffer:${f.key}`); return new ArrayBuffer(8); },
+    getText: async (f: AssetFile) => { log.push(`text:${f.key}`); return f.key === "vocab" ? JSON.stringify({ "cat</w>": 1 }) : "#version\n"; },
+  } as unknown as ModelStore;
+  const deps: LocalEngineDeps & { released: number } = {
+    store,
+    initRuntime: () => { log.push("initRuntime"); },
+    createSession: async (buf) => {
+      log.push(`session:${buf.byteLength}`);
+      const n = log.filter((l) => l.startsWith("session:")).length;
+      const s =
+        n % 3 === 1 ? fakeSession(["input_ids"], "last_hidden_state", [1, 77, 1024], { input_ids: "int64" })
+        : n % 3 === 2 ? fakeSession(["sample", "timestep", "encoder_hidden_states"], "out_sample", [1, 4, 64, 64], { sample: "float32", timestep: "int64", encoder_hidden_states: "float32" })
+        : fakeSession(["latent_sample"], "sample", [1, 3, 512, 512], { latent_sample: "float32" });
+      return { ...s, release: async () => { state.released++; } };
+    },
+    checkGpu: async () => "ok",
+    encodePng: (rgba, w, h) => `data:image/png;base64,${w}x${h}:${rgba.length}`,
+    get released() { return state.released; },
+  };
+  return deps;
+}
+
+const req = { prompt: "cat", negativePrompt: "", width: 512, height: 512, steps: 2, seed: 7, cfg: 1 };
+
+describe("LocalEngineBackend", () => {
+  it("erster generate lädt WASM, drei Sessions und den Tokenizer genau einmal — der zweite nicht mehr", async () => {
+    const log: string[] = [];
+    const be = new LocalEngineBackend(makeDeps(log));
+    const phases: string[] = [];
+    be.onPhase = (p, s, t) => phases.push(`${p}${s !== undefined ? `:${s}/${t}` : ""}`);
+    await be.generate(req);
+    expect(log.filter((l) => l === "initRuntime")).toHaveLength(1);
+    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
+    expect(log).toContain(`buffer:${RUNTIME_WASM.key}`);
+    expect(log).toContain("text:vocab");
+    expect(phases[0]).toBe("loading-model");
+    expect(be.loaded).toBe(true);
+    const before = log.length;
+    await be.generate(req);
+    expect(log.length).toBe(before);
+    expect(phases.filter((p) => p === "loading-model")).toHaveLength(1);
+  });
+
+  it("liefert Base64 ohne data:-Präfix und meldet generating-Schritte 1..steps", async () => {
+    const be = new LocalEngineBackend(makeDeps([]));
+    const steps: string[] = [];
+    be.onPhase = (p, s, t) => { if (p === "generating") steps.push(`${s}/${t}`); };
+    const png = await be.generate(req);
+    expect(png.startsWith("data:")).toBe(false);
+    expect(png).toBe(`512x512:${512 * 512 * 4}`);
+    expect(steps).toEqual(["1/2", "2/2"]);
+  });
+
+  it("Steps werden auf den Modellbereich geklemmt, Größe ist immer 512 (Rezept-Ehrlichkeit)", async () => {
+    const be = new LocalEngineBackend(makeDeps([]));
+    const steps: string[] = [];
+    be.onPhase = (p, s, t) => { if (p === "generating") steps.push(`${s}/${t}`); };
+    await be.generate({ ...req, steps: 20, width: 1024, height: 768 });
+    expect(steps).toHaveLength(BUILTIN_MODEL.steps.max);
+    expect(steps[steps.length - 1]).toBe(`${BUILTIN_MODEL.steps.max}/${BUILTIN_MODEL.steps.max}`);
+  });
+
+  it("dispose gibt die Sessions frei; danach lädt generate neu", async () => {
+    const log: string[] = [];
+    const deps = makeDeps(log);
+    const be = new LocalEngineBackend(deps);
+    await be.generate(req);
+    await be.dispose();
+    expect(deps.released).toBe(3);
+    expect(be.loaded).toBe(false);
+    await be.dispose(); // idempotent
+    expect(deps.released).toBe(3);
+    await be.generate(req);
+    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(6);
+  });
+
+  it("zwei parallele generate-Aufrufe teilen sich das Laden (kein doppelter Session-Aufbau)", async () => {
+    const log: string[] = [];
+    const be = new LocalEngineBackend(makeDeps(log));
+    const p1 = be.generate(req);
+    const p2 = be.generate({ ...req, seed: 8 }).catch((e: Error) => e.message);
+    await p1;
+    const r2 = await p2;
+    // Die pure Engine ist single-flight („engine is busy"); der Backend-Loader aber nur einmal.
+    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
+    expect(typeof r2).toBe("string");
+  });
+});
