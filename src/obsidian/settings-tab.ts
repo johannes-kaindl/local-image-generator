@@ -21,9 +21,11 @@
 // FolderSuggest ein.
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { STEPS } from "../core/generation";
+import { allAssets, BUILTIN_MODEL, DEFAULT_ASSET_BASE_URL, totalBytes } from "../core/model-manifest";
 import { sanitizeSettings, type LigSettings } from "../core/settings";
+import { formatBytes, type EngineState } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
-import { applyDestructive } from "../vendor/kit-obsidian/confirm";
+import { applyDestructive, confirmAction } from "../vendor/kit-obsidian/confirm";
 import { renderSettingDefinitions, settingBodyHost, refreshSettingsTab } from "../vendor/kit-obsidian/settings_walker";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { renderPresetEditor } from "./preset-editor";
@@ -35,12 +37,24 @@ export class LigSettingTab extends PluginSettingTab {
   private legacyCache: boolean | null = null;
   /** Cleanup-Funktion aus dem letzten renderSettingDefinitions()-Aufruf. */
   private cleanupPrevious: () => void = () => {};
+  /** Statuszeile der Modell-Zeile — wird bei Fortschritts-Ticks in place aktualisiert; ein
+   *  Wechsel der Zustandsart (downloading → ready) zeichnet den Tab neu (andere Knöpfe). */
+  private modelStatusEl: HTMLElement | null = null;
+  private renderedEngineKind: EngineState["kind"] | null = null;
+  private renderedMode: LigSettings["engine"] | null = null;
 
   constructor(
     app: App,
     private readonly plugin: LocalImageGeneratorPlugin,
   ) {
     super(app, plugin);
+    plugin.onEngineStateChanged = () => {
+      if (this.renderedMode === null) return; // Tab nicht offen
+      const st = plugin.getEngineState();
+      const sameShape = st.kind === this.renderedEngineKind && plugin.settings.engine === this.renderedMode;
+      if (sameShape && this.modelStatusEl) this.modelStatusEl.setText(engineStatusText(st));
+      else this.refreshUi();
+    };
   }
 
   // ── Die eine Wahrheit ────────────────────────────────────────────────────
@@ -48,16 +62,38 @@ export class LigSettingTab extends PluginSettingTab {
   // bricht den Build, statt zur Laufzeit stumm ins Leere zu greifen (der Host liest den
   // Wert ausschließlich über getControlValue).
   getSettingDefinitions(): SettingDefinitionItem<keyof LigSettings>[] {
+    const builtin = this.plugin.settings.engine === "builtin";
+    this.renderedMode = this.plugin.settings.engine;
+    // Bedingte Zeilen WEGLASSEN statt `visible: false`: Obsidian 1.13 cacht die Definitionen und
+    // wertet Prädikate nicht neu aus — nach einem Moduswechsel zeichnet refreshUi() (update())
+    // den Tab mit den dann passenden Zeilen neu.
+    const modelRow: SettingDefinitionItem<keyof LigSettings> = {
+      // Modell-Zeile der eingebauten Engine (Spec 0.6 §6): Status + Herunterladen/Abbrechen/
+      // Entfernen je nach Zustand — mehrere Controls, deshalb ein render-Hatch.
+      name: t("settings.model.name", BUILTIN_MODEL.label, formatBytes(totalBytes(allAssets()))),
+      desc: t("settings.model.desc", BUILTIN_MODEL.attribution, BUILTIN_MODEL.license.name),
+      render: (setting) => this.renderModel(setting),
+    };
+    const serverRow: SettingDefinitionItem<keyof LigSettings> = {
+      name: t("settings.server.name"),
+      desc: t("settings.server.desc"),
+      render: (setting) => this.renderServer(setting),
+    };
     return [
       {
         type: "group",
-        heading: t("settings.server.name"),
+        heading: t("settings.engine.heading"),
         items: [
           {
-            name: t("settings.server.name"),
-            desc: t("settings.server.desc"),
-            render: (setting) => this.renderServer(setting),
+            name: t("settings.engine.name"),
+            desc: t("settings.engine.desc", formatBytes(totalBytes(allAssets()))),
+            control: {
+              type: "dropdown",
+              key: "engine",
+              options: { builtin: t("settings.engine.builtin"), server: t("settings.engine.server") },
+            },
           },
+          builtin ? modelRow : serverRow,
         ],
       },
       {
@@ -111,6 +147,17 @@ export class LigSettingTab extends PluginSettingTab {
         ],
       },
       {
+        type: "group",
+        heading: t("settings.advanced.heading"),
+        items: [
+          {
+            name: t("settings.assetBaseUrl.name"),
+            desc: t("settings.assetBaseUrl.desc"),
+            control: { type: "text", key: "assetBaseUrl", placeholder: DEFAULT_ASSET_BASE_URL },
+          },
+        ],
+      },
+      {
         // Legacy-Cache-Hinweis (Spec §4): Bestandsinstallationen können noch ~2,5 GB alte
         // SD-Turbo-Gewichte (0.x, In-Process-Engine) im Cache-API-Speicher haben. Der Check
         // ist asynchron, deshalb entscheidet ein Prädikat über die Sichtbarkeit statt eines
@@ -132,11 +179,53 @@ export class LigSettingTab extends PluginSettingTab {
     // Der trim() davor war früher pro Feld in den onChange-Handlern verstreut — ohne ihn
     // landet ein versehentliches Leerzeichen im Endpunkt oder im Ordnerpfad.
     const clean = typeof value === "string" ? value.trim() : value;
+    if (key === "engine") {
+      // Moduswechsel hat Seiteneffekte (GPU-Sessions frei, Server prüfen) — über das Plugin.
+      await this.plugin.setEngine(clean === "server" ? "server" : "builtin");
+      this.refreshUi();
+      return;
+    }
     this.plugin.settings = sanitizeSettings({ ...this.plugin.settings, [key]: clean });
     await this.plugin.saveSettings();
   }
 
   // ── render-Hatches ───────────────────────────────────────────────────────
+
+  /** Modell-Zeile: Lizenz-Link in der Beschreibung, Status-Text und Knöpfe je Zustand. */
+  private renderModel(setting: Setting): void {
+    this.ensureLegacyChecked();
+    const st = this.plugin.getEngineState();
+    this.renderedEngineKind = st.kind;
+    setting.descEl.createEl("br");
+    setting.descEl.createEl("a", { text: BUILTIN_MODEL.license.name, href: BUILTIN_MODEL.license.url });
+    this.modelStatusEl = setting.controlEl.createSpan({ text: engineStatusText(st), cls: "lig-model-status" });
+    const busy = st.kind === "downloading" || st.kind === "verifying";
+    if (busy) {
+      setting.addButton((b) => b.setButtonText(t("settings.model.cancel")).onClick(() => this.plugin.cancelDownload()));
+      return;
+    }
+    if (st.kind === "not-downloaded" || st.kind === "error") {
+      setting.addButton((b) =>
+        b.setButtonText(t("settings.model.download")).setCta().onClick(() => void this.plugin.startDownload()),
+      );
+    }
+    if (st.kind === "ready" || st.kind === "error") {
+      setting.addButton((b) => {
+        b.setButtonText(t("settings.model.remove"));
+        applyDestructive(b);
+        b.onClick(async () => {
+          const ok = await confirmAction(this.app, {
+            message: t("settings.model.removeConfirm", formatBytes(totalBytes(allAssets()))),
+            confirmLabel: t("settings.model.remove"),
+            cancelLabel: t("modal.cancel"),
+          });
+          if (!ok) return;
+          await this.plugin.removeModel();
+          new Notice(t("settings.model.removed"));
+        });
+      });
+    }
+  }
 
   /** Endpunkt-Textfeld und Test-Knopf teilen sich eine Zeile — als Control nicht abbildbar. */
   private renderServer(setting: Setting): void {
@@ -210,6 +299,9 @@ export class LigSettingTab extends PluginSettingTab {
 
   hide(): void {
     this.legacyCache = null;
+    this.modelStatusEl = null;
+    this.renderedEngineKind = null;
+    this.renderedMode = null;
     super.hide();
   }
 
@@ -239,4 +331,17 @@ export class LigSettingTab extends PluginSettingTab {
     refreshSettingsTab(this, () => this.renderImperative());
   }
 
+}
+
+/** Kurzer Zustandstext für die Modell-Zeile (dieselben Keys wie die Panel-Statuszeile). */
+function engineStatusText(st: EngineState): string {
+  switch (st.kind) {
+    case "gpu-checking": return t("status.gpuChecking");
+    case "gpu-missing": return st.reason === "no-webgpu" ? t("status.gpuMissing.noWebgpu") : t("status.gpuMissing.noF16");
+    case "not-downloaded": return t("status.notDownloaded");
+    case "downloading": return t("status.downloading", st.file, formatBytes(st.received), formatBytes(st.total), String(st.fileIndex), String(st.fileCount));
+    case "verifying": return t("status.verifying", st.file);
+    case "ready": return t("settings.model.ready");
+    case "error": return t("status.error", st.message);
+  }
 }

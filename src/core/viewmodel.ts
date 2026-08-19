@@ -2,7 +2,7 @@
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
 import { STEPS } from "./generation";
-import { BUILTIN_MODEL } from "./model-manifest";
+import { allAssets, BUILTIN_MODEL, totalBytes } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -167,8 +167,10 @@ function serverEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
 function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
   const e = s.engine;
   if (e.kind === "gpu-missing") return { text: t("empty.gpuMissing"), ctaLabel: t("empty.noServerCta"), ctaAction: "settings" };
-  if (e.kind === "not-downloaded" || e.kind === "error")
-    return { text: t("empty.notDownloaded"), ctaLabel: t("empty.downloadCta"), ctaAction: "download" };
+  if (e.kind === "not-downloaded" || e.kind === "error") {
+    const size = formatBytes(totalBytes(allAssets()));
+    return { text: t("empty.notDownloaded", size), ctaLabel: t("empty.downloadCta", size), ctaAction: "download" };
+  }
   if (e.kind === "downloading" || e.kind === "verifying")
     return { text: t("empty.downloading"), ctaLabel: t("empty.cancelCta"), ctaAction: "cancel-download" };
   if (e.kind === "ready" && !s.image && !busy) return { text: t("empty.noImage") };
