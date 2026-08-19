@@ -34,3 +34,5 @@ after the user clicks "Download" and verifies their SHA-256 before use.
 """)
 print("LICENSE.md + NOTICE.md geschrieben")
 PY
+# Model-Card fürs HF-Repo (getrackte Vorlage, Lizenz-Metadaten im Frontmatter)
+cp tools/convert/hf-readme.md dist-assets/README.md && echo "README.md (Model-Card) kopiert"

@@ -29,7 +29,7 @@ export interface BuiltinModel {
 /** Basis-URL der Assets — das eigene HF-Repo (Spike 2026-08-19: HF reflektiert die CORS-Origin,
  *  Streaming aus dem Renderer geht; ein GitHub-Release täte das nicht). Per Setting überschreibbar
  *  (Spiegel, lokaler Server für den GUI-Smoke). */
-export const DEFAULT_ASSET_BASE_URL = "https://huggingface.co/johannes-kaindl/local-image-generator-models/resolve/main";
+export const DEFAULT_ASSET_BASE_URL = "https://huggingface.co/v6t2b9/local-image-generator-models/resolve/main";
 
 function file(key: AssetKey, kind: AssetFile["kind"]): AssetFile {
   const g = GENERATED_ASSETS[key];
