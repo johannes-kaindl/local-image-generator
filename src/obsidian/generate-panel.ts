@@ -27,6 +27,10 @@ export class GeneratePanel implements HubPanel {
   private stepsValueEl!: HTMLElement;
   private cfgEl!: HTMLInputElement;
   private cfgValueEl!: HTMLElement;
+  private cfgLabelEl!: HTMLElement;
+  private negativePromptRowEl!: HTMLElement;
+  /** Zuletzt angewandter Steps-Bereich — Rebuild der Slider-Grenzen nur bei Moduswechsel. */
+  private stepsRange: { min: number; max: number } | null = null;
   private seedEl!: HTMLInputElement;
   private generateBtn!: HTMLButtonElement;
   private emptyEl!: HTMLElement;
@@ -62,7 +66,8 @@ export class GeneratePanel implements HubPanel {
       this.refresh();
     });
 
-    const negativePromptRow = root.createDiv({ cls: "lig-prompt-row" });
+    const negativePromptRow = root.createDiv({ cls: "lig-prompt-row lig-negative-row" });
+    this.negativePromptRowEl = negativePromptRow;
     negativePromptRow.createSpan({ text: t("generate.negativePrompt"), cls: "lig-label" });
     this.negativePromptEl = negativePromptRow.createEl("textarea", {
       cls: "lig-prompt lig-negative",
@@ -94,7 +99,7 @@ export class GeneratePanel implements HubPanel {
       this.stepsValueEl.setText(this.stepsEl.value);
       this.refresh();
     });
-    controls.createSpan({ text: t("generate.cfg"), cls: "lig-label" });
+    this.cfgLabelEl = controls.createSpan({ text: t("generate.cfg"), cls: "lig-label" });
     const startCfg = String(CFG.default);
     this.cfgEl = controls.createEl("input", {
       cls: "lig-cfg",
@@ -138,7 +143,9 @@ export class GeneratePanel implements HubPanel {
     this.emptyTextEl = this.emptyEl.createDiv();
     this.emptyCtaEl = this.emptyEl.createEl("button", { cls: "mod-cta" });
     this.emptyCtaEl.addEventListener("click", () => {
-      if (this.emptyCtaAction === "recheck") this.host.recheckServer();
+      if (this.emptyCtaAction === "download") this.host.downloadModel();
+      else if (this.emptyCtaAction === "cancel-download") this.host.cancelDownload();
+      else if (this.emptyCtaAction === "recheck") this.host.recheckServer();
       else this.host.openSettings();
     });
 
@@ -227,7 +234,8 @@ export class GeneratePanel implements HubPanel {
     this.negativePromptEl.value = entry.negativePrompt;
     this.host.setNegativePrompt(entry.negativePrompt);
     this.seedEl.value = String(entry.seed);
-    const steps = Math.min(STEPS.max, Math.max(STEPS.min, entry.steps));
+    const range = this.stepsRange ?? { min: STEPS.min, max: STEPS.max };
+    const steps = Math.min(range.max, Math.max(range.min, entry.steps));
     this.stepsEl.value = String(steps);
     this.stepsValueEl.setText(String(steps));
     const cfg = Math.min(CFG.max, Math.max(CFG.min, entry.cfg));
@@ -246,11 +254,27 @@ export class GeneratePanel implements HubPanel {
     this.renderChips();
     const vm = buildViewModel(state);
 
-    this.modelInfoEl.setText(
-      state.server.kind === "ok" && state.server.modelName !== null
-        ? t("generate.modelInfo", state.server.modelName)
-        : t("generate.modelInApp"),
-    );
+    this.modelInfoEl.setText(vm.modelLabel);
+    // Regler pro Modus (Keine-Attrappen-Linie): die eingebaute Engine kennt weder Negativ-Prompt
+    // noch CFG noch andere Größen; der Steps-Slider bekommt den Bereich des Modells. Grenzen nur
+    // beim Wechsel setzen — der Wert wird dabei in den neuen Bereich geklemmt.
+    this.negativePromptRowEl.toggleClass("is-hidden", !vm.controls.negative);
+    this.cfgLabelEl.toggleClass("is-hidden", !vm.controls.cfg);
+    this.cfgEl.toggleClass("is-hidden", !vm.controls.cfg);
+    this.cfgValueEl.toggleClass("is-hidden", !vm.controls.cfg);
+    this.sizeRowEl.toggleClass("is-hidden", !vm.controls.size);
+    if (this.stepsRange?.min !== vm.controls.stepsMin || this.stepsRange.max !== vm.controls.stepsMax) {
+      this.stepsRange = { min: vm.controls.stepsMin, max: vm.controls.stepsMax };
+      this.stepsEl.min = String(vm.controls.stepsMin);
+      this.stepsEl.max = String(vm.controls.stepsMax);
+      const clamped = Math.min(vm.controls.stepsMax, Math.max(vm.controls.stepsMin, Number(this.stepsEl.value)));
+      if (String(clamped) !== this.stepsEl.value) {
+        this.stepsEl.value = String(clamped);
+        this.stepsValueEl.setText(String(clamped));
+        // Rezept im Host nachziehen, sonst rechnet generate() mit dem alten Wert.
+        this.host.setRecipe(clamped, Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
+      }
+    }
 
     this.generateBtn.disabled = !vm.generateEnabled;
     this.emptyEl.toggleClass("is-hidden", vm.empty === null);
