@@ -27,8 +27,9 @@ export interface StoreDeps {
   /** Frist ohne ein einziges Byte, nach der ein Download als hängend gilt (Default 60 s). Kein
    *  Gesamt-Timeout: 2,6 GB dürfen so lange dauern, wie die Leitung braucht. */
   stallMs?: number;
-  /** Timer für die Stall-Frist (Default window.setTimeout — Store-Regel prefer-window-timers). */
-  timer?: (fn: () => void, ms: number) => void;
+  /** Timer für die Stall-Frist: stellt `fn` in `ms` ms ein und liefert eine Cancel-Funktion.
+   *  Default window.setTimeout/clearTimeout (Store-Regel prefer-window-timers). */
+  timer?: (fn: () => void, ms: number) => () => void;
 }
 
 export interface DownloadProgress {
@@ -61,7 +62,10 @@ export class IntegrityError extends Error {
 const realDeps: StoreDeps = {
   openCache: () => caches.open(ASSET_CACHE_NAME),
   fetchFn: (url, init) => activeWindow.fetch(url, init),
-  timer: (fn, ms) => void window.setTimeout(fn, ms),
+  timer: (fn, ms) => {
+    const id = window.setTimeout(fn, ms);
+    return () => window.clearTimeout(id);
+  },
 };
 
 const DEFAULT_STALL_MS = 60_000;
@@ -129,17 +133,33 @@ export class ModelStore {
     const hasher = new Sha256();
     const stallMs = this.deps.stallMs ?? DEFAULT_STALL_MS;
     const timer = this.deps.timer ?? realDeps.timer!;
+    // EIN Stall-Timer je Datei, nach jedem Chunk neu gestellt und am Ende abgeräumt. Ein Timer
+    // pro Chunk ohne Cancel wäre ein Leak (Review 2026-08-19: tausende offene Handles bei 1,7 GB).
+    let cancelStall: () => void = () => {};
+    let rejectStall: (e: Error) => void = () => {};
+    const stalled = new Promise<never>((_, reject) => { rejectStall = reject; });
+    stalled.catch(() => {}); // wird nur im Race beobachtet; nie als unhandledrejection melden
+    const armStall = (): void => {
+      cancelStall();
+      cancelStall = timer(() => rejectStall(new Error(`download stalled: no data for ${stallMs / 1000}s (${file.path})`)), stallMs);
+    };
     let received = 0;
-    for (;;) {
-      const next = await Promise.race([reader.read(), stallAfter(timer, stallMs, file)]);
-      if (next.done) break;
-      received += next.value.byteLength;
-      hasher.update(next.value);
-      report(received, "downloading");
-      if (signal.aborted) {
-        await reader.cancel().catch(() => undefined);
-        throw new DownloadAborted();
+    try {
+      armStall();
+      for (;;) {
+        const next = await Promise.race([reader.read(), stalled]);
+        if (next.done) break;
+        armStall();
+        received += next.value.byteLength;
+        hasher.update(next.value);
+        report(received, "downloading");
+        if (signal.aborted) {
+          await reader.cancel().catch(() => undefined);
+          throw new DownloadAborted();
+        }
       }
+    } finally {
+      cancelStall();
     }
     report(received, "verifying");
     await putDone;
@@ -167,10 +187,4 @@ export class ModelStore {
     const cache = await this.deps.openCache();
     for (const f of files) await cache.delete(cacheKey(f));
   }
-}
-
-function stallAfter(timer: NonNullable<StoreDeps["timer"]>, ms: number, file: AssetFile): Promise<never> {
-  return new Promise((_, reject) => {
-    timer(() => reject(new Error(`download stalled: no data for ${ms / 1000}s (${file.path})`)), ms);
-  });
 }

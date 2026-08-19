@@ -94,6 +94,34 @@ describe("LocalEngineBackend", () => {
     expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(6);
   });
 
+  it("dispose während eines laufenden generate wartet das Ergebnis ab, statt die Sessions darunter wegzuziehen", async () => {
+    const log: string[] = [];
+    const deps = makeDeps(log);
+    // UNet-Session mit Verzögerung und Protokoll: generate läuft messbar lange; release wird geloggt.
+    const slowCreate = deps.createSession;
+    deps.createSession = async (buf) => {
+      const s = await slowCreate(buf);
+      const tag = s.inputNames.includes("sample") ? "unet" : s.inputNames[0]!;
+      return {
+        ...s,
+        run: async (f) => { if (tag === "unet") await new Promise((r) => setTimeout(r, 40)); log.push(`run:${tag}`); return s.run(f); },
+        release: async () => { log.push(`release:${tag}`); await s.release(); },
+      };
+    };
+    const be = new LocalEngineBackend(deps);
+    const gen = be.generate(req);
+    await new Promise((r) => setTimeout(r, 15)); // mitten im Lauf
+    const disposeDone = be.dispose();
+    const png = await gen; // muss sauber durchlaufen
+    expect(png.startsWith("512x512")).toBe(true);
+    await disposeDone;
+    const firstRelease = log.findIndex((l) => l.startsWith("release:"));
+    const lastRun = log.map((l, i) => (l.startsWith("run:") ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
+    expect(firstRelease).toBeGreaterThan(lastRun);
+    expect(deps.released).toBe(3);
+    expect(be.loaded).toBe(false);
+  });
+
   it("zwei parallele generate-Aufrufe teilen sich das Laden (kein doppelter Session-Aufbau)", async () => {
     const log: string[] = [];
     const be = new LocalEngineBackend(makeDeps(log));

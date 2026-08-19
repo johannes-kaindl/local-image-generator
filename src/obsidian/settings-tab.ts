@@ -181,6 +181,7 @@ export class LigSettingTab extends PluginSettingTab {
     const clean = typeof value === "string" ? value.trim() : value;
     if (key === "engine") {
       // Moduswechsel hat Seiteneffekte (GPU-Sessions frei, Server prüfen) — über das Plugin.
+      // Während einer Generierung lehnt es ab (Notice); refreshUi stellt den Dropdown zurück.
       await this.plugin.setEngine(clean === "server" ? "server" : "builtin");
       this.refreshUi();
       return;
@@ -213,6 +214,11 @@ export class LigSettingTab extends PluginSettingTab {
       setting.addButton((b) => {
         b.setButtonText(t("settings.model.remove"));
         applyDestructive(b);
+        // Während einer Generierung gesperrt: die GPU-Sessions sind in Gebrauch.
+        if (this.plugin.isBusy()) {
+          b.setDisabled(true);
+          b.setTooltip(t("notice.busy"));
+        }
         b.onClick(async () => {
           const ok = await confirmAction(this.app, {
             message: t("settings.model.removeConfirm", formatBytes(totalBytes(allAssets()))),
@@ -220,8 +226,7 @@ export class LigSettingTab extends PluginSettingTab {
             cancelLabel: t("modal.cancel"),
           });
           if (!ok) return;
-          await this.plugin.removeModel();
-          new Notice(t("settings.model.removed"));
+          if (await this.plugin.removeModel()) new Notice(t("settings.model.removed"));
         });
       });
     }

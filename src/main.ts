@@ -173,6 +173,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return this.state.engine;
   }
 
+  /** Läuft gerade eine Generierung (oder das Laden davor)? Modus-Wechsel und Entfernen warten
+   *  darauf — die GPU-Sessions dürfen nicht unter einem aktiven UNet-Schritt weggezogen werden
+   *  (Review 2026-08-19). */
+  isBusy(): boolean {
+    const k = this.state.run.kind;
+    return k === "contacting" || k === "loading-model" || k === "generating";
+  }
+
   private setEngineState(e: EngineState): void {
     this.state.engine = e;
     this.refreshViews();
@@ -181,12 +189,19 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** Modus wechseln (Settings): das andere Backend wird verlassen — GPU-Sessions frei, Server
    *  neu geprüft bzw. Engine-Zustand neu ermittelt. */
-  async setEngine(mode: EngineChoice): Promise<void> {
-    if (mode === this.settings.engine) return;
+  async setEngine(mode: EngineChoice): Promise<boolean> {
+    if (mode === this.settings.engine) return true;
+    if (this.isBusy()) {
+      new Notice(t("notice.busy"));
+      return false;
+    }
     this.settings.engine = mode;
     await this.saveSettings();
     this.state.mode = mode;
     if (mode === "server") {
+      // Ein laufender Download gehört zum verlassenen Modus — abbrechen, nicht im Verborgenen
+      // weiterlaufen lassen (fertige Dateien bleiben im Cache).
+      this.cancelDownload();
       const e = this.localEngine;
       this.localEngine = null;
       void e?.dispose();
@@ -196,6 +211,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
     this.refreshViews();
     this.onEngineStateChanged?.();
+    return true;
   }
 
   /** GPU prüfen, dann nachsehen, ob alle Assets im Cache liegen. Läuft beim Aktivieren des
@@ -259,13 +275,18 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   /** Alle Assets aus dem Cache entfernen (Settings, nach Bestätigung); GPU-Sessions dazu frei. */
-  async removeModel(): Promise<void> {
+  async removeModel(): Promise<boolean> {
+    if (this.isBusy()) {
+      new Notice(t("notice.busy"));
+      return false;
+    }
     this.cancelDownload();
     const e = this.localEngine;
     this.localEngine = null;
     await e?.dispose();
     await this.modelStore.deleteAll(allAssets());
     await this.refreshEngineState();
+    return true;
   }
 
   private ensureLocalEngine(): LocalEngineBackend {

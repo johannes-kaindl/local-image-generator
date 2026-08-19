@@ -32,6 +32,9 @@ export class LocalEngineBackend implements ImageBackend {
 
   private engine: SdTurboEngine | null = null;
   private loading: Promise<SdTurboEngine> | null = null;
+  /** Laufender generate()-Aufruf — dispose() wartet darauf, statt die GPU-Sessions unter einem
+   *  aktiven UNet-Schritt wegzuziehen (Review 2026-08-19). */
+  private running: Promise<unknown> | null = null;
   private runtimeReady = false;
 
   constructor(
@@ -44,6 +47,16 @@ export class LocalEngineBackend implements ImageBackend {
   }
 
   async generate(req: ImageRequest): Promise<string> {
+    const run = this.run(req);
+    this.running = run.catch(() => undefined);
+    try {
+      return await run;
+    } finally {
+      this.running = null;
+    }
+  }
+
+  private async run(req: ImageRequest): Promise<string> {
     const engine = await this.ensureLoaded();
     const steps = Math.min(this.model.steps.max, Math.max(this.model.steps.min, Math.round(req.steps)));
     const res = await engine.generate({ prompt: req.prompt, steps, seed: req.seed }, (s, t) => this.onPhase?.("generating", s, t));
@@ -52,12 +65,13 @@ export class LocalEngineBackend implements ImageBackend {
     return dataUrl.slice(dataUrl.indexOf(",") + 1);
   }
 
-  /** Sessions freigeben (GPU-Speicher, 0.1-Leak-Befund). Idempotent; ein laufendes Laden wird
-   *  abgewartet und dann ebenfalls freigegeben. */
+  /** Sessions freigeben (GPU-Speicher, 0.1-Leak-Befund). Idempotent; ein laufendes Laden oder
+   *  Generieren wird abgewartet und dann freigegeben — nie mitten im UNet-Schritt. */
   async dispose(): Promise<void> {
     if (this.loading) {
       try { await this.loading; } catch { /* Ladefehler ist hier egal — es gibt nichts freizugeben */ }
     }
+    if (this.running) await this.running;
     const e = this.engine;
     this.engine = null;
     this.loading = null;

@@ -43,7 +43,10 @@ function streamResponse(data: Uint8Array, chunk = 7, status = 200): Response {
   return new Response(body, { status, headers: { "content-length": String(data.length) } });
 }
 
-const timer: StoreDeps["timer"] = (fn, ms) => void setTimeout(fn, ms);
+const timer: StoreDeps["timer"] = (fn, ms) => {
+  const id = setTimeout(fn, ms);
+  return () => clearTimeout(id);
+};
 function deps(cache: CacheLike, fetchFn: StoreDeps["fetchFn"]): StoreDeps {
   return { openCache: async () => cache, fetchFn, timer };
 }
@@ -134,6 +137,23 @@ describe("ModelStore", () => {
     });
     await expect(store.download([f], "http://x", () => {}, new AbortController().signal)).rejects.toThrow(/stalled/);
     expect(cache.map.has(cacheKey(f))).toBe(false);
+  });
+
+  it("Stall-Timer: je Datei genau ein aktiver Timer, der nach jedem Chunk neu gestellt und am Ende abgeräumt wird (kein Leak)", async () => {
+    const a = bytesOf(700); // 100 Chunks à 7 Byte
+    const f = fileWith("unet", a);
+    let armed = 0, cancelled = 0, live = 0, maxLive = 0;
+    const countingTimer: StoreDeps["timer"] = (fn, ms) => {
+      armed++; live++; maxLive = Math.max(maxLive, live);
+      const id = setTimeout(fn, ms);
+      return () => { clearTimeout(id); live--; cancelled++; };
+    };
+    const store = new ModelStore({ openCache: async () => fakeCache(), fetchFn: async () => streamResponse(a), timer: countingTimer });
+    await store.download([f], "http://x", () => {}, new AbortController().signal);
+    expect(armed).toBeGreaterThan(50);
+    expect(maxLive).toBe(1);
+    expect(live).toBe(0);
+    expect(cancelled).toBe(armed);
   });
 
   it("deleteAll entfernt alle Keys der Liste", async () => {

@@ -62,6 +62,7 @@ export const EN: Record<string, string> = {
   "empty.downloading": "Downloading the model. You can cancel; finished files are kept.",
   "empty.cancelCta": "Cancel download",
   "notice.modelReady": "Model downloaded and verified — ready to generate.",
+  "notice.busy": "Not possible while an image is being generated — wait for it to finish.",
   "engine.integrityError": "Checksum mismatch for {0} — the file was discarded. Try the download again.",
 
   "notice.saveFailed": "Save failed: {0}",
@@ -188,6 +189,7 @@ export const DE: Record<string, string> = {
   "empty.downloading": "Das Modell wird geladen. Abbrechen ist möglich; fertige Dateien bleiben.",
   "empty.cancelCta": "Download abbrechen",
   "notice.modelReady": "Modell heruntergeladen und geprüft — bereit zum Generieren.",
+  "notice.busy": "Während ein Bild entsteht nicht möglich — bitte das Ende abwarten.",
   "engine.integrityError": "Prüfsumme von {0} stimmt nicht — die Datei wurde verworfen. Download erneut versuchen.",
 
   "notice.saveFailed": "Speichern fehlgeschlagen: {0}",
