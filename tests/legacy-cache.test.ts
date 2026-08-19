@@ -11,10 +11,19 @@ describe("legacy-cache", () => {
     globalThis.caches = originalCaches;
   });
 
-  it("hasLegacyCache meldet true, wenn der alte Cache existiert", async () => {
-    globalThis.caches = { has: vi.fn().mockResolvedValue(true) } as unknown as CacheStorage;
+  it("hasLegacyCache meldet true, wenn der alte Cache existiert UND Einträge trägt", async () => {
+    const open = vi.fn().mockResolvedValue({ keys: async () => [new Request("https://x/unet.onnx")] });
+    globalThis.caches = { has: vi.fn().mockResolvedValue(true), open } as unknown as CacheStorage;
     await expect(hasLegacyCache()).resolves.toBe(true);
     expect(globalThis.caches.has).toHaveBeenCalledWith("local-image-generator-models");
+  });
+
+  it("hasLegacyCache meldet false bei einem leeren Alt-Cache und räumt den Namen still weg (gemessen 2026-08-19: Dauer-Hinweis ohne ein einziges Byte)", async () => {
+    const del = vi.fn().mockResolvedValue(true);
+    const open = vi.fn().mockResolvedValue({ keys: async () => [] });
+    globalThis.caches = { has: vi.fn().mockResolvedValue(true), open, delete: del } as unknown as CacheStorage;
+    await expect(hasLegacyCache()).resolves.toBe(false);
+    expect(del).toHaveBeenCalledWith("local-image-generator-models");
   });
 
   it("hasLegacyCache meldet false, wenn kein alter Cache existiert", async () => {
