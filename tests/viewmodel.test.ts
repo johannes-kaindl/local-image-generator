@@ -223,6 +223,11 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     const gen = buildViewModel({ ...builtin, engine: { kind: "ready" }, run: { kind: "generating", pct: 50, elapsedSec: 3 } });
     expect(gen.status.text).toContain("50");
   });
+  it("contacting heißt im builtin-Modus nicht „Server", () => {
+    const vm = buildViewModel({ ...builtin, engine: { kind: "ready" }, run: { kind: "contacting" } });
+    expect(vm.status.text).not.toMatch(/server/i);
+    expect(vm.status.cls).toBe("is-checking");
+  });
   it("run.error hat im builtin-Modus Vorrang vor dem Engine-Zustand", () => {
     const vm = buildViewModel({ ...builtin, engine: { kind: "ready" }, run: { kind: "error", message: "boom" } });
     expect(vm.status.text).toContain("boom");

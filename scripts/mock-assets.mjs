@@ -1,0 +1,31 @@
+// Lokaler Asset-Server für den GUI-Smoke der eingebauten Engine (Spec 0.6 §10): serviert
+// dist-assets/ (eigene Konversion + ORT-WASM) mit CORS wie huggingface.co, damit der Download-
+// Pfad des Plugins ohne Netz und ohne das HF-Repo läuft. Zähler je Datei auf stdout.
+//
+//   node scripts/mock-assets.mjs            # http://127.0.0.1:7862
+//   MOCK_ASSETS_PORT=7863 node scripts/mock-assets.mjs
+// Danach im Plugin die Download-Quelle auf http://127.0.0.1:7862 stellen (Settings › Erweitert).
+import http from "node:http";
+import { createReadStream, statSync } from "node:fs";
+import { join, normalize } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = join(fileURLToPath(new URL("..", import.meta.url)), "dist-assets");
+const PORT = Number(process.env.MOCK_ASSETS_PORT ?? 7862);
+const counts = new Map();
+
+http.createServer((req, res) => {
+  const origin = req.headers.origin;
+  const cors = { "Access-Control-Allow-Origin": origin ?? "*", "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS", "Access-Control-Allow-Headers": "*", "Access-Control-Expose-Headers": "Content-Length" };
+  if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
+  const rel = normalize(decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname)).replace(/^(\.\.[/\\])+/, "");
+  const path = join(ROOT, rel);
+  if (!path.startsWith(ROOT)) { res.writeHead(403, cors); return res.end(); }
+  let size;
+  try { size = statSync(path).size; } catch { res.writeHead(404, cors); return res.end("not found"); }
+  counts.set(rel, (counts.get(rel) ?? 0) + 1);
+  console.log(`${req.method} ${rel} (${(size / 1e6).toFixed(1)} MB) #${counts.get(rel)}`);
+  res.writeHead(200, { ...cors, "Content-Type": "application/octet-stream", "Content-Length": String(size) });
+  if (req.method === "HEAD") return res.end();
+  createReadStream(path).pipe(res);
+}).listen(PORT, "127.0.0.1", () => console.log(`mock-assets: ${ROOT} auf http://127.0.0.1:${PORT}`));

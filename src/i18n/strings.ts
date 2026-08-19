@@ -49,6 +49,7 @@ export const EN: Record<string, string> = {
 
   "generate.modelBuiltin": "Model: {0} (built-in)",
   "status.gpuChecking": "Checking GPU…",
+  "status.starting": "Starting…",
   "status.gpuMissing.noWebgpu": "WebGPU is not available in this Obsidian — use a server (settings)",
   "status.gpuMissing.noF16": "The GPU has no shader-f16 — use a server (settings)",
   "status.notDownloaded": "Model not downloaded",
@@ -60,6 +61,8 @@ export const EN: Record<string, string> = {
   "empty.downloadCta": "Download model (2.6 GB)",
   "empty.downloading": "Downloading the model. You can cancel; finished files are kept.",
   "empty.cancelCta": "Cancel download",
+  "notice.modelReady": "Model downloaded and verified — ready to generate.",
+  "engine.integrityError": "Checksum mismatch for {0} — the file was discarded. Try the download again.",
 
   "notice.saveFailed": "Save failed: {0}",
   "notice.saved": "Saved: {0}",
@@ -156,6 +159,7 @@ export const DE: Record<string, string> = {
 
   "generate.modelBuiltin": "Modell: {0} (eingebaut)",
   "status.gpuChecking": "Prüfe GPU…",
+  "status.starting": "Starte…",
   "status.gpuMissing.noWebgpu": "WebGPU ist in diesem Obsidian nicht verfügbar — Server verwenden (Einstellungen)",
   "status.gpuMissing.noF16": "Die GPU hat kein shader-f16 — Server verwenden (Einstellungen)",
   "status.notDownloaded": "Modell nicht heruntergeladen",
@@ -167,6 +171,8 @@ export const DE: Record<string, string> = {
   "empty.downloadCta": "Modell herunterladen (2,6 GB)",
   "empty.downloading": "Das Modell wird geladen. Abbrechen ist möglich; fertige Dateien bleiben.",
   "empty.cancelCta": "Download abbrechen",
+  "notice.modelReady": "Modell heruntergeladen und geprüft — bereit zum Generieren.",
+  "engine.integrityError": "Prüfsumme von {0} stimmt nicht — die Datei wurde verworfen. Download erneut versuchen.",
 
   "notice.saveFailed": "Speichern fehlgeschlagen: {0}",
   "notice.saved": "Gespeichert: {0}",

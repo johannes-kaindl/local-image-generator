@@ -142,6 +142,8 @@ function engineStatus(s: PanelState): PanelViewModel["status"] {
   if (e.kind === "downloading")
     return { icon: "loader", text: t("status.downloading", e.file, formatBytes(e.received), formatBytes(e.total), String(e.fileIndex), String(e.fileCount)), cls: "is-checking" };
   if (e.kind === "verifying") return { icon: "loader", text: t("status.verifying", e.file), cls: "is-checking" };
+  // „Server wird kontaktiert" wäre hier eine Lüge — die Engine startet lokal.
+  if (s.run.kind === "contacting") return { icon: "loader", text: t("status.starting"), cls: "is-checking" };
   return runStatus(s);
 }
 

@@ -22,6 +22,12 @@ export interface Session {
    *  unsere eigene Konversion (tools/convert/, keep_io_types=True) hat dieselbe Paarung —
    *  gemessen mit scripts/verify-model.mjs). Fehlender Eintrag → float32/int32-Default. */
   inputTypes: Readonly<Record<string, string>>;
+  /** Deklarierte Eingabe-Shapes je Input-Name (symbolische Dims als String). Nur der Rang zählt:
+   *  ein `timestep` mit shape [] ist ein 0-d-Skalar und will dims [] — die eigene Konversion
+   *  (optimum, 2026-08-19) exportiert ihn so; ältere Exporte hatten [1]. Fehlt der Eintrag,
+   *  bleibt dims [1] (gemessen am ORT-Web-Fehler „Gemm: Input tensors A and B must be 2
+   *  dimensional" beim ersten Live-Lauf 0.6). */
+  inputShapes?: Readonly<Record<string, readonly (number | string)[]>>;
   run(feeds: Record<string, OrtValue>): Promise<Record<string, OrtValue>>;
   release(): Promise<void>;
 }
@@ -67,12 +73,13 @@ function floatFeed(session: Session, name: string, f32: Float32Array, dims: read
     : { data: f32, dims };
 }
 
-// Skalarer Timestep im deklarierten Typ (int64 | float32 | float16).
+// Skalarer Timestep im deklarierten Typ (int64 | float32 | float16) und Rang (0-d oder [1]).
 function timestepFeed(session: Session, name: string, t: number): OrtValue {
   const type = session.inputTypes[name] ?? "int64";
-  if (type === "float32") return { data: new Float32Array([t]), dims: [1] };
-  if (type === "float16") return { data: f32ArrayToF16(new Float32Array([t])), dims: [1] };
-  return { data: new BigInt64Array([BigInt(t)]), dims: [1] };
+  const dims: number[] = session.inputShapes?.[name]?.length === 0 ? [] : [1];
+  if (type === "float32") return { data: new Float32Array([t]), dims };
+  if (type === "float16") return { data: f32ArrayToF16(new Float32Array([t])), dims };
+  return { data: new BigInt64Array([BigInt(t)]), dims };
 }
 
 // Token-IDs im deklarierten Typ (int32 | int64).

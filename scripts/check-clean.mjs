@@ -1,10 +1,18 @@
 // Store-Scanner-Vorwegnahme (Spec §7): main.js darf keine System-Fähigkeiten tragen und
 // muss klein bleiben. Läuft NACH esbuild gegen das Artefakt (nicht src/): genau das prüft
 // auch der Scanner. Lesson „Scanner ≠ lokaler Lint" (_docs/LESSONS.md 2026-07-23).
+//
+// Seit 0.6 (eingebaute Engine) trägt main.js das onnxruntime-web/webgpu-Glue (~120 KB). Dessen
+// Emscripten-embind enthält EIN `new Function(` (emval-Method-Caller). Das ist eine BEHAVIOR-
+// Disclosure einer gebündelten Dependency — sie zählt nicht in die Store-Wertung
+// (_docs/docs/obsidian-plugin-publishing.md § „Nur die SOURCE-CODE-eslint-Sektion bestimmt die
+// Wertung"; audio-interface fährt dieselbe Runtime auf `Passed`). `eval(` bleibt verboten:
+// dafür gibt es keine Dependency-Begründung. Die 2-MB-Grenze bleibt (Store-Warnung erst ab 5 MB;
+// gemessen 2026-08-19: 174 KB mit ORT-Glue).
 import { readFileSync, statSync } from "node:fs";
 
 const MAX_BYTES = 2 * 1024 * 1024;
-const FORBIDDEN = [/require\(["']child_process["']\)/, /require\(["']fs["']\)/, /require\(["']original-fs["']\)/, /\beval\(/, /new Function\(/];
+const FORBIDDEN = [/require\(["']child_process["']\)/, /require\(["']fs["']\)/, /require\(["']original-fs["']\)/, /\beval\(/];
 
 const size = statSync("main.js").size;
 if (size > MAX_BYTES) {

@@ -9,13 +9,17 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp 
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
-import { DEFAULT_SETTINGS, sanitizeSettings, type LigSettings } from "./core/settings";
-import { parseOptionsModel, ProgressPoller, Txt2ImgClient } from "./core/txt2img";
-import type { GenParams, PanelState, ServerState } from "./core/viewmodel";
+import { BUILTIN_MODEL, allAssets } from "./core/model-manifest";
+import { DEFAULT_SETTINGS, migrateSettings, sanitizeSettings, type EngineChoice, type LigSettings } from "./core/settings";
+import { parseOptionsModel, ProgressPoller, Txt2ImgClient, type ImageBackend } from "./core/txt2img";
+import type { EngineState, GenParams, PanelState, ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
-import { dataUrlToBytes } from "./obsidian/png";
+import { LocalEngineBackend } from "./obsidian/local-engine";
+import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
+import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
+import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { GeneratorView, VIEW_TYPE, type ViewHost } from "./obsidian/view";
 import { normalizeEndpoint } from "./vendor/kit/endpoint";
@@ -31,6 +35,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // Call selbst ist nicht abbrechbar (Obsidians requestUrl kennt kein Abort) — wir
   // verhindern nur die späte Nebenwirkung.
   private unloaded = false;
+  // Eingebaute Engine (Spec 0.6): Store (Cache API), Backend (lazy, lebt bis dispose), laufender
+  // Download. Der Settings-Tab beobachtet den Engine-Zustand über onEngineStateChanged.
+  private readonly modelStore = new ModelStore();
+  private localEngine: LocalEngineBackend | null = null;
+  private downloadAbort: AbortController | null = null;
+  onEngineStateChanged: (() => void) | null = null;
   private state: PanelState = {
     mode: "server", // in onload aus settings.engine gesetzt
     engine: { kind: "not-downloaded" },
@@ -48,8 +58,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   };
 
   async onload(): Promise<void> {
-    this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, await this.loadData()));
+    // migrateSettings VOR mergeSettings: das neue Feld `engine` entscheidet sich am alten
+    // Endpunkt (0.5-Nutzer bleiben im Server-Modus), nicht am Default.
+    this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, migrateSettings(await this.loadData())));
+    this.state.mode = this.settings.engine;
     this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
+    this.state.engine = { kind: this.settings.engine === "builtin" ? "gpu-checking" : "not-downloaded" };
 
     registerI18n();
     setLang(pickLang(getLanguage()));
@@ -78,6 +92,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       },
       generate: (steps, seed, cfg, width, height) => void this.generate(steps, seed, cfg, width, height),
       recheckServer: () => void this.checkServer(),
+      downloadModel: () => void this.startDownload(),
+      cancelDownload: () => this.cancelDownload(),
       saveImage: (mode) => void this.saveImage(mode),
       openSettings: () => {
         const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
@@ -129,7 +145,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.addRibbonIcon("image-plus", t("view.title"), () => void this.activateView());
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
-    void this.checkServer();
+    if (this.settings.engine === "builtin") void this.refreshEngineState();
+    else void this.checkServer();
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
     // Settings-Tab-Öffnung): Bestandsinstallationen können noch ~2,5 GB alte SD-Turbo-
     // Gewichte im Cache-API-Speicher haben (0.x, In-Process-Engine). Hinweis statt
@@ -140,11 +157,128 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   onunload(): void {
-    // Thin Client: kein Prozess/keine Session zu killen. Aber eine laufende generate()
-    // pollt per setInterval und wartet auf einen nicht abbrechbaren HTTP-Call. Das Flag
-    // sorgt dafür, dass deren Callbacks nach dem Entladen zu No-ops werden (kein State-
-    // Mutieren, kein refreshViews, kein History-Schreiben).
+    // Eine laufende generate() pollt per setInterval und wartet auf einen nicht abbrechbaren
+    // HTTP-Call. Das Flag sorgt dafür, dass deren Callbacks nach dem Entladen zu No-ops werden
+    // (kein State-Mutieren, kein refreshViews, kein History-Schreiben). Die eingebaute Engine
+    // hält GPU-Sessions und evtl. einen Download — beides abräumen (0.1-Leak-Befund).
     this.unloaded = true;
+    this.downloadAbort?.abort();
+    void this.localEngine?.dispose();
+    this.localEngine = null;
+  }
+
+  // ── Eingebaute Engine (Spec 0.6 §2/§4/§5) ─────────────────────────────────
+
+  getEngineState(): EngineState {
+    return this.state.engine;
+  }
+
+  private setEngineState(e: EngineState): void {
+    this.state.engine = e;
+    this.refreshViews();
+    this.onEngineStateChanged?.();
+  }
+
+  /** Modus wechseln (Settings): das andere Backend wird verlassen — GPU-Sessions frei, Server
+   *  neu geprüft bzw. Engine-Zustand neu ermittelt. */
+  async setEngine(mode: EngineChoice): Promise<void> {
+    if (mode === this.settings.engine) return;
+    this.settings.engine = mode;
+    await this.saveSettings();
+    this.state.mode = mode;
+    if (mode === "server") {
+      const e = this.localEngine;
+      this.localEngine = null;
+      void e?.dispose();
+      await this.checkServer();
+    } else {
+      await this.refreshEngineState();
+    }
+    this.refreshViews();
+    this.onEngineStateChanged?.();
+  }
+
+  /** GPU prüfen, dann nachsehen, ob alle Assets im Cache liegen. Läuft beim Aktivieren des
+   *  builtin-Modus und nach jedem Download/Entfernen. Ein laufender Download bleibt unberührt. */
+  async refreshEngineState(): Promise<void> {
+    if (this.downloadAbort) return;
+    this.setEngineState({ kind: "gpu-checking" });
+    const gpu = await checkGpu();
+    if (this.unloaded) return;
+    if (gpu !== "ok") {
+      this.setEngineState({ kind: "gpu-missing", reason: gpu });
+      return;
+    }
+    const complete = await this.modelStore.isComplete(allAssets()).catch(() => false);
+    if (this.unloaded) return;
+    this.setEngineState({ kind: complete ? "ready" : "not-downloaded" });
+  }
+
+  /** Opt-in-Download aller fehlenden Assets (Spec 0.6 §4: ohne Klick fließt kein Byte). */
+  async startDownload(): Promise<void> {
+    if (this.downloadAbort) return;
+    const ac = new AbortController();
+    this.downloadAbort = ac;
+    const files = allAssets();
+    try {
+      await this.modelStore.download(
+        files,
+        this.settings.assetBaseUrl,
+        (p) => {
+          if (this.unloaded) return;
+          const file = p.file.path.split("/").pop() ?? p.file.path;
+          this.setEngineState(
+            p.phase === "verifying"
+              ? { kind: "verifying", file }
+              : { kind: "downloading", file, received: p.received, total: p.total, fileIndex: p.fileIndex, fileCount: p.fileCount },
+          );
+        },
+        ac.signal,
+      );
+      if (this.unloaded) return;
+      new Notice(t("notice.modelReady"));
+    } catch (e) {
+      if (this.unloaded) return;
+      this.downloadAbort = null;
+      if (e instanceof DownloadAborted) {
+        await this.refreshEngineState();
+      } else if (e instanceof IntegrityError) {
+        this.setEngineState({ kind: "error", message: t("engine.integrityError", e.file.path) });
+      } else {
+        this.setEngineState({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+      }
+      return;
+    } finally {
+      this.downloadAbort = null;
+    }
+    await this.refreshEngineState();
+  }
+
+  cancelDownload(): void {
+    this.downloadAbort?.abort();
+  }
+
+  /** Alle Assets aus dem Cache entfernen (Settings, nach Bestätigung); GPU-Sessions dazu frei. */
+  async removeModel(): Promise<void> {
+    this.cancelDownload();
+    const e = this.localEngine;
+    this.localEngine = null;
+    await e?.dispose();
+    await this.modelStore.deleteAll(allAssets());
+    await this.refreshEngineState();
+  }
+
+  private ensureLocalEngine(): LocalEngineBackend {
+    if (this.localEngine) return this.localEngine;
+    const be = new LocalEngineBackend({
+      store: this.modelStore,
+      createSession: createOrtSession,
+      initRuntime: initOrt,
+      checkGpu,
+      encodePng: rgbaToDataUrl,
+    });
+    this.localEngine = be;
+    return be;
   }
 
   async saveSettings(): Promise<void> {
@@ -198,23 +332,54 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   private async generate(steps: number, seed: number, cfg: number, width: number, height: number): Promise<void> {
-    if (this.state.run.kind === "contacting" || this.state.run.kind === "generating") return;
-    if (this.state.server.kind !== "ok") return; // ViewModel gated das bereits — Defensive
+    if (this.state.run.kind === "contacting" || this.state.run.kind === "generating" || this.state.run.kind === "loading-model") return;
+    const builtin = this.settings.engine === "builtin";
+    // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit.
+    if (builtin ? this.state.engine.kind !== "ready" : this.state.server.kind !== "ok") return;
     const prompt = this.state.prompt;
-    const negativePrompt = this.state.negativePrompt;
-    const model = this.state.server.modelName ?? "unknown";
-    const client = new Txt2ImgClient(this.settings.endpoint, httpPostJson);
+    // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
+    // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde.
+    const negativePrompt = builtin ? "" : this.state.negativePrompt;
+    const effCfg = builtin ? 1 : cfg;
+    const effW = builtin ? BUILTIN_MODEL.size : width;
+    const effH = builtin ? BUILTIN_MODEL.size : height;
+    const model = builtin ? BUILTIN_MODEL.id : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
+    const backend: ImageBackend = builtin ? this.ensureLocalEngine() : new Txt2ImgClient(this.settings.endpoint, httpPostJson);
     this.state.run = { kind: "contacting" };
     this.refreshViews();
-    // Fortschritt: 1-s-Polling auf /sdapi/v1/progress; liefert der Server keins (404,
-    // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden. Nach dem
-    // ersten 404 fragt der Poller nicht mehr (Draw Things) — der Zähler läuft trotzdem.
+    // Fortschritt. Server: 1-s-Polling auf /sdapi/v1/progress; liefert der Server keins (404,
+    // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden. Nach dem ersten
+    // 404 fragt der Poller nicht mehr (Draw Things) — der Zähler läuft trotzdem.
+    // Eingebaut: die Engine meldet Phasen selbst (loading-model einmal je Sitzung, dann Schritte);
+    // der Timer trägt nur den Sekundenzähler der Ladephase.
     let elapsed = 0;
-    const poller = new ProgressPoller(this.settings.endpoint, (u) => httpGetJson(u, 1000));
+    const poller = builtin ? null : new ProgressPoller(this.settings.endpoint, (u) => httpGetJson(u, 1000));
+    if (builtin) {
+      this.ensureLocalEngine().onPhase = (phase, step, total) => {
+        if (this.unloaded) return;
+        if (phase === "loading-model") this.state.run = { kind: "loading-model", elapsedSec: elapsed };
+        else if (step !== undefined && total !== undefined && total > 0)
+          this.state.run = { kind: "generating", pct: Math.round((step / total) * 100), elapsedSec: elapsed };
+        this.refreshViews();
+      };
+    }
     const tick = window.setInterval(() => {
       if (this.unloaded) return; // Plugin entladen → keine späten State-Mutationen mehr
       elapsed += 1;
-      if (this.state.run.kind !== "generating" && this.state.run.kind !== "contacting") return;
+      const r = this.state.run;
+      if (r.kind === "loading-model") {
+        this.state.run = { kind: "loading-model", elapsedSec: elapsed };
+        this.refreshViews();
+        return;
+      }
+      if (r.kind !== "generating" && r.kind !== "contacting") return;
+      if (!poller) {
+        if (r.kind === "generating") {
+          this.state.run = { kind: "generating", pct: r.pct, elapsedSec: elapsed };
+          this.refreshViews();
+        }
+        return;
+      }
       void poller.poll().then((pct) => {
         if (this.unloaded) return;
         if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
@@ -224,14 +389,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }, 1000);
     let succeeded = false;
     try {
-      const png = await client.generate({ prompt, negativePrompt, width, height, steps, seed, cfg });
+      const png = await backend.generate({ prompt, negativePrompt, width: effW, height: effH, steps, seed, cfg: effCfg });
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
       // keine State-Mutation, kein refreshViews, kein History-Schreiben — nur das finally
       // räumt den Timer ab. return löst finally aus und überspringt den Post-await-Block.
       if (this.unloaded) return;
       this.state.image = {
         dataUrl: `data:image/png;base64,${png}`,
-        params: { prompt, negativePrompt, seed, steps, cfg, model, width, height, date: isoStamp(new Date()) },
+        params: { prompt, negativePrompt, seed, steps, cfg: effCfg, model, width: effW, height: effH, date: isoStamp(new Date()) },
       };
       this.state.run = { kind: "idle" };
       succeeded = true;
@@ -240,7 +405,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       const msg = e instanceof Error ? e.message : String(e);
       this.state.run = { kind: "error", message: msg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
-      void this.checkServer();
+      if (!builtin) void this.checkServer();
     } finally {
       // Timer immer abräumen (auch wenn onunload zwischen zwei Polls fiel) — verhindert
       // weiteres Feuern; refreshViews aber nur, solange das Plugin noch aktiv ist.

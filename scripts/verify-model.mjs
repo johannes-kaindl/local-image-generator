@@ -15,7 +15,7 @@ for (const [part, exp] of Object.entries(EXPECT)) {
   const size = statSync(path).size;
   const s = await InferenceSession.create(path, { executionProviders: ["cpu"] });
   const inputs = [...s.inputNames];
-  const meta = Object.fromEntries((s.inputMetadata ?? []).map((m) => [m.name, m.isTensor ? m.type : "?"]));
+  const meta = Object.fromEntries((s.inputMetadata ?? []).map((m) => [m.name, m.isTensor ? `${m.type}${JSON.stringify(m.shape ?? [])}` : "?"]));
   const okInputs = exp.inputs.every((n) => inputs.includes(n));
   const okOut = s.outputNames[0] === exp.firstOutput;
   const line = `${part}: ${(size / 1e6).toFixed(0)} MB · inputs ${JSON.stringify(meta)} · outputs ${JSON.stringify([...s.outputNames])}`;

@@ -19,6 +19,9 @@ export interface ViewHost {
   setRecipe(steps: number, seed: number, cfg: number, width: number, height: number): void;
   generate(steps: number, seed: number, cfg: number, width: number, height: number): void;
   recheckServer(): void;
+  /** Eingebaute Engine: Modell-Download aus dem Panel starten/abbrechen (Spec 0.6 §6). */
+  downloadModel(): void;
+  cancelDownload(): void;
   saveImage(mode: "create" | "insert"): void;
   openSettings(): void;
   restoreRecipe(entry: HistoryEntry): void;

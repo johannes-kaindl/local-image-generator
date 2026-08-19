@@ -50,16 +50,20 @@ export async function createOrtSession(buf: ArrayBuffer): Promise<Session> {
   // Deklarierte Eingabetypen aus den Session-Metadaten ziehen (ORT ≥1.21) —
   // die Engine passt ihre Feed-Dtypes daran an (fp16-Gewichte ≠ fp16-Inputs).
   const inputTypes: Record<string, string> = {};
+  const inputShapes: Record<string, readonly (number | string)[]> = {};
   const meta = (session as unknown as {
-    inputMetadata?: readonly { name: string; isTensor: boolean; type?: unknown }[];
+    inputMetadata?: readonly { name: string; isTensor: boolean; type?: unknown; shape?: unknown }[];
   }).inputMetadata;
   for (const m of meta ?? []) {
-    if (m.isTensor && typeof m.type === "string") inputTypes[m.name] = m.type;
+    if (!m.isTensor) continue;
+    if (typeof m.type === "string") inputTypes[m.name] = m.type;
+    if (Array.isArray(m.shape)) inputShapes[m.name] = m.shape as readonly (number | string)[];
   }
   return {
     inputNames: session.inputNames,
     outputNames: session.outputNames,
     inputTypes,
+    inputShapes,
     async run(feeds: Record<string, OrtValue>): Promise<Record<string, OrtValue>> {
       const ortFeeds: Record<string, ort.Tensor> = {};
       for (const [name, v] of Object.entries(feeds)) {

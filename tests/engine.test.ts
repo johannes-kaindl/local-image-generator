@@ -173,4 +173,29 @@ describe("SdTurboEngine", () => {
     await engine.dispose(); // idempotent: kein zweiter release-Aufruf
     expect(released.sort()).toEqual(["text_encoder", "unet", "vae_decoder"]);
   });
+  it("skalarer timestep (shape [] im Export, eigene Konversion 2026-08-19): dims [] und float32", async () => {
+    const seen: { dims: readonly number[]; data: unknown }[] = [];
+    const base = fakeSessions([]);
+    const unet: Session = {
+      ...base.unet,
+      inputTypes: { sample: "float32", timestep: "float32", encoder_hidden_states: "float32" },
+      inputShapes: { sample: ["batch_size", 4, "height", "width"], timestep: [], encoder_hidden_states: ["batch_size", "sequence_length", 1024] },
+      run: async (feeds) => {
+        seen.push({ dims: feeds["timestep"]!.dims, data: feeds["timestep"]!.data });
+        return { out_sample: { data: new Float32Array(4 * 64 * 64), dims: [1, 4, 64, 64] } };
+      },
+    };
+    const engine = new SdTurboEngine({ ...base, unet }, tokData);
+    await engine.generate({ prompt: "cat", steps: 1, seed: 1 });
+    expect(seen[0]!.dims).toEqual([]);
+    expect(seen[0]!.data).toBeInstanceOf(Float32Array);
+    expect((seen[0]!.data as Float32Array).length).toBe(1);
+  });
+  it("ohne inputShapes bleibt timestep dims [1] (0.4-Exporte)", async () => {
+    const seen: (readonly number[])[] = [];
+    const base = fakeSessions([]);
+    const unet: Session = { ...base.unet, run: async (feeds) => { seen.push(feeds["timestep"]!.dims); return { out_sample: { data: new Uint16Array(4 * 64 * 64), dims: [1, 4, 64, 64] } }; } };
+    await new SdTurboEngine({ ...base, unet }, tokData).generate({ prompt: "cat", steps: 1, seed: 1 });
+    expect(seen[0]).toEqual([1]);
+  });
 });
