@@ -256,7 +256,8 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // „not-downloaded" ist der STARTzustand — als Ende zählt er erst nach gesehenem Fortschritt
     // (Abbruch). Gemessen 2026-08-19: ohne diese Bedingung endete der Prüfpunkt sofort rot.
     (e) => e.kind === "ready" || e.kind === "error" || (sawProgress && e.kind === "not-downloaded"),
-    15 * 60_000,
+    // 2,5 GB: lokal 30 s, vom echten HF-Repo je nach Leitung 10–20 min (gemessen 2026-08-19).
+    30 * 60_000,
     "warte auf den Modell-Download",
     1000,
   );

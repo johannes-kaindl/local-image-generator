@@ -131,6 +131,14 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-19 · 0.6.0-dev · Obsidian 1.12.4 · A1111-Mock + **echtes HF-Repo** (`v6t2b9/local-image-generator-models`) · **16/16 grün**
+
+Freigabe-Lauf für 0.6.0 mit `--assets https://huggingface.co/v6t2b9/local-image-generator-models/resolve/main`:
+Download der 2,5 GB aus dem Netz in **1169 s** (~2,2 MB/s), SHA-256 aller sechs Dateien gegen
+das Manifest bestanden, Bild 8 s, Notiz `model: sd-turbo`. Die Download-Frist des Prüfpunkts
+wurde dafür von 15 auf 30 min angehoben (ein erster Versuch endete bei ~10 min, weil der
+Treiber-Autor das Plugin währenddessen neu lud — Eigenverschulden, kein Befund).
+
 ### 2026-08-19 · 0.6.0-dev · Obsidian 1.12.4 (Electron 39) · A1111-Mock + lokaler Asset-Server · **16/16 grün**
 
 Erster Lauf mit den Punkten 13–16 (eingebaute Engine, Spec 0.6). Baseline: 12/12 vom
