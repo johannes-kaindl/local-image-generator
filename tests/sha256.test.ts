@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { Sha256, sha256Hex } from "../src/core/sha256";
+import { Sha256, sha256Hex } from "../src/vendor/kit/sha256";
 
 describe("Sha256", () => {
   it("leerer Input hat den bekannten Digest", () => {

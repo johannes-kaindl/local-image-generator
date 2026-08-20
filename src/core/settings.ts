@@ -3,6 +3,15 @@
 
 import { STEPS } from "./generation";
 import { DEFAULT_ASSET_BASE_URL } from "./model-manifest";
+import {
+  arrayOf,
+  arrayThen,
+  check,
+  isPlainObject,
+  nonEmptyString,
+  oneOf,
+  type SettingsSchema,
+} from "../vendor/kit/settings_schema";
 
 export type EngineChoice = "builtin" | "server";
 
@@ -99,20 +108,11 @@ export const DEFAULT_SETTINGS: LigSettings = {
   sectionsCollapsed: {},
 };
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
-function sanitizePresets(raw: unknown): StylePreset[] {
-  if (!Array.isArray(raw)) return DEFAULT_PRESETS.map((p) => ({ ...p }));
-  return raw.filter(
-    (p): p is StylePreset =>
-      isPlainObject(p) && typeof p["id"] === "string" && typeof p["label"] === "string" && typeof p["suffix"] === "string",
-  );
-}
-
-function sanitizeHistory(raw: unknown): HistoryEntry[] {
-  if (!Array.isArray(raw)) return [];
+/** Filter + Backfill der Historie — Migration 0.3→0.4 (width/height) und 0.4→0.5
+ *  (negativePrompt/cfg). Bekommt aus `arrayThen` den rohen Array-Inhalt und ist selbst
+ *  dafür zuständig, kaputte Einträge zu verwerfen: sie ist die einzige Stelle, die die
+ *  Alt-Form kennt. Ein kaputter Eintrag kostet nicht die ganze Liste. */
+function migrateHistory(raw: unknown[]): HistoryEntry[] {
   return raw
     .filter(
       (
@@ -141,41 +141,6 @@ function sanitizeHistory(raw: unknown): HistoryEntry[] {
     }));
 }
 
-function sanitizeHistoryView(raw: unknown): "recent" | "grouped" {
-  return raw === "grouped" ? "grouped" : "recent";
-}
-
-function sanitizeSectionsCollapsed(raw: unknown): Record<string, boolean> {
-  return isPlainObject(raw) ? (raw as Record<string, boolean>) : {};
-}
-
-function sanitizeDefaultSteps(raw: unknown): number {
-  return typeof raw === "number" && Number.isInteger(raw) && raw >= STEPS.min && raw <= STEPS.max
-    ? raw
-    : DEFAULT_SETTINGS.defaultSteps;
-}
-
-function sanitizeCreateMode(raw: unknown): "image" | "note" {
-  return raw === "note" ? "note" : "image";
-}
-
-function sanitizeFolder(raw: unknown): string {
-  return typeof raw === "string" ? raw : "";
-}
-
-function sanitizeSelectedModel(raw: unknown): string {
-  return typeof raw === "string" ? raw : "";
-}
-
-function sanitizeEngine(raw: unknown): EngineChoice {
-  return raw === "server" ? "server" : "builtin";
-}
-
-function sanitizeAssetBaseUrl(raw: unknown): string {
-  const v = typeof raw === "string" ? raw.trim() : "";
-  return v === "" ? DEFAULT_ASSET_BASE_URL : v;
-}
-
 /** 0.5 → 0.6 (Spec 0.6 §8): das Feld `engine` ist neu. Fehlt es, bleibt ein Nutzer mit
  *  eingetragenem Endpunkt im Server-Modus — niemand verliert seine Konfiguration; alle anderen
  *  bekommen die eingebaute Engine (Zero-Setup-Default). Läuft VOR mergeSettings, sonst hätte
@@ -188,29 +153,35 @@ export function migrateSettings(raw: unknown): unknown {
   return { ...s, engine: endpoint !== "" ? "server" : "builtin" };
 }
 
-/** Bereinigt einen geladenen Settings-Stand (Spec §8): handeditierte oder korrupte
- *  `data.json` darf nicht in vier verschiedenen Renderstellen (Chips, Preset-Editor,
- *  Collapsible-Storage, Historie-Push) auf falsche Formannahmen treffen. Fällt Feld für
- *  Feld auf den Default zurück, statt das ganze Objekt zu verwerfen. Pure — einmal beim
- *  Laden aufgerufen, direkt nach `mergeSettings`. */
-export function sanitizeSettings(raw: unknown): LigSettings {
-  // Roh und untypisiert lesen: der Sinn dieser Funktion ist gerade, korruptem/handeditiertem
-  // Input zu misstrauen — die Feld-Sanitizer erwarten daher alle `unknown`.
-  const s = (raw ?? {}) as Record<string, unknown>;
-  return {
-    engine: sanitizeEngine(s.engine),
-    assetBaseUrl: sanitizeAssetBaseUrl(s.assetBaseUrl),
-    outputFolder: sanitizeFolder(s.outputFolder),
-    noteFolder: sanitizeFolder(s.noteFolder),
-    endpoint: sanitizeFolder(s.endpoint),
-    defaultSteps: sanitizeDefaultSteps(s.defaultSteps),
-    createMode: sanitizeCreateMode(s.createMode),
-    presets: sanitizePresets(s.presets),
-    history: sanitizeHistory(s.history),
-    historyView: sanitizeHistoryView(s.historyView),
-    selectedModel: sanitizeSelectedModel(s.selectedModel),
-    mfluxPath: sanitizeFolder(s.mfluxPath),
-    modelsDir: sanitizeFolder(s.modelsDir),
-    sectionsCollapsed: sanitizeSectionsCollapsed(s.sectionsCollapsed),
-  };
-}
+/** Feldprüfer für `validateSettings` (Kit `pure/settings_schema.ts`, Schicht 2 — geschlossene
+ *  Welt). Eine handeditierte oder von einem Sync-Konflikt zerlegte `data.json` darf nicht in
+ *  vier verschiedenen Renderstellen (Chips, Preset-Editor, Collapsible-Storage, Historie-Push)
+ *  auf falsche Formannahmen treffen; jedes Feld fällt einzeln auf seinen Default zurück, statt
+ *  das ganze Objekt zu verwerfen.
+ *
+ *  Zwei Aufrufstellen, beide mit diesem Schema: das Laden (`main.ts::onload`) und der
+ *  Schreibpfad des Settings-Tabs (`validateSettings(D, { ...settings, [key]: value })`) —
+ *  die Funktion ist idempotent.
+ *
+ *  **Ohne Eintrag bleiben absichtlich** `outputFolder`, `noteFolder`, `endpoint`,
+ *  `selectedModel`, `mfluxPath`, `modelsDir` und `sectionsCollapsed`: für sie leistet die
+ *  generische Bauform-Prüfung gegen den Default (`""` bzw. `{}`) exakt dasselbe wie die
+ *  früheren Feld-Sanitizer. Ein leerer String ist hier kein Fehler, sondern eine Aussage
+ *  (leerer outputFolder = Obsidians Attachment-Logik). */
+export const SETTINGS_SCHEMA: SettingsSchema<LigSettings> = {
+  engine: oneOf<EngineChoice>(["builtin", "server"]),
+  assetBaseUrl: nonEmptyString({ trim: true }),
+  // check(...), NICHT clampIntField(1, 50): der Kombinator ist String-tolerant und trunct
+  // Floats ("3" → 3, 2.5 → 2). Hier gilt ein Wert, der kein ganzzahliger Schritt im Bereich
+  // ist, als kaputt und fällt auf den Default zurück (gepinnt in tests/settings.test.ts).
+  defaultSteps: check<number>(
+    (v) => typeof v === "number" && Number.isInteger(v) && v >= STEPS.min && v <= STEPS.max,
+  ),
+  createMode: oneOf<LigSettings["createMode"]>(["image", "note"]),
+  presets: arrayOf<StylePreset>(
+    (p) =>
+      isPlainObject(p) && typeof p["id"] === "string" && typeof p["label"] === "string" && typeof p["suffix"] === "string",
+  ),
+  history: arrayThen<HistoryEntry>(migrateHistory),
+  historyView: oneOf<LigSettings["historyView"]>(["recent", "grouped"]),
+};

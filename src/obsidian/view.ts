@@ -1,5 +1,5 @@
 // Die EINE View des Plugins (UI-STANDARD §1/§4): ein Tab-Hub. Der View selbst ist nur
-// die Hülle — Aufbau + Navigation liegen im vendored Hub, der Inhalt in den Panels.
+// die Hülle — Aufbau + Navigation liegen im Kit-Hub (buildHubInto), der Inhalt in den Panels.
 // Kennt weder Plugin noch Engine — nur den schmalen ViewHost.
 import { ItemView, WorkspaceLeaf, type ViewStateResult } from "obsidian";
 import type { HistoryEntry, LigSettings } from "../core/settings";
@@ -7,7 +7,7 @@ import { t } from "../vendor/kit/i18n";
 import type { PanelState } from "../core/viewmodel";
 import { GeneratePanel } from "./generate-panel";
 import { HistoryPanel } from "./history-panel";
-import { buildInto, type HubController, type HubPanel, type TabId } from "./hub";
+import { buildHubInto, type HubController, type HubPanel, type TabId } from "./hub";
 
 export const VIEW_TYPE = "local-image-generator";
 
@@ -32,8 +32,8 @@ export interface ViewHost {
 }
 
 export class GeneratorView extends ItemView {
-  private ctrl: HubController | null = null;
-  private panels: HubPanel[] = [];
+  private ctrl: HubController<TabId> | null = null;
+  private panels: HubPanel<TabId>[] = [];
   private restoreTab: TabId = "generate";
   private generatePanel: GeneratePanel | null = null;
   private historyPanel: HistoryPanel | null = null;
@@ -63,7 +63,7 @@ export class GeneratorView extends ItemView {
     this.generatePanel = generate;
     this.historyPanel = history;
     this.panels = [generate, history];
-    this.ctrl = buildInto(this.contentEl, this.panels, this.restoreTab);
+    this.ctrl = buildHubInto(this.contentEl, this.panels, this.restoreTab);
   }
 
   refresh(): void {

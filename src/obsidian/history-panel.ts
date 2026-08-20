@@ -14,7 +14,7 @@ function formatTime(created: string): string {
   return new Date(created).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-export class HistoryPanel implements HubPanel {
+export class HistoryPanel implements HubPanel<TabId> {
   readonly id: TabId = "history";
   readonly label = t("view.tabHistory");
   readonly icon = "history";

@@ -95,7 +95,7 @@ async function hubOeffnen(cdp: Cdp, reiter: "Generate" | "History"): Promise<boo
       // Sidebar verbreitern: die Vorgabe ist zu schmal, um Reglerzeilen zu lesen.
       app.workspace.rightSplit?.setSize?.(${SIDEBAR_BREITE});
       await new Promise((r) => setTimeout(r, 400));
-      const tab = [...document.querySelectorAll(".lig-hub-tab")]
+      const tab = [...document.querySelectorAll(".okit-hub-tab")]
         .find((t) => t.textContent.trim().includes(${JSON.stringify(reiter)}));
       if (tab) { tab.click(); await new Promise((r) => setTimeout(r, 400)); }
       // Obsidians Statusleiste schwebt ueber der rechten Sidebar und klebt sonst als
@@ -106,7 +106,7 @@ async function hubOeffnen(cdp: Cdp, reiter: "Generate" | "History"): Promise<boo
         s.textContent = ".status-bar { display: none !important; }";
         document.head.appendChild(s);
       }
-      const panel = document.querySelector(".lig-panel, .lig-hub-root");
+      const panel = document.querySelector(".lig-panel, .okit-hub-root");
       return !!panel && panel.getBoundingClientRect().width > 1;
     `),
   );
@@ -335,7 +335,7 @@ const SHOTS: Shot[] = [
       // NICHT `.lig-hist-list`: der Container misst 0 px hoch (die Zeilen haengen weiter
       // oben im Reiter-Inhalt). Ein Selektor, der ein 0x0-Element trifft, laesst den
       // Prueflauf „Zustand kam nicht zustande" melden — gemessen 2026-08-17.
-      return panelBox(cdp, ".lig-hub-content");
+      return panelBox(cdp, ".okit-hub-content");
     },
   },
   {

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { mergeSettings } from "../src/vendor/kit/settings";
-import { DEFAULT_SETTINGS, DEFAULT_PRESETS, migrateSettings, sanitizeSettings, type LigSettings } from "../src/core/settings";
+import { validateSettings } from "../src/vendor/kit/settings_schema";
+import { DEFAULT_SETTINGS, DEFAULT_PRESETS, migrateSettings, SETTINGS_SCHEMA, type LigSettings } from "../src/core/settings";
 import { DEFAULT_ASSET_BASE_URL } from "../src/core/model-manifest";
+
+/** Genau der Aufruf aus main.ts und aus dem Schreibpfad des Settings-Tabs — einmal benannt,
+ *  damit die Zusicherungen unten lesbar bleiben. Ersetzt das frühere lokale sanitizeSettings,
+ *  das seit Kit 0.27.0 validateSettings + SETTINGS_SCHEMA ist. */
+const validate = (raw: unknown): LigSettings => validateSettings(DEFAULT_SETTINGS, raw, SETTINGS_SCHEMA);
 
 describe("settings", () => {
   it("liefert Defaults bei null/undefined raw", () => {
@@ -38,7 +44,7 @@ describe("settings", () => {
   });
 });
 
-describe("sanitizeSettings (Spec §8)", () => {
+describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
   it("lässt einen gesunden Settings-Stand unverändert durch", () => {
     const healthy: LigSettings = {
       engine: "server",
@@ -68,22 +74,22 @@ describe("sanitizeSettings (Spec §8)", () => {
       modelsDir: "/path/to/models",
       sectionsCollapsed: { model: true },
     };
-    expect(sanitizeSettings(healthy)).toEqual(healthy);
+    expect(validate(healthy)).toEqual(healthy);
   });
 
   it("presets: null wird zu DEFAULT_PRESETS", () => {
     const s = { ...DEFAULT_SETTINGS, presets: null as unknown as LigSettings["presets"] };
-    expect(sanitizeSettings(s).presets).toEqual(DEFAULT_PRESETS);
+    expect(validate(s).presets).toEqual(DEFAULT_PRESETS);
   });
 
   it("presets: non-array wird zu DEFAULT_PRESETS", () => {
     const s = { ...DEFAULT_SETTINGS, presets: "nope" as unknown as LigSettings["presets"] };
-    expect(sanitizeSettings(s).presets).toEqual(DEFAULT_PRESETS);
+    expect(validate(s).presets).toEqual(DEFAULT_PRESETS);
   });
 
   it("presets: non-array-Fallback teilt keine Referenzen mit DEFAULT_PRESETS", () => {
     const s = { ...DEFAULT_SETTINGS, presets: "nope" as unknown as LigSettings["presets"] };
-    const sanitized = sanitizeSettings(s).presets;
+    const sanitized = validate(s).presets;
     expect(sanitized).not.toBe(DEFAULT_PRESETS);
     sanitized.forEach((p, i) => expect(p).not.toBe(DEFAULT_PRESETS[i]));
   });
@@ -96,7 +102,7 @@ describe("sanitizeSettings (Spec §8)", () => {
         { id: "broken", label: "Broken" } as unknown as LigSettings["presets"][number],
       ],
     };
-    expect(sanitizeSettings(s).presets).toEqual([{ id: "ok", label: "OK", suffix: "ok-suffix" }]);
+    expect(validate(s).presets).toEqual([{ id: "ok", label: "OK", suffix: "ok-suffix" }]);
   });
 
   it("ein null-Preset-Eintrag wird aus der Liste entfernt", () => {
@@ -104,17 +110,17 @@ describe("sanitizeSettings (Spec §8)", () => {
       ...DEFAULT_SETTINGS,
       presets: [null, { id: "ok", label: "OK", suffix: "ok-suffix" }] as unknown as LigSettings["presets"],
     };
-    expect(sanitizeSettings(s).presets).toEqual([{ id: "ok", label: "OK", suffix: "ok-suffix" }]);
+    expect(validate(s).presets).toEqual([{ id: "ok", label: "OK", suffix: "ok-suffix" }]);
   });
 
   it("sectionsCollapsed: null wird zu {}", () => {
     const s = { ...DEFAULT_SETTINGS, sectionsCollapsed: null as unknown as Record<string, boolean> };
-    expect(sanitizeSettings(s).sectionsCollapsed).toEqual({});
+    expect(validate(s).sectionsCollapsed).toEqual({});
   });
 
   it("sectionsCollapsed: Array wird zu {}", () => {
     const s = { ...DEFAULT_SETTINGS, sectionsCollapsed: [] as unknown as Record<string, boolean> };
-    expect(sanitizeSettings(s).sectionsCollapsed).toEqual({});
+    expect(validate(s).sectionsCollapsed).toEqual({});
   });
 
   it.each([
@@ -127,17 +133,17 @@ describe("sanitizeSettings (Spec §8)", () => {
     [20, 20],
   ])("defaultSteps %p wird zu %p", (input, expected) => {
     const s = { ...DEFAULT_SETTINGS, defaultSteps: input as unknown as number };
-    expect(sanitizeSettings(s).defaultSteps).toBe(expected);
+    expect(validate(s).defaultSteps).toBe(expected);
   });
 
   it("createMode: 'bogus' wird zu 'image'", () => {
     const s = { ...DEFAULT_SETTINGS, createMode: "bogus" as unknown as LigSettings["createMode"] };
-    expect(sanitizeSettings(s).createMode).toBe("image");
+    expect(validate(s).createMode).toBe("image");
   });
 
   it("createMode: 'note' bleibt 'note'", () => {
     const s = { ...DEFAULT_SETTINGS, createMode: "note" as const };
-    expect(sanitizeSettings(s).createMode).toBe("note");
+    expect(validate(s).createMode).toBe("note");
   });
 
   it("outputFolder/noteFolder: non-string wird zu \"\"", () => {
@@ -146,27 +152,27 @@ describe("sanitizeSettings (Spec §8)", () => {
       outputFolder: 5 as unknown as string,
       noteFolder: {} as unknown as string,
     };
-    const sanitized = sanitizeSettings(s);
+    const sanitized = validate(s);
     expect(sanitized.outputFolder).toBe("");
     expect(sanitized.noteFolder).toBe("");
   });
 
   it("endpoint: fehlt in {} → \"\"", () => {
-    expect(sanitizeSettings({}).endpoint).toBe("");
+    expect(validate({}).endpoint).toBe("");
   });
 
   it("endpoint: non-string wird zu \"\"", () => {
-    expect(sanitizeSettings({ endpoint: 42 }).endpoint).toBe("");
+    expect(validate({ endpoint: 42 }).endpoint).toBe("");
   });
 
   it("endpoint: gültiger String bleibt erhalten", () => {
-    expect(sanitizeSettings({ endpoint: "http://127.0.0.1:7860" }).endpoint).toBe("http://127.0.0.1:7860");
+    expect(validate({ endpoint: "http://127.0.0.1:7860" }).endpoint).toBe("http://127.0.0.1:7860");
   });
 });
 
 describe("Historie-Migration", () => {
   it("verwirft eine alte promptHistory (string[]) und startet leer", () => {
-    const s = sanitizeSettings({ promptHistory: ["a", "b", "c"] });
+    const s = validate({ promptHistory: ["a", "b", "c"] });
     expect(s.history).toEqual([]);
     expect((s as unknown as Record<string, unknown>)["promptHistory"]).toBeUndefined();
   });
@@ -183,39 +189,39 @@ describe("Historie-Migration", () => {
       negativePrompt: "",
       cfg: 7,
     };
-    const s = sanitizeSettings({ history: [entry] });
+    const s = validate({ history: [entry] });
     expect(s.history).toEqual([entry]);
     expect(s.historyView).toBe("recent");
   });
 
   it("wirft kaputte history-Einträge weg", () => {
-    const s = sanitizeSettings({ history: [{ prompt: "a" }, 42, null] });
+    const s = validate({ history: [{ prompt: "a" }, 42, null] });
     expect(s.history).toEqual([]);
   });
 
   it("übernimmt historyView='grouped'", () => {
-    expect(sanitizeSettings({ historyView: "grouped" }).historyView).toBe("grouped");
-    expect(sanitizeSettings({ historyView: "quatsch" }).historyView).toBe("recent");
+    expect(validate({ historyView: "grouped" }).historyView).toBe("grouped");
+    expect(validate({ historyView: "quatsch" }).historyView).toBe("recent");
   });
 });
 
-describe("sanitizeSettings — tote Keys mfluxPath/modelsDir/selectedModel (seit 0.5)", () => {
+describe("validateSettings — tote Keys mfluxPath/modelsDir/selectedModel (seit 0.5)", () => {
   it("Defaults: alle drei leer", () => {
-    const s = sanitizeSettings({});
+    const s = validate({});
     expect(s.selectedModel).toBe("");
     expect(s.mfluxPath).toBe("");
     expect(s.modelsDir).toBe("");
   });
 
   it("überleben als Strings — kein MODELS-Katalog-Bezug mehr (Muster sectionsCollapsed)", () => {
-    const s = sanitizeSettings({ selectedModel: "flux99", mfluxPath: "/old/mflux", modelsDir: "/old/models" });
+    const s = validate({ selectedModel: "flux99", mfluxPath: "/old/mflux", modelsDir: "/old/models" });
     expect(s.selectedModel).toBe("flux99");
     expect(s.mfluxPath).toBe("/old/mflux");
     expect(s.modelsDir).toBe("/old/models");
   });
 
   it("Nicht-String-Werte werden leer", () => {
-    const s = sanitizeSettings({ selectedModel: 7, mfluxPath: 42, modelsDir: null });
+    const s = validate({ selectedModel: 7, mfluxPath: 42, modelsDir: null });
     expect(s.selectedModel).toBe("");
     expect(s.mfluxPath).toBe("");
     expect(s.modelsDir).toBe("");
@@ -223,22 +229,22 @@ describe("sanitizeSettings — tote Keys mfluxPath/modelsDir/selectedModel (seit
 });
 
 describe("Historie-Migration 0.4 (width/height)", () => {
-  it("sanitizeHistory migriert Alt-Einträge ohne width/height auf 512", () => {
-    const s = sanitizeSettings({ history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", created: "x" }] });
+  it("history-Migration migriert Alt-Einträge ohne width/height auf 512", () => {
+    const s = validate({ history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", created: "x" }] });
     expect(s.history[0]).toMatchObject({ width: 512, height: 512 });
   });
 });
 
 describe("Historie-Migration 0.5 (negativePrompt/cfg)", () => {
-  it("sanitizeHistory migriert Alt-Einträge ohne negativePrompt/cfg auf '' / 7", () => {
-    const s = sanitizeSettings({
+  it("history-Migration migriert Alt-Einträge ohne negativePrompt/cfg auf '' / 7", () => {
+    const s = validate({
       history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", width: 512, height: 512, created: "x" }],
     });
     expect(s.history[0]).toMatchObject({ negativePrompt: "", cfg: 7 });
   });
 
-  it("sanitizeHistory behält vorhandene negativePrompt/cfg-Werte", () => {
-    const s = sanitizeSettings({
+  it("history-Migration behält vorhandene negativePrompt/cfg-Werte", () => {
+    const s = validate({
       history: [
         {
           prompt: "a",
@@ -259,21 +265,21 @@ describe("Historie-Migration 0.5 (negativePrompt/cfg)", () => {
 
 describe("engine-Migration (0.6)", () => {
   it("fehlt engine und ein Endpunkt ist gesetzt → server (0.5-Nutzer bleiben, wo sie sind)", () => {
-    const s = sanitizeSettings(migrateSettings({ endpoint: "http://127.0.0.1:7860" }));
+    const s = validate(migrateSettings({ endpoint: "http://127.0.0.1:7860" }));
     expect(s.engine).toBe("server");
   });
   it("fehlt engine ohne Endpunkt → builtin (Zero-Setup-Default)", () => {
-    expect(sanitizeSettings(migrateSettings({})).engine).toBe("builtin");
-    expect(sanitizeSettings(migrateSettings(null)).engine).toBe("builtin");
+    expect(validate(migrateSettings({})).engine).toBe("builtin");
+    expect(validate(migrateSettings(null)).engine).toBe("builtin");
   });
   it("vorhandenes engine bleibt; Unsinn fällt auf builtin zurück", () => {
-    expect(sanitizeSettings(migrateSettings({ engine: "server" })).engine).toBe("server");
-    expect(sanitizeSettings(migrateSettings({ engine: "builtin", endpoint: "http://x" })).engine).toBe("builtin");
-    expect(sanitizeSettings({ engine: "toaster" }).engine).toBe("builtin");
+    expect(validate(migrateSettings({ engine: "server" })).engine).toBe("server");
+    expect(validate(migrateSettings({ engine: "builtin", endpoint: "http://x" })).engine).toBe("builtin");
+    expect(validate({ engine: "toaster" }).engine).toBe("builtin");
   });
   it("assetBaseUrl: Default ist das HF-Repo, Leerstring fällt auf Default, Trailing-Slash bleibt roh (assetUrl normalisiert)", () => {
-    expect(sanitizeSettings({}).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
-    expect(sanitizeSettings({ assetBaseUrl: "  " }).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
-    expect(sanitizeSettings({ assetBaseUrl: "http://127.0.0.1:7862/" }).assetBaseUrl).toBe("http://127.0.0.1:7862/");
+    expect(validate({}).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
+    expect(validate({ assetBaseUrl: "  " }).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
+    expect(validate({ assetBaseUrl: "http://127.0.0.1:7862/" }).assetBaseUrl).toBe("http://127.0.0.1:7862/");
   });
 });

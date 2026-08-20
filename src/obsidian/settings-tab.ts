@@ -22,9 +22,10 @@
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { STEPS } from "../core/generation";
 import { allAssets, BUILTIN_MODEL, DEFAULT_ASSET_BASE_URL, totalBytes } from "../core/model-manifest";
-import { sanitizeSettings, type LigSettings } from "../core/settings";
+import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type LigSettings } from "../core/settings";
 import { formatBytes, type EngineState } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
+import { validateSettings } from "../vendor/kit/settings_schema";
 import { applyDestructive, confirmAction } from "../vendor/kit-obsidian/confirm";
 import { renderSettingDefinitions, settingBodyHost, refreshSettingsTab } from "../vendor/kit-obsidian/settings_walker";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
@@ -174,7 +175,7 @@ export class LigSettingTab extends PluginSettingTab {
   }
 
   async setControlValue(key: string, value: unknown): Promise<void> {
-    // Immer durch sanitizeSettings: das ist die einzige Stelle, die Müllwerte abfängt. Der
+    // Immer durch validateSettings: das ist die einzige Stelle, die Müllwerte abfängt. Der
     // deklarative Host validiert nur den Typ, nicht unsere Grenzen (Steps 1..50, createMode).
     // Der trim() davor war früher pro Feld in den onChange-Handlern verstreut — ohne ihn
     // landet ein versehentliches Leerzeichen im Endpunkt oder im Ordnerpfad.
@@ -186,7 +187,7 @@ export class LigSettingTab extends PluginSettingTab {
       this.refreshUi();
       return;
     }
-    this.plugin.settings = sanitizeSettings({ ...this.plugin.settings, [key]: clean });
+    this.plugin.settings = validateSettings(DEFAULT_SETTINGS, { ...this.plugin.settings, [key]: clean }, SETTINGS_SCHEMA);
     await this.plugin.saveSettings();
   }
 

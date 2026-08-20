@@ -10,7 +10,7 @@ import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
 import { BUILTIN_MODEL, allAssets } from "./core/model-manifest";
-import { DEFAULT_SETTINGS, migrateSettings, sanitizeSettings, type EngineChoice, type LigSettings } from "./core/settings";
+import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
 import { parseOptionsModel, ProgressPoller, Txt2ImgClient, type ImageBackend } from "./core/txt2img";
 import type { EngineState, GenParams, PanelState, ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
@@ -24,6 +24,7 @@ import { LigSettingTab } from "./obsidian/settings-tab";
 import { GeneratorView, VIEW_TYPE, type ViewHost } from "./obsidian/view";
 import { normalizeEndpoint } from "./vendor/kit/endpoint";
 import { mergeSettings } from "./vendor/kit/settings";
+import { validateSettings } from "./vendor/kit/settings_schema";
 import { pickLang, setLang, t } from "./vendor/kit/i18n";
 
 export default class LocalImageGeneratorPlugin extends Plugin {
@@ -60,7 +61,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   async onload(): Promise<void> {
     // migrateSettings VOR mergeSettings: das neue Feld `engine` entscheidet sich am alten
     // Endpunkt (0.5-Nutzer bleiben im Server-Modus), nicht am Default.
-    this.settings = sanitizeSettings(mergeSettings(DEFAULT_SETTINGS, migrateSettings(await this.loadData())));
+    this.settings = validateSettings(
+      DEFAULT_SETTINGS,
+      mergeSettings(DEFAULT_SETTINGS, migrateSettings(await this.loadData())),
+      SETTINGS_SCHEMA,
+    );
     this.state.mode = this.settings.engine;
     this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
     this.state.engine = { kind: this.settings.engine === "builtin" ? "gpu-checking" : "not-downloaded" };

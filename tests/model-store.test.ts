@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { cacheKey, type AssetFile } from "../src/core/model-manifest";
-import { sha256Hex } from "../src/core/sha256";
+import { sha256Hex } from "../src/vendor/kit/sha256";
 import { DownloadAborted, IntegrityError, ModelStore, type CacheLike, type StoreDeps } from "../src/obsidian/model-store";
 
 function fakeCache(): CacheLike & { map: Map<string, Uint8Array> } {

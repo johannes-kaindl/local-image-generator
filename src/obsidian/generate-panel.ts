@@ -13,7 +13,7 @@ function randomSeed(): number {
   return Math.floor(Math.random() * 2_147_483_647);
 }
 
-export class GeneratePanel implements HubPanel {
+export class GeneratePanel implements HubPanel<TabId> {
   readonly id: TabId = "generate";
   readonly label = t("view.tabGenerate");
   readonly icon = "image-plus";

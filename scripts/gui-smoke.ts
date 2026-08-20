@@ -900,12 +900,12 @@ async function main(): Promise<void> {
       // --- 10. Die Historie stellt das Rezept wieder her -----------------------
       // Jays 0.2-Befund: „Historie merkt sich nur den Prompt" — seit 0.3 soll ein Klick das
       // ganze Rezept zurückholen. Geprüft wird der Effekt in den Feldern, nicht der State.
-      // Der Tab-Knopf trägt `data-tab` (hub.ts) — daran greifen statt am übersetzten Label:
+      // Der Tab-Knopf trägt `data-tab` (Kit-Hub, buildHubInto) — daran greifen statt am übersetzten Label:
       // ein Selektor, der die Sprache des Wirts nicht kennen muss, kann an ihr auch nicht
       // scheitern. Beide Panels sind immer gemountet; der Klick löst zusätzlich onShow() aus,
       // das die Liste neu rendert — genau der Pfad, den ein Mensch nimmt.
       const restored = await cdp.evaluate<{ rows: number; prompt: string; seed: number } | null>(`
-        const historyTab = document.querySelector('.lig-hub-tab[data-tab="history"]');
+        const historyTab = document.querySelector('.okit-hub-tab[data-tab="history"]');
         if (!historyTab) return null;
         historyTab.click();
         await new Promise((r) => setTimeout(r, 400));

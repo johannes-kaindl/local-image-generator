@@ -1,25 +1,26 @@
-// zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19 (Kern: Cache API + tee()-Streaming);
-// erweitert um SHA-256 im Stream, Abbruch, Stall-Frist und URL-unabhängige Cache-Schlüssel.
-//
 // Asset-Ablage über die Cache API (Spec 0.6 §4): liegt im Electron-Profil AUSSERHALB des Vaults
 // (wird nie gesynct), überlebt Neustarts, Datei-Granularität beim Retry. Deps injizierbar → in Node
 // testbar. Kein obsidian-Import.
 //
+// Der Streaming-Kern je Datei (tee(): ein Zweig in cache.put, einer für Bytes/Fortschritt/Hash)
+// liegt seit Kit 0.27.0 zentral in obsidian-kit als pure/cache-download.ts::streamIntoCache —
+// kanonische Quelle war genau dieses downloadOne (@0.4.4). Hier bleibt das Domäneneigene:
+// Key-Ableitung, Manifest-Liste, Fortschritts-Hülle und das Hash-Urteil.
+//
 // Transport ist `activeWindow.fetch` als Member-Access — PROF-OBS-12 erlaubt das genau für den Fall
 // „unvermeidbar": speicherkonstantes Streaming einer 1,7-GB-Datei in die Cache API geht nur mit
-// einem ReadableStream (tee(): ein Zweig in cache.put, einer für Bytes/Fortschritt/Hash); XHR hielte
-// die ganze Datei im Puffer. Globales `fetch` ist gebannt (no-restricted-globals) und bleibt es.
-// Der Store-Linter (npm run lint) hat 2026-08-19 bestätigt: Member-Access ist sauber.
+// einem ReadableStream; XHR hielte die ganze Datei im Puffer. Globales `fetch` ist gebannt
+// (no-restricted-globals) und bleibt es. Der Store-Linter (npm run lint) hat 2026-08-19 bestätigt:
+// Member-Access ist sauber.
 import { assetUrl, cacheKey, type AssetFile, type AssetKey } from "../core/model-manifest";
-import { Sha256 } from "../core/sha256";
+import { streamIntoCache, type CacheLike } from "../vendor/kit/cache-download";
+import { Sha256 } from "../vendor/kit/sha256";
 
 export const ASSET_CACHE_NAME = "local-image-generator-assets";
 
-export interface CacheLike {
-  match(key: string): Promise<Response | undefined>;
-  put(key: string, res: Response): Promise<void>;
-  delete(key: string): Promise<boolean>;
-}
+// Der Cache-API-Port kommt aus dem Kit-Modul und wird hier nur weitergereicht — das lokale
+// Interface war byte-gleich, und tests/model-store.test.ts importiert den Typ von hier.
+export type { CacheLike };
 
 export interface StoreDeps {
   openCache: () => Promise<CacheLike>;
@@ -120,52 +121,32 @@ export class ModelStore {
     signal: AbortSignal,
     report: (received: number, phase: DownloadProgress["phase"]) => void,
   ): Promise<void> {
-    if (signal.aborted) throw new DownloadAborted();
-    const res = await this.deps.fetchFn(url, { signal });
-    if (res.status !== 200 || !res.body) throw new Error(`download failed: HTTP ${res.status} for ${file.path}`);
-    const [progressBranch, cacheBranch] = res.body.tee();
-    // Der Cache-Zweig läuft NEBEN der Leseschleife an (0.4-Befund: `await putDone` zuerst staut den
-    // ganzen Fortschritts-Zweig ungelesen im Speicher). No-op-Catch, damit ein Stream-Abbruch keine
-    // unhandledrejection erzeugt — das Ergebnis wird unten weiterhin per `await putDone` gesehen.
-    const putDone = cache.put(key, new Response(cacheBranch, { headers: { "content-type": "application/octet-stream" } }));
-    putDone.catch(() => {});
-    const reader = progressBranch.getReader();
     const hasher = new Sha256();
-    const stallMs = this.deps.stallMs ?? DEFAULT_STALL_MS;
-    const timer = this.deps.timer ?? realDeps.timer!;
-    // EIN Stall-Timer je Datei, nach jedem Chunk neu gestellt und am Ende abgeräumt. Ein Timer
-    // pro Chunk ohne Cancel wäre ein Leak (Review 2026-08-19: tausende offene Handles bei 1,7 GB).
-    let cancelStall: () => void = () => {};
-    let rejectStall: (e: Error) => void = () => {};
-    const stalled = new Promise<never>((_, reject) => { rejectStall = reject; });
-    stalled.catch(() => {}); // wird nur im Race beobachtet; nie als unhandledrejection melden
-    const armStall = (): void => {
-      cancelStall();
-      cancelStall = timer(() => rejectStall(new Error(`download stalled: no data for ${stallMs / 1000}s (${file.path})`)), stallMs);
-    };
-    let received = 0;
-    try {
-      armStall();
-      for (;;) {
-        const next = await Promise.race([reader.read(), stalled]);
-        if (next.done) break;
-        armStall();
-        received += next.value.byteLength;
-        hasher.update(next.value);
-        report(received, "downloading");
-        if (signal.aborted) {
-          await reader.cancel().catch(() => undefined);
-          throw new DownloadAborted();
-        }
-      }
-    } finally {
-      cancelStall();
-    }
+    const { received } = await streamIntoCache({
+      cache,
+      fetchFn: this.deps.fetchFn,
+      url,
+      key,
+      signal,
+      // Die Fehlertexte des Kit-Moduls nennen `label`, nicht die URL — die Tests matchen darauf.
+      label: file.path,
+      // Ein 206 ist hier kein Erfolg, sondern ein halber Bereich; der Kit-Default waere res.ok.
+      accept: (r) => r.status === 200,
+      abortError: () => new DownloadAborted(),
+      onChunk: (c) => hasher.update(c),
+      // Das Kit reicht als zweites Argument den content-length mit; die Gesamtanzeige haengt
+      // hier am Manifest (file.bytes), nicht am Header.
+      onProgress: (r) => report(r, "downloading"),
+      // stallMs und timer wirken NUR zusammen: fehlt eines, prueft das Kit gar nicht auf
+      // Stillstand. Beide Defaults werden deshalb hier aufgeloest, nicht dort.
+      stallMs: this.deps.stallMs ?? DEFAULT_STALL_MS,
+      timer: this.deps.timer ?? realDeps.timer!,
+      expectedBytes: file.bytes,
+    });
+    // Nach dem abgeschlossenen `put` (das steckt jetzt im Kit-Modul), nicht davor.
     report(received, "verifying");
-    await putDone;
     const actual = hasher.digestHex();
     if (actual !== file.sha256) throw new IntegrityError(file, file.sha256, actual);
-    if (received !== file.bytes) throw new Error(`download incomplete for ${file.path} (${received}/${file.bytes} bytes)`);
   }
 
   private async matchOrThrow(file: AssetFile): Promise<Response> {
