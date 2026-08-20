@@ -1,23 +1,7 @@
 {
-  "note": "Verbatim snapshots. Never hand-edit. Re-copy from obsidian-kit to update.",
-  "modules": [
-    {
-      "file": "confirm.ts",
-      "source": "obsidian-kit",
-      "version": "0.22.0",
-      "sha": "d87e9e2"
-    },
-    {
-      "file": "folder-suggest.ts",
-      "source": "obsidian-kit",
-      "version": "0.18.0",
-      "sha": "988f4fd"
-    },
-    {
-      "file": "settings_walker.ts",
-      "source": "obsidian-kit",
-      "version": "0.25.0",
-      "sha": "1ca3861"
-    }
-  ]
+  "source": "obsidian-kit",
+  "version": "0.27.0",
+  "sha": "fbb42d4",
+  "vendored": "confirm.ts, folder-suggest.ts, hub.ts, settings_walker.ts",
+  "note": "Verbatim snapshot. Never hand-edit. Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien. Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
 }
