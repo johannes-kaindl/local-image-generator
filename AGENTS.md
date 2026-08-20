@@ -36,8 +36,17 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Nach jedem `onnxruntime-web`-Upgrade: `npm run assets` + Manifest mitcommitten, WASM neu
   hochladen — `check:manifest` bricht sonst das Gate.
 - **Pure-Core-Schnitt:** `src/core/` und `src/vendor/kit/` importieren NIE `obsidian`
-  (Gate: `scripts/check-pure.mjs`). `src/obsidian/legacy-cache.ts` ist browser-API-only
+  (Gate: `scripts/check-pure.mjs`, `ROOTS`). `src/obsidian/legacy-cache.ts` ist browser-API-only
   (Cache API), ebenfalls obsidian-frei — nicht vom Gate erfasst, manuell halten.
+- **Vendoring (nie von Hand):** `sh tools/sync-kit.sh` kopiert die Kit-Module byte-identisch aus
+  `../obsidian-kit` (`KIT_DIR` ueberschreibbar), setzt die Stempelzeile und schreibt beide
+  `VENDOR.json`. **Zielordner ist Vertrag, nicht Geschmack:** `obsidian-kit/src/pure/*` →
+  `src/vendor/kit/`, `obsidian-kit/src/obsidian/*` → `src/vendor/kit-obsidian/` — ein
+  obsidian-importierendes Modul unter `src/vendor/kit/` bricht `npm run check:pure` und damit das
+  Gate. Ein neues Modul kommt in die Modulliste des Skripts, nicht per `cp` in den Baum; danach
+  muss `git status` nach einem erneuten Lauf leer bleiben (Reproduzierbarkeit).
+  ⚠️ `HUB_CSS` aus `src/vendor/kit-obsidian/hub.ts` ist zusaetzlich in `styles.css` uebernommen —
+  das Kit injiziert kein CSS. Wer das Modul neu vendoriert, gleicht den Block mit ab.
 - **Commit style:** Conventional Commits (deutsch), AI-Commits mit Co-Authored-By-Trailer.
 - **Deploy (lokal):** `OBSIDIAN_PLUGIN_DIR=<vault>/.obsidian/plugins/local-image-generator npm run deploy`
 - **Dach-Regeln gelten:** Kit-first (`../AGENTS.md`, `../REGISTRY.md`), UI-STANDARD (`../UI-STANDARD.md`).
@@ -73,13 +82,18 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   speicherkonstantes Streaming einer 1,7-GB-Datei in die Cache API geht nur mit
   ReadableStream; XHR hielte alles im Puffer. PROF-OBS-12-Fall „unvermeidbar", Store-Linter
   bestaetigt (globales `fetch` bleibt gebannt). SHA-256 laeuft chunkweise im Stream
-  (`src/core/sha256.ts`, ~200 MB/s).
+  (`src/vendor/kit/sha256.ts`, ~200 MB/s — seit Kit 0.27.0 vendoriert; die kanonische Quelle
+  des Kit-Moduls WAR die frueher hier liegende `src/core/sha256.ts`). Der Streaming-Kern je
+  Datei liegt seit 0.27.0 ebenfalls im Kit (`src/vendor/kit/cache-download.ts`,
+  `streamIntoCache`); lokal bleiben Key-Ableitung, Manifest-Liste, Fortschritts-Huelle und
+  das Hash-Urteil.
 - **Cache-Namen nicht verwechseln:** 0.6-Assets liegen in `local-image-generator-assets` mit
   hash-gebundenen, URL-unabhaengigen Schluesseln; `legacy-cache.ts` loescht weiterhin nur
   `local-image-generator-models` (0.4). Die zwei kollidieren nicht.
 - **`new Function(` im Bundle ist die ORT-Glue (Emscripten-embind)** — BEHAVIOR-Disclosure
   einer gebuendelten Dependency, notenneutral (publishing.md); `check-clean` laesst es
-  begruendet zu, `eval(` bleibt verboten. Bundle ~175 KB.
+  begruendet zu, `eval(` bleibt verboten. Bundle ~184 KB (`check:clean`, gemessen 2026-08-20 nach
+  dem Kit-0.27.0-Vendoring; Grenze `MAX_BYTES` = 2 MB).
 - **ORT nimmt den eingebetteten Glue-Pfad nur mit gesetztem `env.wasm.wasmBinary` und
   `numThreads = 1`** — sonst versucht es `import()` einer URL (Code-Nachladen). `initOrt()`
   muss vor der ersten Session laufen (`ort-host.ts` wirft sonst).
