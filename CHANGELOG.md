@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-21
+
 ### Changed
 
 - The built-in model is now downloaded from `huggingface.co/johannes-kaindl/local-image-generator-models`
