@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The hub's tab bar (Generate / History) now follows the shared kit styling: tabs size
+  themselves to their labels and wrap instead of shrinking, the active one is marked by an
+  underline and a hover state instead of bold text, and the spacing comes from the theme's
+  own variables rather than fixed pixels.
+- Each panel now scrolls on its own instead of scrolling the whole view.
+- The tabs follow the ARIA tabs pattern: Left/Right/Home/End move between them, and only
+  the active tab is a tab stop — reaching the inactive one now uses the arrow keys instead
+  of Tab.
+
+### Fixed
+
+- A cancelled or restarted model download could write a partial file back into the cache:
+  the cache entry was deleted while the write for it was still in flight. The delete now
+  waits for that write to settle.
+- Cancelling a download no longer risks hanging: the cancel waited on a stream branch that
+  only resolves once the other branch is cancelled too.
+- A cancel that arrives between two chunks is now seen right away instead of surfacing only
+  when the stall timeout hits.
+- A truncated download is now reported as `download incomplete` rather than as a checksum
+  mismatch, and the size is checked against the server's `content-length` as well as against
+  the size pinned in the plugin.
+- A workspace layout holding an unknown tab id left the hub blank (every panel hidden). An
+  unknown id is now ignored.
+
+### Internal
+
+- Four local modules were replaced by their obsidian-kit 0.27.0 originals (settings schema,
+  SHA-256, the cache streaming core, the hub) via `tools/sync-kit.sh`. The behaviour changes
+  above are what those originals brought with them; none of them was covered by an existing
+  test.
+
 ## [0.6.0] — 2026-08-19
 
 ### Added
