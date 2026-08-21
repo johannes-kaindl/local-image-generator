@@ -97,6 +97,17 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **ORT nimmt den eingebetteten Glue-Pfad nur mit gesetztem `env.wasm.wasmBinary` und
   `numThreads = 1`** — sonst versucht es `import()` einer URL (Code-Nachladen). `initOrt()`
   muss vor der ersten Session laufen (`ort-host.ts` wirft sonst).
+- **Kit-Hub: `setTab(aktueller Tab)` ist ein No-op — kein `onShow()`, kein Re-Render.** Der
+  Guard (`if (id === navState) return`) kam mit dem Vendoring von `buildHubInto` (Kit 0.27.0) und
+  ist richtig; er heisst aber, dass ein Klick auf den bereits aktiven Reiter das Panel NICHT
+  auffrischt. Wer ein sichtbares Panel neu zeichnen will, nimmt `refreshActive()` (oder den
+  Host-Pfad `view.refresh()`), nicht einen zweiten Klick. Der aktive Reiter ueberlebt im
+  Workspace-State — was im GUI-Smoke am 2026-08-21 einen flaky Pruefpunkt erzeugte (Punkt 10 mass
+  die Historie VOR dem Lauf, weil sein Tab-Klick ins Leere lief; `docs/SMOKE.md` § 2026-08-21).
+- **`npm run deploy` ist kein Reload.** Obsidian laedt die kopierte `main.js` erst beim
+  Aktivieren des Plugins; ein laufendes Fenster misst sonst den Stand von seinem letzten Start,
+  und die Manifest-Version verraet den Unterschied nicht. `scripts/gui-smoke.ts` laedt das Plugin
+  deshalb selbst neu, bevor es misst. Wer von Hand prueft: Plugin aus- und einschalten.
 - **Settings-Tab: bedingte Zeilen weglassen, nicht `visible:false`** — Obsidian 1.13 cacht
   `getSettingDefinitions()` und wertet Praedikate nicht neu aus; nach Modus-/Zustandswechsel
   `refreshUi()` (gemessen 2026-08-19: Server-Zeile blieb im builtin-Modus stehen).

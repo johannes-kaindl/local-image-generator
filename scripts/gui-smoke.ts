@@ -417,6 +417,27 @@ async function main(): Promise<void> {
     if (!plugin.ok) throw new Error(`Plugin ${PLUGIN_ID} ist nicht aktiv. Erst \`npm run deploy\`.`);
     console.log(`Plugin-Version im Vault: ${plugin.version}`);
 
+    // Den Prueflig HERSTELLEN, nicht annehmen: `npm run deploy` kopiert Dateien, Obsidian laedt
+    // sie nicht nach. Ohne diesen Neustart misst der Lauf den Code, der beim letzten Start des
+    // Fensters im Speicher landete — und die Manifest-Version verraet das nicht, weil sie sich
+    // zwischen zwei Bauten desselben Standes nicht aendert. Gemessen 2026-08-21: nach dem
+    // Kit-0.27.0-Vendoring meldete der Lauf 15/16, weil die Tab-Leiste im DOM noch das alte
+    // `lig-hub-`-Praefix trug, waehrend die deployte main.js ausschliesslich `okit-hub-` enthielt.
+    // Das kostet 1,5 s und macht den Lauf reproduzierbar.
+    await cdp.evaluate(`
+      await app.plugins.disablePlugin(${JSON.stringify(PLUGIN_ID)});
+      await app.plugins.enablePlugin(${JSON.stringify(PLUGIN_ID)});
+      return true;
+    `);
+    const reloaded = await pollUntil(
+      () => cdp.evaluate<boolean>(`return !!app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.settings;`),
+      (ok) => ok === true,
+      15_000,
+      "warte auf das neu geladene Plugin",
+    );
+    if (reloaded === null) throw new Error(`Plugin ${PLUGIN_ID} kam nach dem Neuladen nicht zurueck.`);
+    console.log("Plugin neu geladen — gemessen wird der deployte Stand");
+
     const endpoint = (plugin.endpoint ?? "").trim();
     if (endpoint === "") throw new Error("Kein Server-Endpunkt in den Plugin-Settings — erst in den Settings eintragen.");
 
@@ -907,6 +928,14 @@ async function main(): Promise<void> {
       const restored = await cdp.evaluate<{ rows: number; prompt: string; seed: number } | null>(`
         const historyTab = document.querySelector('.okit-hub-tab[data-tab="history"]');
         if (!historyTab) return null;
+        // Erst auf „generate", dann auf „history" — der Wechsel muss ECHT sein. Der Kit-Hub
+        // steigt bei setTab(aktueller Tab) sofort aus ("if (id === navState) return"), es gibt
+        // also kein onShow() und damit kein render(). Der aktive Tab überlebt im Workspace-State:
+        // ab dem zweiten Lauf stand er schon auf „history", und die Liste zeigte den Stand VOR
+        // dem Lauf, während der neue Eintrag längst im State lag. Gemessen 2026-08-21 — der
+        // Prüfpunkt war dadurch flaky (Lauf 2 grün, Lauf 3 rot, ohne Codeänderung dazwischen).
+        document.querySelector('.okit-hub-tab[data-tab="generate"]').click();
+        await new Promise((r) => setTimeout(r, 250));
         historyTab.click();
         await new Promise((r) => setTimeout(r, 400));
         const rows = document.querySelectorAll(".lig-hist-row, .lig-hist-var");
@@ -927,7 +956,9 @@ async function main(): Promise<void> {
       record(
         "10. Ein Klick in der Historie stellt Prompt UND Seed wieder her",
         restored !== null && restored.prompt === SMOKE_PROMPT && restored.seed === seedUsed,
-        restored === null || restored.rows === 0
+        restored === null
+          ? "History-Reiter nicht gefunden (Selektor .okit-hub-tab[data-tab=\"history\"]) — laeuft der deployte Stand?"
+          : restored.rows === 0
           ? "keine Historien-Zeile vorhanden"
           : `Prompt ${restored.prompt === SMOKE_PROMPT ? "✓" : "✗"} · Seed ${restored.seed}${restored.seed === seedUsed ? " ✓" : ` ✗ (erwartet ${seedUsed})`}`,
       );

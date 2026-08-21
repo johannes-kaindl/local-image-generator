@@ -131,6 +131,45 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-21 · 0.6.0 + Kit-0.27.0-Vendoring · Obsidian 1.12.4 · A1111-Mock + lokaler Asset-Server · **16/16 grün**
+
+Nachlauf zum Vendoring-Merge (`7390204`): der Umbau tauschte vier Module gegen ihre
+Kit-Fassungen, darunter den Hub — und **beide Live-Treiber waren seitdem nicht gelaufen**.
+Baseline: 16/16 vom 2026-08-19. Ergebnis nach zwei Werkzeug-Reparaturen wieder 16/16;
+Download der 2,5 GB lokal in 36 s, Bild der eingebauten Engine in 15 s, Notiz `model: sd-turbo`.
+
+Drei Befunde, **alle in den Prüfwerkzeugen, keiner im Plugin** — das Muster dieses Repos hält:
+
+1. **Der erste Lauf maß den falschen Prüfling: 15/16, aber gegen den ALTEN Code.**
+   `npm run deploy` kopiert Dateien; Obsidian lädt sie nicht nach. Der DOM trug noch das
+   `lig-hub-`-Präfix, während die deployte `main.js` ausschließlich `okit-hub-` enthielt (8×,
+   kein einziges `lig-hub-tab`) — Punkt 10 fand seinen Reiter nicht und meldete „keine
+   Historien-Zeile". Die Manifest-Version verrät das nicht: sie ist zwischen zwei Bauten
+   desselben Standes identisch. **Der Treiber lädt das Plugin jetzt selbst neu** (disable +
+   enable, ~1,5 s) und sagt es an: „Plugin neu geladen — gemessen wird der deployte Stand".
+   Gegenprobe: eine von Hand auf `lig-hub-tab` zurückgepatchte `main.js` deployt — der DOM zeigte
+   VOR dem Reload `okit-hub-tab`, danach `lig-hub-tab`. Der Reload liest also wirklich die Platte.
+2. **Punkt 10 war flaky — und die Ursache ist eine echte Verhaltensänderung des Kit-Hubs.**
+   `setTab` steigt bei gleichem Tab sofort aus („if (id === navState) return"), also ohne
+   `onShow()` und damit ohne `render()`. Der aktive Reiter überlebt im Workspace-State: ab dem
+   zweiten Lauf stand er schon auf `history`, der Klick des Prüfpunkts war ein No-op, und die
+   Liste zeigte den Stand **vor** dem Lauf — während der neue Eintrag längst im State lag
+   (belegt per Instrumentierung: `state[0] = 2096352854@14:19:23`, `dom[0] = 972872909@09:58`).
+   Deshalb Lauf 2 grün und Lauf 3 rot, ohne eine Zeile Codeänderung dazwischen. Der Prüfpunkt
+   **erzwingt den Wechsel jetzt** (erst `generate`, dann `history`) statt ihn anzunehmen.
+   Verifiziert im hergestellten Defektzustand (Reiter vorher auf `history` gesetzt): 12/12.
+3. **`scripts/mock-assets.mjs` starb an einer Verzeichnis-Anfrage.** Ein `curl` auf `/` ließ
+   `createReadStream` mit EISDIR ein unbehandeltes `error`-Event werfen — der Server war weg,
+   und der nächste Download des Prüflings hätte eine tote Verbindung gesehen. Verzeichnisse
+   sind jetzt 404.
+
+Nicht gelaufen: `npm run shots`. Die Bilder brauchen den Aufnahme-Vault (Vault-Wechsel im
+laufenden Obsidian) und einen echten Bild-Server — gegen den Mock entstünden Mock-Motive in der
+README. Gemessen wurde stattdessen gezielt die Geometrie, wegen der `scripts/shots.ts:338`
+bewusst `.okit-hub-content` aufnimmt: die Box ist 216 × 832 (nicht 0), das Panel scrollt jetzt
+selbst (`overflow-y: auto`, `scrollHeight` 4384 bei 832 sichtbar), `.lig-hist-list` misst
+4290 statt 0. Die Selektorwahl des Rezepts bleibt damit richtig; der Bildlauf selbst steht aus.
+
 ### 2026-08-19 · 0.6.0-dev · Obsidian 1.12.4 · A1111-Mock + **echtes HF-Repo** (`v6t2b9/local-image-generator-models`) · **16/16 grün**
 
 Freigabe-Lauf für 0.6.0 mit `--assets https://huggingface.co/v6t2b9/local-image-generator-models/resolve/main`:

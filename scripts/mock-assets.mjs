@@ -21,8 +21,14 @@ http.createServer((req, res) => {
   const rel = normalize(decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname)).replace(/^(\.\.[/\\])+/, "");
   const path = join(ROOT, rel);
   if (!path.startsWith(ROOT)) { res.writeHead(403, cors); return res.end(); }
-  let size;
-  try { size = statSync(path).size; } catch { res.writeHead(404, cors); return res.end("not found"); }
+  // Verzeichnisse als 404 abweisen, NICHT ausliefern: createReadStream auf einen Ordner wirft
+  // ein unbehandeltes 'error'-Event (EISDIR) und reisst den ganzen Server mit. Gemessen
+  // 2026-08-21 an einem simplen `curl http://127.0.0.1:7862/` waehrend eines Smoke-Laufs — der
+  // Server war danach weg, und der naechste Download des Pruefling sah eine tote Verbindung.
+  let stat;
+  try { stat = statSync(path); } catch { res.writeHead(404, cors); return res.end("not found"); }
+  if (!stat.isFile()) { res.writeHead(404, cors); return res.end("not a file"); }
+  const size = stat.size;
   counts.set(rel, (counts.get(rel) ?? 0) + 1);
   console.log(`${req.method} ${rel} (${(size / 1e6).toFixed(1)} MB) #${counts.get(rel)}`);
   res.writeHead(200, { ...cors, "Content-Type": "application/octet-stream", "Content-Length": String(size) });
