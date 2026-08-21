@@ -25,13 +25,13 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
 > Bei Abweichungen gilt die englische Fassung.
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/hero.png" alt="Obsidian mit einem erzeugten Bild: die Notiz in der Mitte zeigt das fertige Bild, das Generator-Panel rechts dasselbe Ergebnis samt Prompt, Größe, Schritten, Guidance und Seed." width="600">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/hero.png" alt="Obsidian mit einem Bild der eingebauten Engine: die Notiz in der Mitte zeigt das fertige Bild, das Generator-Panel rechts dasselbe Ergebnis samt Prompt, Schrittzahl und Seed und nennt SD-Turbo als verwendetes Modell." width="600">
 </p>
 
 ## Features
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/generate-panel.png" alt="Das Generator-Panel in Obsidians rechter Seitenleiste: Felder für Prompt und Negativ-Prompt, Stil-Chips, Regler für Größe, Schritte, Guidance und Seed sowie der Hinweis, einen lokalen Bild-Server zu verbinden." width="456">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/generate-panel.png" alt="Das Generator-Panel in Obsidians rechter Seitenleiste mit einsatzbereiter eingebauter Engine: Prompt-Feld, Stil-Chips sowie Regler für Schritte und Seed. Negativ-Prompt, Guidance und Größe fehlen, weil SD-Turbo sie nicht unterstützt." width="456">
 </p>
 
 - Den Generator über das Ribbon-Icon oder den Befehl **Generator öffnen** aufrufen.
@@ -82,6 +82,10 @@ Spracheinstellung von Obsidian — eine eigene Sprachoption gibt es nicht.
 3. **Lieber ein Server?** **Engine** auf *Server (Draw Things / A1111)* stellen, die URL
    des Servers unter **Server-Endpunkt** eintragen und **Verbindung testen** klicken.
 
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/first-run.png" alt="Das Generator-Panel direkt nach der Installation: Prompt-Feld, Stil-Chips und Regler, darunter der Hinweis, dass das eingebaute Modell noch nicht geladen ist, mit dem Knopf „Download model (2.5 GB)“." width="380">
+</p>
+
 ### Einen Server einrichten (optional)
 
 Einen davon auswählen — das Plugin spricht mit allen auf dieselbe Weise:
@@ -107,6 +111,10 @@ In allen vier Fällen gilt: sobald der Server läuft und seine API erreichbar is
 in den Plugin-Einstellungen eintragen und **Verbindung testen** klicken. Statuszeile und
 Einstellungen zeigen danach den Namen des aktiven Modells.
 
+<p align="center">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/settings-server.png" alt="Der Engine-Abschnitt der Einstellungen im Server-Modus: die Engine-Auswahl mit „Server (Draw Things / A1111)“ und das Feld für den Server-Endpunkt samt Knopf „Test connection“." width="380">
+</p>
+
 ## Verwendung
 
 1. Eingebaute Engine: sicherstellen, dass das Modell geladen ist (das Panel bietet den
@@ -125,7 +133,7 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 5. Frühere Erzeugungen findest du jederzeit im Reiter **Verlauf**.
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/history.png" alt="Der History-Reiter mit zwei Läufen, jeder mit Prompt, Seed, Schrittzahl und Uhrzeit, nach Aktualität sortiert." width="456">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/history.png" alt="Der History-Reiter mit zwei Läufen, jeder mit Prompt, Seed, Schrittzahl und Uhrzeit, nach Aktualität sortiert, mit den Umschaltern Recent und By prompt und einem Knopf Clear all." width="456">
 </p>
 
 <p align="center">
@@ -148,7 +156,7 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 ## Konfiguration
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/settings.png" alt="Die Einstellungen des Plugins: Server-Endpunkt mit Testknopf, Bilder- und Notizordner, Modus des Create-Knopfes, Standard-Schrittzahl und die editierbare Liste der Stil-Chips." width="515">
+  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/settings.png" alt="Die Einstellungen des Plugins mit gewählter eingebauter Engine: die Engine-Auswahl, die SD-Turbo-Modellzeile mit dem Zustand Ready und einem Remove-Knopf, Bilder- und Notizordner, Modus des Create-Knopfes, Standard-Schrittzahl, die editierbare Liste der Stil-Chips und die Download-Quelle unter Advanced." width="515">
 </p>
 
 **Einstellungen → Local Image Generator**:
