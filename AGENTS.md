@@ -32,7 +32,14 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **Assets (eingebaute Engine):** `tools/convert-sd-turbo.sh` (uv-Venv, optimum + ORT-fp16-
   Konverter) erzeugt `dist-assets/` (gitignored), `npm run assets` hasht sie und schreibt
   `src/core/engine-manifest.generated.ts` (**nie von Hand**), `npm run assets:verify` prueft
-  I/O-Namen/Dtypes/Shapes mit onnxruntime-node, `npm run assets:upload` laedt ins HF-Repo.
+  I/O-Namen/Dtypes/Shapes mit onnxruntime-node, `npm run assets:upload` laedt ins HF-Repo
+  (`johannes-kaindl/local-image-generator-models`, per `HF_MODELS_REPO` ueberschreibbar).
+  **Der Namespace ist eine Vertrauenszusage, kein Detail:** die URL steht als Platzhalter der
+  Settings-Zeile „Download source" im Bild, und wer 2,5 GB laedt, gleicht den Namen mit dem
+  Plugin-Autor ab — er ist deshalb seit 2026-08-21 identisch mit dem GitHub-Profil, auf das
+  `authorUrl` zeigt. Das alte `v6t2b9/…` bleibt online: `assetBaseUrl` ist ein GESPEICHERTES
+  Setting, eine 0.6.0-Installation traegt die alte URL in ihrer `data.json` und wuerde nach
+  einem Repo-Umzug ins Leere laden.
   Nach jedem `onnxruntime-web`-Upgrade: `npm run assets` + Manifest mitcommitten, WASM neu
   hochladen — `check:manifest` bricht sonst das Gate.
 - **Pure-Core-Schnitt:** `src/core/` und `src/vendor/kit/` importieren NIE `obsidian`
@@ -111,6 +118,24 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **Settings-Tab: bedingte Zeilen weglassen, nicht `visible:false`** — Obsidian 1.13 cacht
   `getSettingDefinitions()` und wertet Praedikate nicht neu aus; nach Modus-/Zustandswechsel
   `refreshUi()` (gemessen 2026-08-19: Server-Zeile blieb im builtin-Modus stehen).
+  **Von aussen (Treiber, Test) heisst das: den Modus ueber das DROPDOWN wechseln, nicht ueber
+  die Einstellung.** Nur dessen `onChange` ruft `refreshUi()`. Wer den Wert vorher setzt,
+  nimmt dem Wechsel sogar seinen Anlass — das Dropdown steht dann schon richtig, das Ereignis
+  bleibt aus, und darunter steht die Zeile des alten Modus (gemessen 2026-08-21 an
+  `settings-server.png`, zweimal hintereinander).
+- **`.is-hidden` steht am ENDE von `styles.css` — und muss dort bleiben.** Es ist die
+  Aus-Schaltung fuer jede Zeile, die ein Backend nicht kann (Negativ-Prompt, CFG, Groesse:
+  die Keine-Attrappen-Linie). Die Regel traegt nur eine Klasse und verliert deshalb gegen
+  jede spaetere Ein-Klassen-Regel, die `display` setzt. Genau so blieb die Negativ-Zeile im
+  builtin-Modus sichtbar, obwohl das Panel sie korrekt markiert hatte (`.lig-prompt-row`
+  stand weiter unten). Wer etwas anhaengt, haengt es DARUEBER an.
+- **Ein range-Input klemmt seinen `value` selbst, sobald `max` sinkt.** Deshalb darf das
+  Nachziehen der Anzeige nicht davon abhaengen, ob `clamped !== stepsEl.value` — diese
+  Bedingung ist nach dem Setzen von `max` nie erfuellt, und die Zahl neben dem Regler bleibt
+  auf ihrem Startwert stehen (gemessen 2026-08-21: Regler auf 4, Beschriftung „20").
+  Verallgemeinert: **beide Anzeigefehler waren nur ueber die GERENDERTE Darstellung
+  sichtbar** (`getComputedStyle`, DOM-Text), nie ueber den Zustand — Unit-Tests koennen sie
+  nicht finden, ein Screenshot findet sie sofort.
 - **Drei Endpunkte, mehr nicht (Server-Modus):** `POST /sdapi/v1/txt2img` erzeugt,
   `GET /sdapi/v1/progress` liefert den Fortschritt (1-s-Polling), `GET /sdapi/v1/options`
   nennt das aktive Modell und dient als Verbindungstest. Alles Weitere gehoert dem
