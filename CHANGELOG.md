@@ -25,6 +25,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- With the built-in engine, the **negative prompt field was still shown** even though
+  SD-Turbo ignores it — an input that did nothing. The panel had marked the row as hidden
+  all along; a later stylesheet rule silently won over the one that hides it. CFG and the
+  size picker were unaffected, which is why this looked like a deliberate choice rather
+  than a bug.
+- With the built-in engine, the **step count next to the slider could read 20** while the
+  slider sat at its maximum of 4 and generation correctly used 4. Only the label was wrong,
+  but it contradicted both the slider and the result.
 - A cancelled or restarted model download could write a partial file back into the cache:
   the cache entry was deleted while the write for it was still in flight. The delete now
   waits for that write to settle.

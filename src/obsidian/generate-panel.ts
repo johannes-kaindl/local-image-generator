@@ -265,12 +265,20 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.sizeRowEl.toggleClass("is-hidden", !vm.controls.size);
     if (this.stepsRange?.min !== vm.controls.stepsMin || this.stepsRange.max !== vm.controls.stepsMax) {
       this.stepsRange = { min: vm.controls.stepsMin, max: vm.controls.stepsMax };
+      // Vor dem Setzen der Grenzen lesen — danach hat der Browser bereits geklemmt.
+      const vorher = Number(this.stepsEl.value);
       this.stepsEl.min = String(vm.controls.stepsMin);
       this.stepsEl.max = String(vm.controls.stepsMax);
-      const clamped = Math.min(vm.controls.stepsMax, Math.max(vm.controls.stepsMin, Number(this.stepsEl.value)));
-      if (String(clamped) !== this.stepsEl.value) {
-        this.stepsEl.value = String(clamped);
-        this.stepsValueEl.setText(String(clamped));
+      // NICHT gegen `stepsEl.value` vergleichen, um das Nachziehen zu sparen: der Browser
+      // klemmt den Wert eines range-Inputs SELBST, sobald `max` kleiner wird. `value` steht
+      // danach also schon auf 4, `clamped` ist gleich — und die Zahl daneben (ein eigenes
+      // Span) bliebe fuer immer auf ihrem Startwert stehen. Gemessen 2026-08-21 an einem
+      // README-Screenshot: Regler am rechten Anschlag, Beschriftung „20", gerechnet wurde
+      // mit 4. Der Zustand war korrekt, nur die Anzeige log.
+      const clamped = Math.min(vm.controls.stepsMax, Math.max(vm.controls.stepsMin, vorher));
+      this.stepsEl.value = String(clamped);
+      this.stepsValueEl.setText(String(clamped));
+      if (clamped !== vorher) {
         // Rezept im Host nachziehen, sonst rechnet generate() mit dem alten Wert.
         this.host.setRecipe(clamped, Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
       }

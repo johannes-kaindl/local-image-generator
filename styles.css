@@ -22,7 +22,6 @@
 .lig-status-icon.is-checking { color: var(--text-muted); }
 .lig-status-icon.is-checking svg { animation: lig-spin 1.5s linear infinite; }
 @keyframes lig-spin { to { transform: rotate(360deg); } }
-.is-hidden { display: none; }
 
 /* vendored aus obsidian-kit HUB_CSS (das Kit injiziert bewusst kein CSS selbst) */
 /* Hub-Tab-Leiste (obsidian-kit: buildHubInto). Die vier nummerierten Zutaten gehören
@@ -108,3 +107,21 @@
 .lig-hist-group .lig-hist-count { font-weight: 400; color: var(--text-muted); font-size: var(--font-smaller); }
 .lig-hist-chevron { display: inline-flex; color: var(--text-muted); }
 .lig-hist-empty { padding: 16px 9px; color: var(--text-muted); }
+
+/* ── Zuletzt, und das ist der Punkt ──────────────────────────────────────────
+   `.is-hidden` ist die Aus-Schaltung fuer jede Zeile, die ein Backend nicht kann
+   (Negativ-Prompt, CFG, Groesse — die Keine-Attrappen-Linie). Sie traegt nur eine
+   Klasse, kollidiert also mit jeder anderen Ein-Klassen-Regel, die `display` setzt,
+   und bei gleicher Spezifitaet gewinnt die spaetere im Stylesheet.
+
+   Genau das war passiert: `.lig-prompt-row { display: flex }` steht seit `2914aba`
+   (Prompt-Historie) weiter unten als das damalige `.is-hidden` — die Negativ-Zeile
+   blieb im builtin-Modus sichtbar, obwohl das Panel sie korrekt als versteckt
+   markierte. CFG und Groesse funktionierten, weil deren Elemente keine eigene
+   `display`-Regel haben; der Fehler traf also genau eine Zeile und sah nach einer
+   Design-Entscheidung aus. Gefunden hat ihn am 2026-08-21 ein README-Screenshot,
+   nicht ein Test.
+
+   Am Dateiende gewinnt die Regel gegen alles davor. Wer hier etwas anhaengt, haengt
+   es DARUEBER an — oder gibt der neuen Regel eine hoehere Spezifitaet. */
+.is-hidden { display: none; }
