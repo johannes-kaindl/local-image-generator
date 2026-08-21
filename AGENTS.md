@@ -158,18 +158,33 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
   Provider-API 0.2 rastet darauf ein.
 
-## Store-Scorecard (gemessen 2026-08-19, Release 0.6.0)
+## Store-Scorecard (gemessen 2026-08-22, Release 0.6.1)
 
-**Health `Excellent` · Review `Passed`** — die Bestnote MIT eingebauter Engine (ORT-WebGPU im
-Renderer, 2,5-GB-Modell-Download vom eigenen HF-Repo). Keine `low`/`medium`/`high`-Befunde.
+**Health `Excellent` · Review `Passed`** — zum zweiten Mal die Bestnote MIT eingebauter Engine
+(ORT-WebGPU im Renderer, 2,5-GB-Modell-Download vom eigenen HF-Repo). Keine
+`low`/`medium`/`high`-Befunde. Damit ist die Spike-Rechnung vom 2026-08-19 nicht nur
+bestaetigt, sondern **ueber einen Versionswechsel hinweg stabil**: Modell-Download + WASM +
+in-process-Inferenz sind Passed-vertraeglich, solange kein `fs`/`child_process`, kein globales
+`fetch`, `main.js` klein.
+
 `pass`: Attestierungen fuer `main.js`/`styles.css`, `Build reproduced the release main.js
-byte-for-byte`, keine verwundbaren Abhaengigkeiten. `info` (kostet die Note nicht): `Number of
-network request calls`, `Plugin references unrecognized WASM files`, **`Dynamic Code Execution`
-(das `new Function(` der Emscripten-embind in der ORT-Glue — BEHAVIOR-Disclosure, wie in
-publishing.md vorhergesagt)**, `runtime base64 encode or decode`, `AGPL copyleft`. Damit ist
-die Spike-Rechnung vom 2026-08-19 bestaetigt: Modell-Download + WASM + in-process-Inferenz
-sind Passed-vertraeglich, solange kein `fs`/`child_process`, kein globales `fetch`, `main.js`
-klein. Nachlesen: `python3 <obsidian-store-recherche>/scripts/scorecard.py local-image-generator`.
+byte-for-byte`, keine verwundbaren Abhaengigkeiten, **`Vault Write` (Schreiben ueber die
+Obsidian-API — als `pass` gewertet, nicht als Warnung)**.
+
+`info` (kostet die Note nicht): `Number of network request calls`, `Plugin references
+unrecognized WASM files`, **`Dynamic Code Execution`** (das `new Function(` der
+Emscripten-embind in der ORT-Glue — BEHAVIOR-Disclosure, wie in publishing.md
+vorhergesagt), `runtime base64 encode or decode`, `AGPL copyleft`.
+
+⚠️ **Drei Pruefungen liefen gar nicht:** `Malware scan not available`, `Obfuscation scan not
+available`, `Network requests scan not available`. Das steht unter `info` und sieht wie ein
+Befund aus, ist aber die Abwesenheit einer Messung — die Note beruht auf weniger Pruefung,
+als „Passed" suggeriert. Nicht als Freibrief lesen: wer eine riskante Bauart plant, hat
+dafuer hier **keine** Bestaetigung bekommen, nur kein Widerwort.
+
+Nachlesen: `python3 <obsidian-store-recherche>/scripts/scorecard.py local-image-generator`.
+**Der Scan laeuft nie von selbst an** — nach jedem Release im Developer Dashboard einen
+Rescan anstossen (0.6.1: von Johannes am 2026-08-22 angestossen, Ergebnis oben).
 
 ## Historie: die in-process-Engine (bis 0.4) und der Thin-Client (0.5)
 
