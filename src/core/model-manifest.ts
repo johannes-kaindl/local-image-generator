@@ -28,8 +28,15 @@ export interface BuiltinModel {
 
 /** Basis-URL der Assets — das eigene HF-Repo (Spike 2026-08-19: HF reflektiert die CORS-Origin,
  *  Streaming aus dem Renderer geht; ein GitHub-Release täte das nicht). Per Setting überschreibbar
- *  (Spiegel, lokaler Server für den GUI-Smoke). */
-export const DEFAULT_ASSET_BASE_URL = "https://huggingface.co/v6t2b9/local-image-generator-models/resolve/main";
+ *  (Spiegel, lokaler Server für den GUI-Smoke).
+ *
+ *  Der Namespace ist Teil der Vertrauenszusage, nicht Kosmetik: die URL steht als Platzhalter
+ *  der Settings-Zeile „Download source" im Bild, und wer 2,5 GB lädt, gleicht den Namen mit dem
+ *  Plugin-Autor ab. Er ist deshalb seit 2026-08-21 identisch mit dem GitHub-Profil, auf das
+ *  `authorUrl` zeigt. Das alte Repo `v6t2b9/local-image-generator-models` bleibt bestehen —
+ *  Installationen von 0.6.0 tragen die alte URL in ihren Settings und lüden sonst ins Leere. */
+export const DEFAULT_ASSET_BASE_URL =
+  "https://huggingface.co/johannes-kaindl/local-image-generator-models/resolve/main";
 
 function file(key: AssetKey, kind: AssetFile["kind"]): AssetFile {
   const g = GENERATED_ASSETS[key];

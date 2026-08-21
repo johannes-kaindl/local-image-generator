@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The built-in model is now downloaded from `huggingface.co/johannes-kaindl/local-image-generator-models`
+  — the same name as the plugin's author profile on GitHub, so the source of a 2.5 GB
+  download can be matched against the person who publishes the plugin. Existing installs
+  keep the repository they were configured with and are unaffected; the previous location
+  stays online. You can point `Download source` anywhere, and files already downloaded stay
+  valid either way — they are keyed by checksum, not by URL.
 - The hub's tab bar (Generate / History) now follows the shared kit styling: tabs size
   themselves to their labels and wrap instead of shrinking, the active one is marked by an
   underline and a hover state instead of bold text, and the spacing comes from the theme's
