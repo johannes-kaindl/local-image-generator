@@ -1,7 +1,7 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
-import { STEPS } from "./generation";
+import { backendCapabilities } from "./generation";
 import { allAssets, BUILTIN_MODEL, totalBytes } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
@@ -181,6 +181,7 @@ export function buildViewModel(s: PanelState): PanelViewModel {
   const busy = s.run.kind === "contacting" || s.run.kind === "generating" || s.run.kind === "loading-model";
   const builtin = s.mode === "builtin";
   const backendReady = builtin ? s.engine.kind === "ready" : s.server.kind === "ok";
+  const caps = backendCapabilities(s.mode);
 
   const status = builtin ? engineStatus(s) : serverStatus(s);
   const empty = builtin ? engineEmpty(s, busy) : serverEmpty(s, busy);
@@ -197,9 +198,14 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     generateEnabled: backendReady && !busy && s.prompt.trim().length > 0 && !recipeUnchanged(s),
     insertEnabled: s.image !== null && s.editorActive && !busy,
     showImage: s.image !== null,
-    controls: builtin
-      ? { negative: false, cfg: false, size: false, stepsMin: BUILTIN_MODEL.steps.min, stepsMax: BUILTIN_MODEL.steps.max }
-      : { negative: true, cfg: true, size: true, stepsMin: STEPS.min, stepsMax: STEPS.max },
+    controls: {
+      negative: caps.negativePrompt,
+      cfg: caps.cfg,
+      // „Größe wählbar" ist genau die Abwesenheit einer festen Größe.
+      size: caps.fixedSize === null,
+      stepsMin: caps.minSteps,
+      stepsMax: caps.maxSteps,
+    },
     modelLabel,
   };
 }

@@ -30,3 +30,23 @@ describe("generation constants (Spec §4)", () => {
     expect(CFG.default).toBe(7);
   });
 });
+
+import { backendCapabilities } from "../src/core/generation";
+import { BUILTIN_MODEL } from "../src/core/model-manifest";
+
+describe("backendCapabilities", () => {
+  it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt", () => {
+    expect(backendCapabilities("builtin")).toEqual({
+      negativePrompt: false,
+      cfg: false,
+      minSteps: BUILTIN_MODEL.steps.min,
+      maxSteps: BUILTIN_MODEL.steps.max,
+      fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
+    });
+  });
+  it("server kann alles, was das Panel anbietet", () => {
+    expect(backendCapabilities("server")).toEqual({
+      negativePrompt: true, cfg: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null,
+    });
+  });
+});
