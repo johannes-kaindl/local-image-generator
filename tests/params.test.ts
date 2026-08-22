@@ -51,23 +51,28 @@ describe("hardenParams", () => {
 });
 
 describe("eine Haertung, zwei Aufrufer", () => {
-  // Das Panel uebergibt seine Reglerwerte einzeln, die API ein Auftragsobjekt. Beide landen
-  // in derselben Funktion — dieser Test sperrt fest, dass das so bleibt. Laufen sie
-  // auseinander, meldet die API andere Werte, als das Panel in seine Notiz schreibt.
+  // Das Panel uebergibt alle Reglerwerte, ein Fremdplugin oft nur den Prompt. Beide gehen
+  // durch dieselbe Haertung — dieser Test haelt fest, dass der schmale Auftrag dieselben
+  // Backend-Wahrheiten bekommt wie der volle, statt eigener Defaults.
   const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODEL.id,
               now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
 
-  it("Panel-Eingabe und API-Auftrag ergeben dieselben Parameter", () => {
-    const vomPanel = hardenParams(
+  it("der schmale Auftrag erbt dieselben Backend-Wahrheiten wie der volle", () => {
+    const voll = hardenParams(
       { prompt: "a cat", negativePrompt: "blurry", width: 1024, height: 1024, steps: 30, seed: 7, cfg: 9 },
       c,
     );
-    const vonDerApi = hardenParams(
-      { prompt: "a cat", negativePrompt: "blurry", width: 1024, height: 1024, steps: 30, seed: 7, cfg: 9 },
-      c,
-    );
-    expect(vomPanel).toEqual(vonDerApi);
+    const schmal = hardenParams({ prompt: "a cat", seed: 7 }, c);
+    // Alles, was das Backend bestimmt, muss gleich sein — unabhaengig davon, wie viel
+    // der Aufrufer gesagt hat.
+    expect(schmal.cfg).toBe(voll.cfg);
+    expect(schmal.negativePrompt).toBe(voll.negativePrompt);
+    expect(schmal.width).toBe(voll.width);
+    expect(schmal.height).toBe(voll.height);
+    expect(schmal.model).toBe(voll.model);
     // und beide tragen die builtin-Wahrheit, nicht den Wunsch
-    expect(vomPanel).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 4 });
+    expect(voll).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 4 });
+    // nur was der Aufrufer wirklich sagen darf, unterscheidet sich
+    expect(schmal.steps).toBe(4);
   });
 });

@@ -104,6 +104,12 @@ describe("buildViewModel — run state", () => {
     expect(vm.status.text).toContain("40");
     expect(vm.generateEnabled).toBe(false);
   });
+
+  it("Fremdlauf ohne Prozent zeigt den eigenen Text (kein roher Key bei Tippfehler)", () => {
+    const vm = buildViewModel({ ...base, run: { kind: "external", pct: null } });
+    expect(vm.status.text).toBe("Another plugin is generating an image…");
+    expect(vm.generateEnabled).toBe(false);
+  });
 });
 
 describe("buildViewModel — Bild/Insert", () => {

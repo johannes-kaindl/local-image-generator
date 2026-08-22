@@ -11,7 +11,7 @@ import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
 import { BUILTIN_MODEL, allAssets } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
-import { hardenParams } from "./core/params";
+import { hardenParams, type HardenContext } from "./core/params";
 import {
   createImageGenerationApi,
   type ApiFailure,
@@ -74,30 +74,23 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   };
 
   async onload(): Promise<void> {
-    // migrateSettings VOR mergeSettings: das neue Feld `engine` entscheidet sich am alten
-    // Endpunkt (0.5-Nutzer bleiben im Server-Modus), nicht am Default.
-    this.settings = validateSettings(
-      DEFAULT_SETTINGS,
-      mergeSettings(DEFAULT_SETTINGS, migrateSettings(await this.loadData())),
-      SETTINGS_SCHEMA,
-    );
-    this.state.mode = this.settings.engine;
-    this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
-    this.state.engine = { kind: this.settings.engine === "builtin" ? "gpu-checking" : "not-downloaded" };
+    registerI18n();
+    setLang(pickLang(getLanguage()));
 
+    // Obsidian traegt diese Instanz schon in app.plugins.plugins ein, bevor onload() zu Ende
+    // ist — ein parallel ladendes Fremdplugin kann `.api` also in genau diesem Fenster lesen.
+    // Deshalb VOR dem await auf loadData() konstruiert: jede Abhaengigkeit unten ist eine
+    // Closure ueber `this`, keine braucht die geladenen Settings zum Bauzeitpunkt.
     this.api = createImageGenerationApi({
       getMode: () => this.settings.engine,
       readiness: () => this.apiReadiness(),
       isBusy: () => this.isBusy(),
-      harden: (input) =>
-        hardenParams(input, {
-          mode: this.settings.engine,
-          defaultSteps: this.settings.defaultSteps,
-          model: this.currentModelName(),
-          now: new Date(),
-          randomSeed: () => Math.floor(Math.random() * 2 ** 31),
-        }),
+      harden: (input) => hardenParams(input, this.hardenContext()),
       run: async (params, onProgress) => {
+        // Ein Konsument haelt seine api-Referenz ueber unser Entladen hinaus. Ohne diesen
+        // Guard baut ensureLocalEngine() eine neue GPU-Session fuer eine Plugin-Instanz,
+        // die es nicht mehr gibt — und niemand disposed sie je.
+        if (this.unloaded) return { ok: false, message: "plugin unloaded" };
         this.apiRunning = true;
         try {
           return await this.runGeneration(params, onProgress, { external: true });
@@ -109,8 +102,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       defaultCreateNote: () => this.settings.createMode === "note",
     });
 
-    registerI18n();
-    setLang(pickLang(getLanguage()));
+    // migrateSettings VOR mergeSettings: das neue Feld `engine` entscheidet sich am alten
+    // Endpunkt (0.5-Nutzer bleiben im Server-Modus), nicht am Default.
+    this.settings = validateSettings(
+      DEFAULT_SETTINGS,
+      mergeSettings(DEFAULT_SETTINGS, migrateSettings(await this.loadData())),
+      SETTINGS_SCHEMA,
+    );
+    this.state.mode = this.settings.engine;
+    this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
+    this.state.engine = { kind: this.settings.engine === "builtin" ? "gpu-checking" : "not-downloaded" };
 
     this.settingTab = new LigSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
@@ -201,7 +202,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   onunload(): void {
-    // Eine laufende generate() pollt per setInterval und wartet auf einen nicht abbrechbaren
+    // Eine laufende runGeneration() pollt per setInterval und wartet auf einen nicht abbrechbaren
     // HTTP-Call. Das Flag sorgt dafür, dass deren Callbacks nach dem Entladen zu No-ops werden
     // (kein State-Mutieren, kein refreshViews, kein History-Schreiben). Die eingebaute Engine
     // hält GPU-Sessions und evtl. einen Download — beides abräumen (0.1-Leak-Befund).
@@ -248,19 +249,42 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
   }
 
+  /** Der EINE Kontext, unter dem gehaertet wird — Panel wie Provider-API. Zwei Kontexte
+   *  waeren zwei Wahrheiten: die API meldete dann andere Parameter, als das Panel in seine
+   *  Notiz schreibt. Genau dafuer liegt die Haertung in core/params.ts an einer Stelle. */
+  private hardenContext(): HardenContext {
+    return {
+      mode: this.settings.engine,
+      defaultSteps: this.settings.defaultSteps,
+      model: this.currentModelName(),
+      now: new Date(),
+      randomSeed: () => Math.floor(Math.random() * 2 ** 31),
+    };
+  }
+
   /** Der einzige Vault-Write der Provider-API. Nutzt dieselbe Ablage wie der Create-Knopf
    *  (Ausgabeziel, Dedup, optional Ergebnis-Notiz) — ein Fremdplugin soll nicht an der
    *  Einstellung des Nutzers vorbei schreiben. */
   private async saveApiImage(image: ApiImage, createNote: boolean): Promise<ApiSaveResult> {
-    const params: GenParams = { ...image.params, date: image.params.created };
+    const { created, ...rest } = image.params;
+    const params: GenParams = { ...rest, date: created };
+    let file: TFile;
     try {
       const path = await this.resolveImagePath(buildImageFilename(new Date(params.date), params.seed));
-      const file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${image.base64}`));
-      if (!createNote) return { ok: true, imagePath: file.path, notePath: null };
-      const note = await this.createNote(params, file.path);
-      return { ok: true, imagePath: file.path, notePath: note.path };
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${image.base64}`));
     } catch (e) {
       return { ok: false, reason: "write-failed", message: e instanceof Error ? e.message : String(e) };
+    }
+    if (!createNote) return { ok: true, imagePath: file.path, notePath: null };
+    // Ab hier ist das Bild bereits geschrieben. Ein Fehler in der Notiz darf es NICHT
+    // entwerten (dieselbe Lehre wie saveImage() unten) — deshalb eigener try, und der
+    // Rueckgabewert bleibt ok mit notePath: null statt eines write-failed, das den Aufrufer
+    // die bereits gespeicherte Datei nicht mehr finden liesse.
+    try {
+      const note = await this.createNote(params, file.path);
+      return { ok: true, imagePath: file.path, notePath: note.path };
+    } catch {
+      return { ok: true, imagePath: file.path, notePath: null };
     }
   }
 
@@ -551,19 +575,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const builtin = this.settings.engine === "builtin";
     // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit.
     if (builtin ? this.state.engine.kind !== "ready" : this.state.server.kind !== "ok") return;
-    const model = builtin ? BUILTIN_MODEL.id : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
     // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
     // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams
     // neutralisiert das still statt es abzulehnen (Keine-Attrappen-Linie).
     const params = hardenParams(
       { prompt: this.state.prompt, negativePrompt: this.state.negativePrompt, width, height, steps, seed, cfg },
-      {
-        mode: this.settings.engine,
-        defaultSteps: this.settings.defaultSteps,
-        model,
-        now: new Date(),
-        randomSeed: () => Math.floor(Math.random() * 2 ** 31),
-      },
+      this.hardenContext(),
     );
     const result = await this.runGeneration(params);
     // Ergebnis kann nach onunload eintreffen — runGeneration hat dann selbst schon keine
