@@ -187,33 +187,33 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
   Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
 
-## Store-Scorecard (gemessen 2026-08-22, Release 0.6.1)
+## Store-Scorecard (gemessen 2026-08-23, Release 0.7.0)
 
-**Health `Excellent` · Review `Passed`** — zum zweiten Mal die Bestnote MIT eingebauter Engine
-(ORT-WebGPU im Renderer, 2,5-GB-Modell-Download vom eigenen HF-Repo). Keine
-`low`/`medium`/`high`-Befunde. Damit ist die Spike-Rechnung vom 2026-08-19 nicht nur
-bestaetigt, sondern **ueber einen Versionswechsel hinweg stabil**: Modell-Download + WASM +
-in-process-Inferenz sind Passed-vertraeglich, solange kein `fs`/`child_process`, kein globales
-`fetch`, `main.js` klein.
+**Health `Excellent` · Review `Passed`** — zum dritten Mal in Folge, und erstmals **mit einer
+oeffentlichen Plugin-API**. Keine `low`/`medium`/`high`-Befunde.
+
+**Die Befundliste ist gegenueber 0.6.1 unveraendert.** Das ist der eigentliche Messwert: eine
+`plugin.api`, ueber die ein FREMDES Plugin Bilder erzeugen und in den Vault schreiben laesst,
+erzeugt **keine neue Kategorie**. Insbesondere bleibt `Vault Write` ein `pass` — der Scanner
+bewertet den *Weg* (Obsidian-API statt `fs`), nicht den Ausloeser. Wer eine API plant, muss
+dafuer also nichts einpreisen.
 
 `pass`: Attestierungen fuer `main.js`/`styles.css`, `Build reproduced the release main.js
-byte-for-byte`, keine verwundbaren Abhaengigkeiten, **`Vault Write` (Schreiben ueber die
-Obsidian-API — als `pass` gewertet, nicht als Warnung)**.
+byte-for-byte`, keine verwundbaren Abhaengigkeiten, **`Vault Write`**.
 
-`info` (kostet die Note nicht): `Number of network request calls`, `Plugin references
-unrecognized WASM files`, **`Dynamic Code Execution`** (das `new Function(` der
-Emscripten-embind in der ORT-Glue — BEHAVIOR-Disclosure, wie in publishing.md
-vorhergesagt), `runtime base64 encode or decode`, `AGPL copyleft`.
+`info` (kostet die Note nicht): `AGPL copyleft`, `Number of network request calls`,
+`runtime base64 encode or decode`, **`Dynamic Code Execution`** (das `new Function(` der
+Emscripten-embind in der ORT-Glue), `Plugin references unrecognized WASM files`.
 
-⚠️ **Drei Pruefungen liefen gar nicht:** `Malware scan not available`, `Obfuscation scan not
-available`, `Network requests scan not available`. Das steht unter `info` und sieht wie ein
-Befund aus, ist aber die Abwesenheit einer Messung — die Note beruht auf weniger Pruefung,
-als „Passed" suggeriert. Nicht als Freibrief lesen: wer eine riskante Bauart plant, hat
-dafuer hier **keine** Bestaetigung bekommen, nur kein Widerwort.
+⚠️ **Drei Pruefungen liefen wieder gar nicht:** `Malware scan not available`,
+`Obfuscation scan not available`, `Network requests scan not available` — dritte Version in
+Folge. Das steht unter `info` und sieht wie ein Befund aus, ist aber die Abwesenheit einer
+Messung. Nicht als Freibrief lesen: wer eine riskante Bauart plant, hat hier **keine**
+Bestaetigung bekommen, nur kein Widerwort.
 
 Nachlesen: `python3 <obsidian-store-recherche>/scripts/scorecard.py local-image-generator`.
 **Der Scan laeuft nie von selbst an** — nach jedem Release im Developer Dashboard einen
-Rescan anstossen (0.6.1: von Johannes am 2026-08-22 angestossen, Ergebnis oben).
+Rescan anstossen (0.7.0: von Johannes am 2026-08-23 angestossen, Ergebnis oben).
 
 ## Historie: die in-process-Engine (bis 0.4) und der Thin-Client (0.5)
 
