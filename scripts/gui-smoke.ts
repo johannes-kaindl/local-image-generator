@@ -489,6 +489,47 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
   );
 }
 
+/**
+ * Punkt 18: ist die Provider-API am laufenden Obsidian registriert und formtreu?
+ *
+ * Das ist die Aussage, die kein Unit-Test treffen kann. `plugin-api.test.ts` prueft die
+ * Fassade gegen Fakes; ob `this.api` im onload wirklich gesetzt wird und ueber
+ * `app.plugins.plugins[...]` erreichbar ist, sieht man nur am Wirt.
+ *
+ * Die Download-Zusage (generate() im builtin-Modus OHNE Assets sagt "model-not-downloaded"
+ * ab, statt zu laden) misst dieser Punkt bewusst NICHT: dafuer muesste der Treiber den
+ * Modus wechseln und danach zuruecksetzen — und ob dieser Vault gerade Assets liegen hat,
+ * ist unbekannt (ein frueherer --builtin-Lauf koennte sie zurueckgelassen haben). Ein
+ * Wechsel ohne bekannten Ausgangszustand pruefte im Zweifel gar nichts, waere aber der
+ * riskantere, zustandsveraendernde Teil des Punktes. `status().reason` traegt dieselbe
+ * Aussage bereits verlustfrei, ohne den Wirt anzufassen: 18b liest sie ueber denselben
+ * `backendCapabilities`-Pfad, den auch `generate()` befragt.
+ */
+async function runApiCheck(cdp: Cdp): Promise<void> {
+  const form = await cdp.evaluate<{ version: unknown; keys: string[]; status: Record<string, unknown> }>(`
+    const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
+    if (!api) return { version: null, keys: [], status: {} };
+    return {
+      version: api.apiVersion,
+      keys: ["status", "generate", "save"].filter((k) => typeof api[k] === "function"),
+      status: api.status(),
+    };
+  `);
+
+  record(
+    "18a. Die Provider-API ist registriert und formtreu",
+    form.version === 1 && form.keys.length === 3,
+    `apiVersion=${String(form.version)}, Methoden=${form.keys.join(",") || "keine"}`,
+  );
+
+  const caps = form.status["capabilities"] as Record<string, unknown> | undefined;
+  record(
+    "18b. status() meldet Faehigkeiten typgerecht",
+    caps !== undefined && typeof caps["negativePrompt"] === "boolean" && typeof caps["maxSteps"] === "number",
+    JSON.stringify(caps ?? null),
+  );
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const flag = (name: string): string | undefined => {
@@ -1162,6 +1203,11 @@ async function main(): Promise<void> {
     // liest `getComputedStyle` — kein Download, kein Asset-Server, keine Generierung. Er läuft
     // damit in jedem Lauf, auch im schnellen.
     await runControlVisibilityCheck(cdp);
+
+    // --- 18. Die Provider-API am laufenden Obsidian --------------------------
+    // Bewusst ausserhalb der --builtin/--quick-Bedingung: der Punkt braucht weder Server
+    // noch Assets, nur die registrierte Plugin-Instanz.
+    await runApiCheck(cdp);
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.

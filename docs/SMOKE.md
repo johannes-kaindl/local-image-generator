@@ -161,6 +161,35 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-22 · 0.6.1 · Obsidian 1.13.7 · A1111-Mock (Port 7860) · Punkt 18 (Provider-API) · **`--quick` 8/8 grün, voller Lauf 15/15 grün**
+
+Lauf zum Bau von Punkt 18 (`app.plugins.plugins["local-image-generator"].api` am laufenden
+Wirt). `--quick` mass 1, 2, 3, 4, 12, 17, 18a, 18b — 8/8 grün, unverändert gegenüber der
+6/6-Baseline vor diesem Task plus die zwei neuen Records. Voller Lauf (ohne `--quick`, echte
+Generierung gegen den Mock) danach 15/15 grün — **erste Messung** der von Task 5/6
+refaktorierten Erzeugungsstrecke (Punkte 5–11: Statuszeile, Bild in der Karte, Notiz mit
+Frontmatter, Historie, Reroll) — keine Regression.
+
+**Mit Gegenprobe** — `this.api = createImageGenerationApi(...)` in `src/main.ts` auskommentiert,
+deployt, `--quick` erneut gefahren:
+
+```
+✗ 18a. Die Provider-API ist registriert und formtreu — apiVersion=null, Methoden=keine
+✗ 18b. status() meldet Faehigkeiten typgerecht — null
+6/8 grün
+```
+
+Genau der erwartete Befund. Nach dem Rückbau (Diff wieder leer) erneut deployt: 8/8 grün,
+`apiVersion=1, Methoden=status,generate,save`.
+
+Zweite Hälfte des Punkts (`generate()` sagt im builtin-Modus ohne Assets `model-not-downloaded`
+ab) bewusst NICHT gebaut: dafür müsste der Treiber den Engine-Modus wechseln und zurücksetzen,
+und ob dieser Vault gerade Assets im Cache hat, war zum Bauzeitpunkt unbekannt (frühere
+`--builtin`-Läufe könnten sie hinterlassen haben) — ein Wechsel ohne bekannten Ausgangszustand
+hätte im Zweifel nichts geprüft, aber sehr wohl den Wirt verändert. `status().reason` trägt
+dieselbe Aussage bereits verlustfrei; 18b liest sie über denselben `backendCapabilities`-Pfad
+wie `generate()`.
+
 ### 2026-08-22 · 0.6.1 · Obsidian 1.13.7 · `--quick`, ohne Bild-Server · **3/3 grün, 3 übersprungen**
 
 Lauf zum Bau von Punkt 17. Gemessen wurden 1, 12 und 17; 2–4 übersprungen (kein Server),
