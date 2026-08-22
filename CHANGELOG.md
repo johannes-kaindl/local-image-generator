@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A run started by *another* plugin that fails no longer appears in the panel as if your own
+  generation had failed. The status line simply returns to idle — the same way it already did
+  when someone else's run succeeded. The calling plugin receives the error and reports it.
+- The plugin API's `save()` now refuses parameters whose timestamp or seed it cannot read,
+  instead of building a file name out of them. A misbehaving consumer can no longer shape a
+  vault path like `lig-NaNNaNNaN-NaNNaNNaN-s7.png`.
+
 ## [0.7.0] — 2026-08-22
 
 ### Added
