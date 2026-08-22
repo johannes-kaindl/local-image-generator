@@ -116,3 +116,42 @@ describe("generate()", () => {
     expect(r).toEqual({ ok: false, reason: "not-configured" });
   });
 });
+
+describe("save()", () => {
+  // `params` (oben in der Datei) ist die INTERNE Form mit `date`; der Vertrag traegt
+  // `created`. Hier bewusst umgeschrieben statt gespreizt, damit kein `date` mitreist.
+  const { date, ...rest } = params;
+  const image = { base64: "PNGDATA", params: { ...rest, created: date } };
+
+  it("folgt der Nutzer-Einstellung, wenn der Aufrufer nichts sagt", async () => {
+    let seen: boolean | null = null;
+    const api = createImageGenerationApi(
+      deps({
+        defaultCreateNote: () => true,
+        save: async (_img, createNote) => { seen = createNote; return { ok: true, imagePath: "a.png", notePath: "a.md" }; },
+      }),
+    );
+    const r = await api.save(image);
+    expect(seen).toBe(true);
+    expect(r).toEqual({ ok: true, imagePath: "a.png", notePath: "a.md" });
+  });
+
+  it("laesst den Aufrufer die Einstellung ueberstimmen", async () => {
+    let seen: boolean | null = null;
+    const api = createImageGenerationApi(
+      deps({
+        defaultCreateNote: () => true,
+        save: async (_img, createNote) => { seen = createNote; return { ok: true, imagePath: "a.png", notePath: null }; },
+      }),
+    );
+    await api.save(image, { createNote: false });
+    expect(seen).toBe(false);
+  });
+
+  it("meldet einen Schreibfehler als Wert", async () => {
+    const api = createImageGenerationApi(
+      deps({ save: async () => ({ ok: false, reason: "write-failed", message: "EACCES" }) }),
+    );
+    await expect(api.save(image)).resolves.toEqual({ ok: false, reason: "write-failed", message: "EACCES" });
+  });
+});
