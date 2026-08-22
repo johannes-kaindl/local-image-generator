@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createImageGenerationApi, IMAGE_GENERATION_API_VERSION, type ApiDeps } from "../src/core/plugin-api";
 import { BUILTIN_MODEL } from "../src/core/model-manifest";
+import { STEPS } from "../src/core/generation";
 
 const params = {
   prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
@@ -10,7 +11,7 @@ const params = {
 function deps(over: Partial<ApiDeps> = {}): ApiDeps {
   return {
     getMode: () => "builtin",
-    readiness: () => ({ ready: true, reason: null }),
+    readiness: () => ({ ready: true }),
     isBusy: () => false,
     harden: () => params,
     run: async () => ({ ok: true, base64: "PNGDATA" }),
@@ -45,6 +46,14 @@ describe("status()", () => {
       deps({ readiness: () => ({ ready: false, reason: "model-not-downloaded" }) }),
     ).status();
     expect(s.reason).toBe("model-not-downloaded");
+  });
+
+  it("meldet im Server-Modus die vollen Faehigkeiten", () => {
+    const s = createImageGenerationApi(deps({ getMode: () => "server" })).status();
+    expect(s.engine).toBe("server");
+    expect(s.capabilities).toEqual({
+      negativePrompt: true, cfg: true, maxSteps: STEPS.max, fixedSize: null,
+    });
   });
 });
 
@@ -94,5 +103,16 @@ describe("generate()", () => {
       deps({ run: async (_p, cb) => { seen = cb; return { ok: true, base64: "X" }; } }),
     ).generate({ prompt: "x", onProgress });
     expect(seen).toBe(onProgress);
+  });
+
+  it("status() und generate() nennen denselben Grund fuer denselben Zustand", async () => {
+    const d = deps({
+      getMode: () => "server",
+      readiness: () => ({ ready: false, reason: "not-configured" }),
+    });
+    const api = createImageGenerationApi(d);
+    const r = await api.generate({ prompt: "x" });
+    expect(api.status().reason).toBe("not-configured");
+    expect(r).toEqual({ ok: false, reason: "not-configured" });
   });
 });

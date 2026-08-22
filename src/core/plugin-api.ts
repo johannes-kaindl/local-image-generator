@@ -101,8 +101,11 @@ export interface ImageGenerationApi {
 export interface ApiDeps {
   getMode(): EngineChoice;
   /** Netzfreie Bereitschaft. `main.ts` leitet sie aus state.engine/state.server ab —
-   *  status() macht selbst KEINEN Netzaufruf. */
-  readiness(): { ready: boolean; reason: ApiFailure | null };
+   *  status() macht selbst KEINEN Netzaufruf.
+   *  Als Union, nicht als flaches Objekt: `{ ready: false }` OHNE Grund waere ein Zustand,
+   *  ueber den status() und generate() verschieden urteilen muessten — der Typ macht ihn
+   *  gar nicht erst konstruierbar. */
+  readiness(): { ready: true } | { ready: false; reason: ApiFailure };
   isBusy(): boolean;
   harden(input: HardenInput): GenParams;
   /** Rechnet. Wirft nicht — Fehlschlaege kommen als message zurueck, damit der Vertrag
@@ -138,7 +141,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
         apiVersion: IMAGE_GENERATION_API_VERSION,
         engine: deps.getMode(),
         ready: r.ready && !busy,
-        reason: busy ? "busy" : r.reason,
+        reason: busy ? "busy" : r.ready ? null : r.reason,
         capabilities: {
           negativePrompt: caps.negativePrompt,
           cfg: caps.cfg,
@@ -151,7 +154,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
     async generate(req: ApiRequest): Promise<ApiResult> {
       if (deps.isBusy()) return { ok: false, reason: "busy" };
       const r = deps.readiness();
-      if (!r.ready) return { ok: false, reason: r.reason ?? "not-configured" };
+      if (!r.ready) return { ok: false, reason: r.reason };
       const params = deps.harden(req);
       const out = await deps.run(params, req.onProgress);
       if (!out.ok) return { ok: false, reason: "failed", message: out.message };
