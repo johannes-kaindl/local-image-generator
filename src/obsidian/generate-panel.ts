@@ -99,7 +99,10 @@ export class GeneratePanel implements HubPanel<TabId> {
       this.stepsValueEl.setText(this.stepsEl.value);
       this.refresh();
     });
-    this.cfgLabelEl = controls.createSpan({ text: t("generate.cfg"), cls: "lig-label" });
+    // Eigener Klassenname, damit der GUI-Smoke genau dieses Element messen kann: es wird
+    // zusammen mit Regler und Zahl versteckt, war aber als blosses `.lig-label` nicht von den
+    // Nachbar-Beschriftungen zu unterscheiden — ein Pruefpunkt haette es auslassen muessen.
+    this.cfgLabelEl = controls.createSpan({ text: t("generate.cfg"), cls: "lig-label lig-cfg-label" });
     const startCfg = String(CFG.default);
     this.cfgEl = controls.createEl("input", {
       cls: "lig-cfg",

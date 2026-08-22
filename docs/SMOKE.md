@@ -75,6 +75,7 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 14 | Download über den **Panel**-Knopf endet auf „bereit" | der Zero-Setup-Weg darf nicht in den Settings versteckt sein; Fortschritt muss sichtbar sein |
 | 15 | Die eingebaute Engine liefert ein Bild, die Notiz trägt `model: sd-turbo` und `steps ≤ 4` | Ende-zu-Ende ohne Server: Ladephase, Schritte, Rezept-Ehrlichkeit |
 | 16 | Zurück auf „Server" bringt die Regler zurück | der Wechsel darf nichts hinterlassen |
+| 17 | Die modusabhängigen Regler sind auch **gerendert** weg — und kommen zurück | `getComputedStyle`, nicht `classList`: die Klasse war beim Bug vom 2026-08-21 gesetzt, das CSS zog nicht |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -108,6 +109,32 @@ nächsten Blick, ein falsches Frontmatter bleibt in der Notiz stehen.
 Prüfwerkzeug, das seine Erwartung aus dem Prüfling bezieht, bestätigt nur dessen Meinung;
 genau so blieb der Fehlgriff so lange unentdeckt.
 
+### Warum Punkt 17 nicht in 13 und 16 aufgeht
+
+13 und 16 fragen, ob das Panel den Zustand richtig **setzt**. 17 fragt, ob das CSS ihn auch
+**durchsetzt**. Das ist nicht dieselbe Frage: am 2026-08-21 war die Klasse `is-hidden` auf der
+Negativ-Prompt-Zeile korrekt gesetzt, 237 Unit-Tests und 16 Smoke-Punkte waren grün — und die
+Zeile stand trotzdem im builtin-Modus im Bild, weil `.lig-prompt-row { display: flex }` weiter
+unten in `styles.css` stand und bei gleicher Spezifität gewinnt. Ein Prüfpunkt auf
+`classList.contains("is-hidden")` kann das prinzipiell nicht sehen: er fragt den Prüfling nach
+seiner **Absicht**, nicht nach dem **Ergebnis**.
+
+Punkt 17 hängt deshalb an nichts — kein Download, kein Asset-Server, keine Generierung. Er
+wechselt den Modus und liest `getComputedStyle`, und läuft damit auch im `--quick`-Lauf. Ein
+CSS-Regressionsschutz, der nur im Vollauf mitläuft, fehlt genau dann, wenn man ihn braucht.
+
+Er misst **beide Richtungen** (builtin versteckt, server bringt zurück): ein Punkt, der nur das
+Verstecken prüft, wäre mit einem globalen `display: none !important` zu bestehen.
+
+Zwei Ja-Sager derselben Bauart sind bei der Gelegenheit mit umgestellt worden — der CTA-Knopf in
+13 und die Bildkarte in 7 fragten ebenfalls die Klasse statt die gerenderte Sichtbarkeit.
+
+**Die Vorbedingung eines Bugs gehört in den Prüfpunkt, der ihn sucht.** Die Steps-Beschriftung
+(zweiter Bug vom 2026-08-21: Regler auf 4, Beschriftung „20") kann nur danebenliegen, wenn der
+Browser den Wert beim Sinken von `max` überhaupt klemmt. Mit dem Standardwert 4 blieb der Punkt
+in der Gegenprobe **grün, obwohl der Defekt wieder eingebaut war** — er schiebt den Regler
+seitdem selbst über das builtin-Maximum und meldet es als Befund, wenn kein Klemmen stattfand.
+
 ## Was der Treiber am Wirt verändert (und zurücksetzt)
 
 Alles davon wird vorher gemerkt und im `finally` zurückgeschrieben — auch nach einem Abbruch:
@@ -115,6 +142,9 @@ Alles davon wird vorher gemerkt und im `finally` zurückgeschrieben — auch nac
 - `createMode` → `"note"` (sonst gäbe es keine Notiz zu prüfen)
 - `outputFolder` / `noteFolder` → `_lig-gui-smoke`
 - **die Historie** — der Lauf schreibt zwei Einträge, die niemand bestellt hat
+- **der Steps-Regler** — Punkt 17 schiebt ihn auf das Server-Maximum, um das Klemmen zu
+  erzwingen, und stellt den Vorwert danach wieder her (UI-Zustand, kein Setting: der
+  `finally`-Block erfasst ihn nicht)
 - `engine` → `"server"` für 1–11 (und zurück), mit `--builtin` außerdem `assetBaseUrl` → der
   lokale Asset-Server; **der Modell-Cache** der eingebauten Engine wird in Punkt 13 geleert und
   in 14 neu gefüllt — er wird NICHT zurückgesetzt (ein Wiederholungslauf überspringt den Download
@@ -130,6 +160,26 @@ aufräumen wollte.
 ## Durchläufe
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
+
+### 2026-08-22 · 0.6.1 · Obsidian 1.13.7 · `--quick`, ohne Bild-Server · **3/3 grün, 3 übersprungen**
+
+Lauf zum Bau von Punkt 17. Gemessen wurden 1, 12 und 17; 2–4 übersprungen (kein Server),
+5–11 und 13–16 nicht angefordert.
+
+**Mit Gegenprobe** — ohne sie wäre das Grün nicht interpretierbar. Beide Bugs vom 2026-08-21
+wurden künstlich wieder eingebaut (`.lig-prompt-row { display: flex }` ans Ende von
+`styles.css`; die Spar-Bedingung vor `stepsValueEl.setText`) und der Punkt meldete:
+
+```
+✗ 17. … — builtin trotzdem sichtbar: .lig-negative-row → display:flex ·
+     Steps-Beschriftung ≠ Regler: „50" bei value 4 (max 4), „50" bei value 4 (max 50)
+```
+
+Die Gegenprobe fand dabei einen Defekt **im Prüfpunkt selbst**: im ersten Anlauf blieb die
+Steps-Hälfte grün, weil der Regler bei 4 stand und gar nicht geklemmt wurde. Siehe oben,
+§ „Warum Punkt 17 nicht in 13 und 16 aufgeht".
+
+Nach dem Rückbau: 3/3 grün, `Steps geklemmt 50 → 4/4, zurück 4/50`.
 
 ### 2026-08-21 · 0.6.0 + Kit-0.27.0-Vendoring · Obsidian 1.12.4 · A1111-Mock + lokaler Asset-Server · **16/16 grün**
 

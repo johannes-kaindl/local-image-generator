@@ -41,6 +41,9 @@
  * npm run smoke:gui -- --vault <name>
  * npm run smoke:gui -- --vault <name> --port 9222 --steps 8 --keep
  * npm run smoke:gui -- --vault <name> --builtin                # + Punkte 13–16 (eingebaute Engine)
+ *
+ * Punkt 17 (modusabhängige Regler, gerendert gemessen) läuft in JEDEM Lauf — er braucht weder
+ * Server noch Assets noch Generierung, nur einen Moduswechsel und `getComputedStyle`.
  *   (braucht `npm run smoke:assets` in einem zweiten Terminal — lokaler Asset-Server auf 7862;
  *    --assets <url> nennt eine andere Basis. Der Lauf löscht und lädt die Modell-Dateien des
  *    Plugin-Caches neu — deshalb nur gegen den lokalen Server, nie gegen das HF-Repo.)
@@ -225,8 +228,17 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(); return true;`);
     st = await pollUntil(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", 500);
   }
-  const negHidden = await cdp.evaluate<boolean>(`return !!document.querySelector(".lig-negative-row")?.classList.contains("is-hidden");`);
-  const ctaLabel = await cdp.evaluate<string>(`const b = document.querySelector(".lig-empty button"); return b && !b.classList.contains("is-hidden") ? b.textContent.trim() : "";`);
+  // Gerendert messen, nicht die Klasse lesen: die war beim Bug vom 2026-08-21 gesetzt, während
+  // die Zeile im Bild stand. Punkt 17 prüft das systematisch — hier bleibt es als Vorbedingung
+  // von 14/15 stehen, weil ein Panel mit sichtbarem Negativ-Prompt kein builtin-Panel ist.
+  const negHidden = await cdp.evaluate<boolean>(`
+    const el = document.querySelector(".lig-negative-row");
+    return !!el && getComputedStyle(el).display === "none";
+  `);
+  const ctaLabel = await cdp.evaluate<string>(`
+    const b = document.querySelector(".lig-empty button");
+    return b && getComputedStyle(b).display !== "none" ? b.textContent.trim() : "";
+  `);
   const notDownloaded = t("status.notDownloaded");
   const status13 = await statusText();
   record(
@@ -347,13 +359,134 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
   await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].setEngine("server"); return true;`);
   await new Promise((r) => setTimeout(r, 1000));
   const back = await cdp.evaluate<{ neg: boolean; cfg: boolean; max: string }>(`
-    return {
-      neg: !document.querySelector(".lig-negative-row")?.classList.contains("is-hidden"),
-      cfg: !document.querySelector(".lig-cfg")?.classList.contains("is-hidden"),
-      max: document.querySelector(".lig-steps")?.max ?? "",
+    const sichtbar = (sel) => {
+      const el = document.querySelector(sel);
+      return !!el && getComputedStyle(el).display !== "none";
     };
+    return { neg: sichtbar(".lig-negative-row"), cfg: sichtbar(".lig-cfg"), max: document.querySelector(".lig-steps")?.max ?? "" };
   `);
   record("16. Zurück auf „Server“ bringt die Regler zurück", back.neg && back.cfg && back.max === String(STEPS.max), `Negativ ${back.neg} · CFG ${back.cfg} · Steps-Max ${back.max}`);
+}
+
+/**
+ * Punkt 17: sind die Regler, die ein Backend nicht kann, auch GERENDERT weg?
+ *
+ * Eigener Punkt statt einer Zeile in 13/16, aus zwei Gründen. Erstens misst er etwas anderes:
+ * 13 und 16 fragen, ob das Panel den Zustand richtig setzt — 17 fragt, ob das CSS ihn auch
+ * durchsetzt. Zweitens hängt er an nichts: kein Download, kein Asset-Server, keine
+ * Generierung. Ein CSS-Regressionsschutz, der nur im Vollauf mitläuft, schützt genau dann
+ * nicht, wenn man ihn braucht.
+ *
+ * Anlass (2026-08-21): `.is-hidden { display: none }` verlor gegen die später notierte Regel
+ * `.lig-prompt-row { display: flex }` — gleiche Spezifität, die spätere gewinnt. Das Panel
+ * hatte die Klasse korrekt gesetzt, 237 Unit-Tests und 16 Smoke-Punkte waren grün, und die
+ * Negativ-Prompt-Zeile stand trotzdem im builtin-Modus im Bild. Genau der Fall, den ein
+ * Prüfpunkt auf `classList.contains("is-hidden")` nicht sehen kann: er fragt den Prüfling
+ * nach seiner Absicht, nicht nach dem Ergebnis.
+ */
+const MODUS_REGLER = [
+  ".lig-negative-row",
+  ".lig-cfg-label",
+  ".lig-cfg",
+  ".lig-cfg-value",
+  ".lig-size-slot",
+] as const;
+
+/** Gerenderte Sichtbarkeit + Zustand jedes modusabhängigen Reglers, aus dem Renderer geholt.
+ *  `display` kommt aus `getComputedStyle` (die Kaskade entsteht erst im Browser), `hidden`
+ *  aus der Klasse — beide, damit ein Rot sagt, WELCHE der zwei Schichten gerissen ist. */
+async function reglerSicht(cdp: Cdp): Promise<{
+  regler: { sel: string; display: string; hidden: boolean; fehlt: boolean }[];
+  steps: { wert: string; anzeige: string; max: string };
+}> {
+  return cdp.evaluate(`
+    const sel = ${JSON.stringify(MODUS_REGLER)};
+    const regler = sel.map((s) => {
+      const el = document.querySelector(s);
+      if (!el) return { sel: s, display: "", hidden: false, fehlt: true };
+      return { sel: s, display: getComputedStyle(el).display, hidden: el.classList.contains("is-hidden"), fehlt: false };
+    });
+    const steps = document.querySelector(".lig-steps");
+    const stepsValue = document.querySelector(".lig-steps-value");
+    return {
+      regler,
+      steps: {
+        wert: steps ? steps.value : "",
+        anzeige: stepsValue ? stepsValue.textContent.trim() : "",
+        max: steps ? steps.max : "",
+      },
+    };
+  `);
+}
+
+/**
+ * Beide Richtungen in einem Punkt: builtin versteckt, server bringt zurück. Ein Prüfpunkt, der
+ * nur das Verstecken misst, ist mit `display: none !important` auf alles zu bestehen.
+ */
+async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
+  const setzeModus = async (mode: "builtin" | "server"): Promise<void> => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== ${JSON.stringify(mode)}) await p.setEngine(${JSON.stringify(mode)});
+      p.refreshViews();
+      return true;
+    `);
+    // Der Moduswechsel stößt einen GPU-Check an; die Regler hängen aber allein am Modus
+    // (viewmodel.ts: `controls: builtin ? … : …`), das Rendern ist also nach einem Tick durch.
+    await new Promise((r) => setTimeout(r, 800));
+  };
+
+  // Den Regler VOR dem Wechsel über das builtin-Maximum schieben — sonst findet das Klemmen
+  // gar nicht statt und die Beschriftung kann nicht danebenliegen. Gemessen 2026-08-22 beim
+  // Bau dieses Punktes: mit dem Standardwert 4 blieb er auch mit wieder eingebautem Defekt
+  // grün. Ein Prüfpunkt, der die Vorbedingung seines Bugs nicht herstellt, misst nichts.
+  await setzeModus("server");
+  const stepsVorLauf = await cdp.evaluate<string>(`
+    const el = document.querySelector(".lig-steps");
+    const alt = el.value;
+    el.value = el.max;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return alt;
+  `);
+  const vorher = await reglerSicht(cdp);
+
+  await setzeModus("builtin");
+  const drin = await reglerSicht(cdp);
+  await setzeModus("server");
+  const raus = await reglerSicht(cdp);
+  // Zurückstellen: der Treiber gibt den Wirt so zurück, wie er ihn vorfand — auch in dem
+  // bisschen UI-Zustand, das kein Setting ist und deshalb vom Aufräumblock nicht erfasst wird.
+  await cdp.evaluate(`
+    const el = document.querySelector(".lig-steps");
+    el.value = ${JSON.stringify(stepsVorLauf)};
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  `);
+
+  const fehlend = [...drin.regler, ...raus.regler].filter((r) => r.fehlt).map((r) => r.sel);
+  const nichtWeg = drin.regler.filter((r) => !r.fehlt && r.display !== "none");
+  const nichtDa = raus.regler.filter((r) => !r.fehlt && r.display === "none");
+  // Die Beschriftung neben dem Regler ist ein eigenes Span und wird nicht vom Browser
+  // mitgeklemmt, wenn `max` sinkt — sie kann also stehenbleiben, während gerechnet wird.
+  const stepsSchief = [vorher.steps, drin.steps, raus.steps].filter((s) => s.anzeige !== s.wert);
+  // Ohne echtes Klemmen ist die Steps-Hälfte dieses Punktes gegenstandslos — das gehört in die
+  // Meldung, nicht ins Schweigen.
+  const geklemmt = Number(vorher.steps.wert) > Number(drin.steps.max);
+
+  const teile: string[] = [];
+  if (fehlend.length > 0) teile.push(`nicht im DOM: ${[...new Set(fehlend)].join(", ")}`);
+  if (nichtWeg.length > 0) teile.push(`builtin trotzdem sichtbar: ${nichtWeg.map((r) => `${r.sel} → display:${r.display}${r.hidden ? "" : " (auch die Klasse fehlt)"}`).join(", ")}`);
+  if (nichtDa.length > 0) teile.push(`server bleibt weg: ${nichtDa.map((r) => r.sel).join(", ")}`);
+  if (stepsSchief.length > 0) teile.push(`Steps-Beschriftung ≠ Regler: ${stepsSchief.map((s) => `„${s.anzeige}" bei value ${s.wert} (max ${s.max})`).join(", ")}`);
+  if (!geklemmt) teile.push(`Steps wurde nicht geklemmt (${vorher.steps.wert} → max ${drin.steps.max}) — die Beschriftung ist damit ungeprüft`);
+
+  record(
+    "17. Die modusabhängigen Regler sind auch GERENDERT weg — und kommen zurück",
+    teile.length === 0,
+    teile.length === 0
+      ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max}`
+      : teile.join(" · "),
+  );
 }
 
 async function main(): Promise<void> {
@@ -841,7 +974,7 @@ async function main(): Promise<void> {
             const img = document.querySelector(".lig-image");
             const status = document.querySelector(".lig-status-text");
             return {
-              visible: !!card && !card.classList.contains("is-hidden"),
+              visible: !!card && getComputedStyle(card).display !== "none",
               length: img && img.src.startsWith("data:image/png") ? img.src.length : 0,
               status: status ? status.textContent.trim() : "",
               sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "",
@@ -1023,6 +1156,12 @@ async function main(): Promise<void> {
         await runBuiltinChecks(cdp, assetsBase, generateTimeoutMs);
       }
     }
+
+    // --- 17. Modusabhängige Regler, gerendert gemessen ------------------------
+    // Bewusst ausserhalb der --builtin/--quick-Bedingung: der Punkt wechselt nur den Modus und
+    // liest `getComputedStyle` — kein Download, kein Asset-Server, keine Generierung. Er läuft
+    // damit in jedem Lauf, auch im schnellen.
+    await runControlVisibilityCheck(cdp);
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.

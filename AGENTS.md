@@ -135,7 +135,11 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   auf ihrem Startwert stehen (gemessen 2026-08-21: Regler auf 4, Beschriftung „20").
   Verallgemeinert: **beide Anzeigefehler waren nur ueber die GERENDERTE Darstellung
   sichtbar** (`getComputedStyle`, DOM-Text), nie ueber den Zustand — Unit-Tests koennen sie
-  nicht finden, ein Screenshot findet sie sofort.
+  nicht finden, ein Screenshot findet sie sofort. **Seit 2026-08-22 bewacht sie Smoke-Punkt 17**
+  (`runControlVisibilityCheck`): er misst beide Richtungen ueber `getComputedStyle`, laeuft in
+  jedem Lauf (auch `--quick`, er braucht weder Server noch Assets) und schiebt den Steps-Regler
+  vorher selbst ueber das builtin-Maximum — ohne dieses Klemmen kann die Beschriftung gar nicht
+  danebenliegen, und der Punkt blieb in der Gegenprobe gruen, obwohl der Defekt drin war.
 - **Drei Endpunkte, mehr nicht (Server-Modus):** `POST /sdapi/v1/txt2img` erzeugt,
   `GET /sdapi/v1/progress` liefert den Fortschritt (1-s-Polling), `GET /sdapi/v1/options`
   nennt das aktive Modell und dient als Verbindungstest. Alles Weitere gehoert dem
