@@ -1,6 +1,6 @@
 {
   "name": "Local Image Generator",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Generate images with your local Draw Things or A1111-compatible server — private, on-device, no cloud.",
   "type": "module",
   "scripts": {
