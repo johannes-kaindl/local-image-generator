@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
+import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
+import { BUILTIN_MODEL } from "../src/core/model-manifest";
 
 describe("generation constants (Spec §4)", () => {
   it("SIZES enthält 7 Einträge", () => {
@@ -30,9 +31,6 @@ describe("generation constants (Spec §4)", () => {
     expect(CFG.default).toBe(7);
   });
 });
-
-import { backendCapabilities } from "../src/core/generation";
-import { BUILTIN_MODEL } from "../src/core/model-manifest";
 
 describe("backendCapabilities", () => {
   it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt", () => {

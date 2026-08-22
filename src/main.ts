@@ -266,6 +266,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *  (Ausgabeziel, Dedup, optional Ergebnis-Notiz) — ein Fremdplugin soll nicht an der
    *  Einstellung des Nutzers vorbei schreiben. */
   private async saveApiImage(image: ApiImage, createNote: boolean): Promise<ApiSaveResult> {
+    // Derselbe Grund wie beim `run`-Guard oben: ein Konsument haelt seine api-Referenz ueber
+    // unser Entladen hinaus. Der Vertrag ist generate() → Mensch schaut sich das Bild an →
+    // save() — genau in dieser Pause kann der Nutzer das Plugin deaktivieren. this.app bleibt
+    // nach onunload gueltig, also wuerde createBinary anstandslos in den Vault schreiben; ein
+    // entladenes Plugin darf den Vault aber nicht mehr anfassen.
+    if (this.unloaded) return { ok: false, reason: "write-failed", message: "plugin unloaded" };
     const { created, ...rest } = image.params;
     const params: GenParams = { ...rest, date: created };
     let file: TFile;
@@ -562,6 +568,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // Timer immer abräumen (auch wenn onunload zwischen zwei Polls fiel) — verhindert
       // weiteres Feuern; refreshViews aber nur, solange das Plugin noch aktiv ist.
       window.clearInterval(tick);
+      // `onPhase` wird nur fuer diesen einen Lauf gesetzt (Zeile oben), aber nie zurueckgesetzt —
+      // ohne das haelt this.localEngine nach dem Aufloesen des Laufs weiter eine Closure ueber
+      // ein fremdes onProgress fest (bei einem API-Lauf), die niemand mehr braucht. Der naechste
+      // Lauf ueberschreibt onPhase ohnehin selbst; das hier schliesst nur die Luecke dazwischen.
+      if (builtin && this.localEngine) this.localEngine.onPhase = undefined;
       if (!this.unloaded) this.refreshViews();
     }
   }

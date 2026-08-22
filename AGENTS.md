@@ -97,6 +97,17 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **Cache-Namen nicht verwechseln:** 0.6-Assets liegen in `local-image-generator-assets` mit
   hash-gebundenen, URL-unabhaengigen Schluesseln; `legacy-cache.ts` loescht weiterhin nur
   `local-image-generator-models` (0.4). Die zwei kollidieren nicht.
+- **Die Download-Zusage der Provider-API ist strukturell, nicht bloss gegated.** `generate()`
+  im builtin-Modus laedt ohne Klick des Nutzers keine Bytes — das gilt nicht nur, weil das
+  Bereitschafts-Gate es abweist, sondern weil es keinen zweiten Ladepfad gibt: `ModelStore.getBuffer`/
+  `getText` gehen ueber `matchOrThrow` (`src/obsidian/model-store.ts`), das bei einem
+  Cache-Fehltreffer **wirft** und nie laedt. Der einzige Ladepfad ist `ModelStore.download`,
+  aufgerufen ausschliesslich von `startDownload()`, das an genau zwei vom Nutzer geklickte
+  Bedienelemente haengt und in `ApiDeps` (`src/main.ts`) nicht vorkommt. Selbst ohne das
+  Bereitschafts-Gate endet ein builtin-`generate()` ohne Assets als
+  `{ ok: false, reason: "failed" }`. Diese Garantie ist staerker als ein Smoke-Punkt sie liefern
+  koennte (GUI-Smoke-Punkt 18b misst nur die Form von `capabilities`, im Server-Zweig — siehe
+  `docs/SMOKE.md` § 2026-08-22).
 - **`new Function(` im Bundle ist die ORT-Glue (Emscripten-embind)** — BEHAVIOR-Disclosure
   einer gebuendelten Dependency, notenneutral (publishing.md); `check-clean` laesst es
   begruendet zu, `eval(` bleibt verboten. Bundle ~184 KB (`check:clean`, gemessen 2026-08-20 nach

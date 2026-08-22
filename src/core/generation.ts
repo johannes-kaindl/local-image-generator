@@ -1,5 +1,8 @@
 // Generations-Grenzen (Spec §4) — ersetzen den Modell-Katalog (models.ts stirbt in Task 8):
 // der Server hält die Modelle, das Plugin bietet generische, ehrliche Regler.
+import { BUILTIN_MODEL } from "./model-manifest";
+import type { EngineChoice } from "./settings";
+
 export interface SizeOption { width: number; height: number; }
 
 export const SIZES: readonly SizeOption[] = [
@@ -15,9 +18,6 @@ export const DEFAULT_SIZE: SizeOption = SIZES[0]!;
 
 export const STEPS = { min: 1, max: 50, default: 20 } as const;
 export const CFG = { min: 1, max: 15, step: 0.5, default: 7 } as const;
-
-import { BUILTIN_MODEL } from "./model-manifest";
-import type { EngineChoice } from "./settings";
 
 /** Was ein Backend EHRLICH kann (Keine-Attrappen-Linie aus 0.2). Einzige Quelle: das
  *  ViewModel leitet daraus seine Regler ab, die Provider-API ihr `capabilities`-Feld.

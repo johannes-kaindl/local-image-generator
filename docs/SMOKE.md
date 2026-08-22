@@ -182,13 +182,23 @@ deployt, `--quick` erneut gefahren:
 Genau der erwartete Befund. Nach dem Rückbau (Diff wieder leer) erneut deployt: 8/8 grün,
 `apiVersion=1, Methoden=status,generate,save`.
 
+**18b beweist nur die Form, nicht den Wert — und nur den Server-Zweig.** Wenn 18b läuft, steht
+der Modus auf `server` (Punkt 17 lässt ihn dort stehen); geprüft wird nur, dass
+`capabilities.negativePrompt` ein Boolean und `capabilities.maxSteps` eine Zahl ist. Der
+builtin-Zweig und der Wert von `status().reason` bleiben live UNGEMESSEN.
+
 Zweite Hälfte des Punkts (`generate()` sagt im builtin-Modus ohne Assets `model-not-downloaded`
 ab) bewusst NICHT gebaut: dafür müsste der Treiber den Engine-Modus wechseln und zurücksetzen,
 und ob dieser Vault gerade Assets im Cache hat, war zum Bauzeitpunkt unbekannt (frühere
 `--builtin`-Läufe könnten sie hinterlassen haben) — ein Wechsel ohne bekannten Ausgangszustand
-hätte im Zweifel nichts geprüft, aber sehr wohl den Wirt verändert. `status().reason` trägt
-dieselbe Aussage bereits verlustfrei; 18b liest sie über denselben `backendCapabilities`-Pfad
-wie `generate()`.
+hätte im Zweifel nichts geprüft, aber sehr wohl den Wirt verändert.
+
+Was die Download-Zusage trägt, ist stattdessen strukturell, nicht gemessen: `ModelStore.getBuffer`/
+`getText` gehen über `matchOrThrow` (`src/obsidian/model-store.ts`), das bei einem
+Cache-Fehltreffer **wirft** und nie lädt. Der einzige Ladepfad ist `ModelStore.download`,
+aufgerufen ausschließlich von `startDownload()`, das an genau zwei vom Nutzer geklickte
+Bedienelemente hängt und in `ApiDeps` nicht vorkommt. Selbst ohne das Bereitschafts-Gate endet
+ein builtin-`generate()` ohne Assets als `{ ok: false, reason: "failed" }`.
 
 ### 2026-08-22 · 0.6.1 · Obsidian 1.13.7 · `--quick`, ohne Bild-Server · **3/3 grün, 3 übersprungen**
 

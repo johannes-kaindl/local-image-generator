@@ -60,6 +60,7 @@ import { execFileSync } from "node:child_process";
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
 import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 import { SIZES, STEPS } from "../src/core/generation";
+import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
 import { registerI18n } from "../src/i18n/strings";
 import { pickLang, setLang, t } from "../src/vendor/kit/i18n";
 
@@ -496,14 +497,23 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
  * Fassade gegen Fakes; ob `this.api` im onload wirklich gesetzt wird und ueber
  * `app.plugins.plugins[...]` erreichbar ist, sieht man nur am Wirt.
  *
- * Die Download-Zusage (generate() im builtin-Modus OHNE Assets sagt "model-not-downloaded"
- * ab, statt zu laden) misst dieser Punkt bewusst NICHT: dafuer muesste der Treiber den
- * Modus wechseln und danach zuruecksetzen — und ob dieser Vault gerade Assets liegen hat,
- * ist unbekannt (ein frueherer --builtin-Lauf koennte sie zurueckgelassen haben). Ein
- * Wechsel ohne bekannten Ausgangszustand pruefte im Zweifel gar nichts, waere aber der
- * riskantere, zustandsveraendernde Teil des Punktes. `status().reason` traegt dieselbe
- * Aussage bereits verlustfrei, ohne den Wirt anzufassen: 18b liest sie ueber denselben
- * `backendCapabilities`-Pfad, den auch `generate()` befragt.
+ * 18b beweist nur die FORM, nicht den Wert — und das auch nur fuer den Server-Zweig. Zum
+ * Zeitpunkt dieses Punktes steht der Modus auf "server" (Punkt 17 laesst ihn dort stehen);
+ * `capabilities.negativePrompt`/`maxSteps` werden also im Server-Pfad gemessen, nicht im
+ * builtin-Pfad. Die Download-Zusage (generate() im builtin-Modus OHNE Assets sagt
+ * "model-not-downloaded" ab, statt zu laden) misst dieser Punkt bewusst NICHT: dafuer
+ * muesste der Treiber den Modus wechseln und danach zuruecksetzen — und ob dieser Vault
+ * gerade Assets liegen hat, ist unbekannt (ein frueherer --builtin-Lauf koennte sie
+ * zurueckgelassen haben). Ein Wechsel ohne bekannten Ausgangszustand pruefte im Zweifel gar
+ * nichts, waere aber der riskantere, zustandsveraendernde Teil des Punktes.
+ *
+ * Was die Zusage stattdessen traegt, ist STRUKTURELL, nicht gemessen: `ModelStore.getBuffer`/
+ * `getText` gehen ueber `matchOrThrow` (src/obsidian/model-store.ts), das bei einem
+ * Cache-Fehltreffer WIRFT und nie laedt. Der einzige Ladepfad ist `ModelStore.download`,
+ * aufgerufen ausschliesslich von `startDownload()`, das an genau zwei vom Nutzer geklickte
+ * Bedienelemente haengt und in `ApiDeps` (src/main.ts) nicht vorkommt. Selbst ohne das
+ * Bereitschafts-Gate endet ein builtin-`generate()` ohne Assets als
+ * `{ ok: false, reason: "failed" }` — nicht als stiller Download.
  */
 async function runApiCheck(cdp: Cdp): Promise<void> {
   const form = await cdp.evaluate<{ version: unknown; keys: string[]; status: Record<string, unknown> }>(`
@@ -518,7 +528,7 @@ async function runApiCheck(cdp: Cdp): Promise<void> {
 
   record(
     "18a. Die Provider-API ist registriert und formtreu",
-    form.version === 1 && form.keys.length === 3,
+    form.version === IMAGE_GENERATION_API_VERSION && form.keys.length === 3,
     `apiVersion=${String(form.version)}, Methoden=${form.keys.join(",") || "keine"}`,
   );
 

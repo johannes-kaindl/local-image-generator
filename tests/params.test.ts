@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hardenParams } from "../src/core/params";
 import { BUILTIN_MODEL } from "../src/core/model-manifest";
+import { CFG, DEFAULT_SIZE, STEPS } from "../src/core/generation";
 
 const ctx = (mode: "builtin" | "server") => ({
   mode,
@@ -47,6 +48,55 @@ describe("hardenParams", () => {
   it("klemmt auch nach unten und akzeptiert keine gebrochenen Steps", () => {
     expect(hardenParams({ prompt: "x", steps: 0 }, ctx("server")).steps).toBe(1);
     expect(hardenParams({ prompt: "x", steps: 3.7 }, ctx("server")).steps).toBe(3);
+  });
+
+  // Ein Fremdplugin kann NaN/Infinity schicken (kaputte eigene Rechnung, JSON-Rundreise
+  // ueber "NaN" o.ae.). Vor diesem Fix lief das durch Math.floor unveraendert durch und
+  // machte aus einem Erfolg ein Bild mit params.steps: NaN.
+  it("faengt NaN in steps auf einen gueltigen Wert im Bereich ab", () => {
+    const s = hardenParams({ prompt: "x", steps: Number.NaN }, ctx("server")).steps;
+    expect(Number.isFinite(s)).toBe(true);
+    expect(s).toBeGreaterThanOrEqual(STEPS.min);
+    expect(s).toBeLessThanOrEqual(STEPS.max);
+    expect(s).toBe(20); // faellt auf defaultSteps zurueck, wie eine fehlende Angabe
+  });
+
+  it("faengt Infinity in steps auf einen gueltigen Wert im Bereich ab", () => {
+    const s = hardenParams({ prompt: "x", steps: Number.POSITIVE_INFINITY }, ctx("server")).steps;
+    expect(Number.isFinite(s)).toBe(true);
+    expect(s).toBeLessThanOrEqual(STEPS.max);
+  });
+
+  it("faengt NaN/Infinity in steps auch im builtin-Modus innerhalb DES Backend-Bereichs ab", () => {
+    // Der Fallback selbst muss geklemmt sein: defaultSteps (20) liegt ausserhalb des
+    // builtin-Maximums (4) — ein ungeklemmter Fallback wuerde hier 20 zurueckgeben
+    // (clampInt gibt seinen Fallback ungeprueft zurueck).
+    const s = hardenParams({ prompt: "x", steps: Number.NaN }, ctx("builtin")).steps;
+    expect(s).toBe(BUILTIN_MODEL.steps.max);
+  });
+
+  it("faengt NaN/Infinity in cfg, width, height und seed ab, statt sie durchzureichen", () => {
+    const p = hardenParams(
+      {
+        prompt: "x",
+        cfg: Number.NaN,
+        width: Number.POSITIVE_INFINITY,
+        height: Number.NaN,
+        seed: Number.POSITIVE_INFINITY,
+      },
+      ctx("server"),
+    );
+    expect(p.cfg).toBe(CFG.default);
+    expect(p.width).toBe(DEFAULT_SIZE.width);
+    expect(p.height).toBe(DEFAULT_SIZE.height);
+    expect(p.seed).toBe(4242); // faellt auf randomSeed() zurueck, wie ein fehlender Seed
+  });
+
+  it("nimmt im Server-Modus ohne cfg/width/height die dokumentierten Defaults", () => {
+    const p = hardenParams({ prompt: "x" }, ctx("server"));
+    expect(p.cfg).toBe(CFG.default);
+    expect(p.width).toBe(DEFAULT_SIZE.width);
+    expect(p.height).toBe(DEFAULT_SIZE.height);
   });
 });
 

@@ -99,6 +99,34 @@ The API never starts a download. If the model is missing you get
 `{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button
 themselves.
 
+**`status()` can be stale.** It is synchronous and makes no network call — in server mode it
+reports the *last known* reachability, checked on load, after a failed run, on a mode switch,
+or when the user clicks **Test connection**. If the server was down and has since come back up,
+`status().ready` stays `false` (and `generate()` keeps refusing) until the user reopens the
+panel and reconnects — there is currently no way to force a recheck from the API.
+
+`generate()`'s failure `reason`:
+
+| `reason` | when |
+| --- | --- |
+| `busy` | a generation is already running (yours, another plugin's, or the panel's) |
+| `not-configured` | server mode, no endpoint set in settings |
+| `unreachable` | server mode, endpoint set but not responding — see the staleness note above |
+| `model-not-downloaded` | built-in mode, the model isn't downloaded — this plugin never downloads on its own |
+| `no-gpu` | built-in mode, the GPU doesn't meet the built-in engine's requirements |
+| `failed` | the backend threw while generating; `message` carries its raw, untranslated text |
+
+`save(image, opts?)` resolves to `{ ok: true, imagePath, notePath }` — `notePath` is `null`
+when no note was requested (`opts.createNote === false`, or it falls back to the user's own
+setting) or when the note write itself failed after the image was already saved (the image
+save still counts as success) — or to `{ ok: false, reason: "write-failed", message }` if
+writing the *image* failed (disk error, or the plugin was disabled between your `generate()`
+and `save()` calls).
+
+`onProgress?(pct, phase)` on the request lets you show a load phase instead of a hang: `phase`
+is `"loading-model"` or `"generating"`; `pct` is `0`–`100`, or `null` when the backend reports
+no progress (Draw Things has no progress endpoint) — show an indeterminate spinner in that case.
+
 ## Installation
 
 1. Install and enable the plugin from Obsidian's Community Plugins browser
