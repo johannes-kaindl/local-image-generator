@@ -179,6 +179,31 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Moduswechsel die GPU-Sessions unter einem Fremdlauf weg.
 - **Die Haertung hat genau eine Quelle** (`src/core/params.ts`, `hardenParams`). Zwei
   Haertungen bedeuten, dass die API andere Werte meldet, als das Panel in die Notiz schreibt.
+- **Ein Fremdlauf hinterlaesst im Panel KEINE Spur — auch nicht als Fehler.** `runGeneration`
+  faellt im `catch` bei `external` auf `{ kind: "idle" }` zurueck statt auf `error` mit der
+  rohen Backend-Meldung (Ruling 2026-08-23, `f223c8f`). Das sieht wie ein verschluckter Fehler
+  aus und ist keiner: der Erfolgsfall schrieb schon immer `idle`, der Aufrufer bekommt den
+  Fehler als Rueckgabewert, und die Statuszeile gehoert dem eigenen Klick. Wer hier einen
+  Fehlerzustand zurueckbaut, laesst das Panel wieder einen FREMDEN Fehlschlag als eigenen
+  melden. ⚠️ Diese Zeile ist die einzige Deckung — der Fix liegt in `main.ts`, der einzigen
+  Schicht ohne Unit-Test-Ebene; ein Smoke-Punkt dafuer ist geseedet, aber noch nicht gebaut.
+- **`save()` prueft `created` und `seed`, bevor daraus ein Vault-Pfad wird**
+  (`unusableParams` in `src/core/plugin-api.ts`). Sieht redundant aus, weil `ApiParams` beide
+  typisiert — TypeScript schuetzt aber keinen JS-Aufrufer, und `buildImageFilename`
+  interpoliert beide direkt in den Dateinamen (`lig-NaNNaNNaN-NaNNaNNaN-s7.png` aus einem
+  kaputten `created`). Die Abweisung faellt VOR dem Write und als `write-failed`, damit die
+  Fehler-Union von v1 unveraendert bleibt.
+- **`PanelState.mode` wird ABGELEITET, nicht gespiegelt.** Der gehaltene State ist
+  `Omit<PanelState, "mode">`; `mode` entsteht einzig in `getPanelState()` aus
+  `settings.engine`. Das `Omit` ist der eigentliche Fix — es macht ein zweites Spiegeln
+  typseitig unmoeglich (Gegenprobe: eine Zuweisung `this.state.mode = …` bricht `tsc` mit
+  TS2339). Vorher hielten zwei Zuweisungen in `main.ts` die Kopie von Hand synchron, und das
+  ViewModel las die Kopie, waehrend alles Neuere `settings.engine` las.
+- **Ein Fallback-Argument, das einen injizierten Callback ruft, gehoert lazy.**
+  `finite(value, fallback)` in `src/core/params.ts` nimmt deshalb `number | (() => number)`:
+  `finite(input.seed, ctx.randomSeed())` haette `randomSeed()` bei JEDER Haertung gezogen, auch
+  mit brauchbarem Seed. Konstante Fallbacks bleiben Werte — kein Thunk-Rauschen. Die
+  Gegenprobe ist ein Test, der die Ziehungen ZAEHLT; der Rueckgabewert stimmte immer.
 - **`ApiParams.created` vs. `GenParams.date`** ist Absicht, kein Versehen: der Vertrag darf
   nicht mitwandern, wenn intern umbenannt wird.
 - **Der Erstellungs-Zeitstempel wird AM ANFANG gesetzt, nicht am Ende.** `GenParams.date`
