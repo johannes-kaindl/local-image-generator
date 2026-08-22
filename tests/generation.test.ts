@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
+import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
+import { BUILTIN_MODEL } from "../src/core/model-manifest";
 
 describe("generation constants (Spec §4)", () => {
   it("SIZES enthält 7 Einträge", () => {
@@ -28,5 +29,22 @@ describe("generation constants (Spec §4)", () => {
     expect(CFG.max).toBe(15);
     expect(CFG.step).toBe(0.5);
     expect(CFG.default).toBe(7);
+  });
+});
+
+describe("backendCapabilities", () => {
+  it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt", () => {
+    expect(backendCapabilities("builtin")).toEqual({
+      negativePrompt: false,
+      cfg: false,
+      minSteps: BUILTIN_MODEL.steps.min,
+      maxSteps: BUILTIN_MODEL.steps.max,
+      fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
+    });
+  });
+  it("server kann alles, was das Panel anbietet", () => {
+    expect(backendCapabilities("server")).toEqual({
+      negativePrompt: true, cfg: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null,
+    });
   });
 });

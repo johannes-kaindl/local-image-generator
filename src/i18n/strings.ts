@@ -39,6 +39,8 @@ export const EN: Record<string, string> = {
   "status.contacting": "Contacting server…",
   "status.generatingPct": "Generating… {0}%",
   "status.generatingElapsed": "Generating… ({0})",
+  "status.externalRun": "Another plugin is generating an image…",
+  "status.externalRunPct": "Another plugin is generating an image… {0}%",
 
   "empty.noImage": "Enter a prompt and press Generate.",
   "empty.noServer":
@@ -166,6 +168,8 @@ export const DE: Record<string, string> = {
   "status.contacting": "Server wird kontaktiert…",
   "status.generatingPct": "Generiert… {0}%",
   "status.generatingElapsed": "Generiert… ({0})",
+  "status.externalRun": "Ein anderes Plugin erzeugt gerade ein Bild…",
+  "status.externalRunPct": "Ein anderes Plugin erzeugt gerade ein Bild… {0}%",
 
   "empty.noImage": "Prompt eingeben und auf Generieren klicken.",
   "empty.noServer":

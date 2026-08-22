@@ -5,12 +5,21 @@
 // laufen ZUERST im onload, vor addSettingTab/registerView/addRibbonIcon/addCommand — sonst
 // rendern die ersten t()-Aufrufe rohe Keys.
 import { getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
-import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
+import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
 import { BUILTIN_MODEL, allAssets } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
+import { hardenParams, type HardenContext } from "./core/params";
+import {
+  createImageGenerationApi,
+  type ApiFailure,
+  type ApiImage,
+  type ApiRequest,
+  type ApiSaveResult,
+  type ImageGenerationApi,
+} from "./core/plugin-api";
 import { parseOptionsModel, ProgressPoller, Txt2ImgClient, type ImageBackend } from "./core/txt2img";
 import type { EngineState, GenParams, PanelState, ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
@@ -30,12 +39,18 @@ import { pickLang, setLang, t } from "./vendor/kit/i18n";
 export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
   private settingTab!: LigSettingTab;
-  // Wird in onunload gesetzt. Die generate()-Polling-Callbacks und der Post-await-Block
+  // Wird in onunload gesetzt. Die runGeneration()-Polling-Callbacks und der Post-await-Block
   // prüfen es, damit ein spät eintreffendes HTTP-Ergebnis nach dem Entladen des Plugins
   // nicht mehr this.state mutiert, refreshViews() ruft oder History schreibt. Der Remote-
   // Call selbst ist nicht abbrechbar (Obsidians requestUrl kennt kein Abort) — wir
   // verhindern nur die späte Nebenwirkung.
   private unloaded = false;
+  /** Oeffentlicher Vertrag fuer andere Plugins:
+   *  app.plugins.plugins["local-image-generator"].api */
+  api!: ImageGenerationApi;
+  /** Laeuft gerade ein Lauf ueber die Provider-API? Getrennt von state.run, weil isBusy()
+   *  auch dann sperren muss, wenn der Fremdlauf noch in der Anlaufphase steht. */
+  private apiRunning = false;
   // Eingebaute Engine (Spec 0.6): Store (Cache API), Backend (lazy, lebt bis dispose), laufender
   // Download. Der Settings-Tab beobachtet den Engine-Zustand über onEngineStateChanged.
   private readonly modelStore = new ModelStore();
@@ -59,6 +74,34 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   };
 
   async onload(): Promise<void> {
+    registerI18n();
+    setLang(pickLang(getLanguage()));
+
+    // Obsidian traegt diese Instanz schon in app.plugins.plugins ein, bevor onload() zu Ende
+    // ist — ein parallel ladendes Fremdplugin kann `.api` also in genau diesem Fenster lesen.
+    // Deshalb VOR dem await auf loadData() konstruiert: jede Abhaengigkeit unten ist eine
+    // Closure ueber `this`, keine braucht die geladenen Settings zum Bauzeitpunkt.
+    this.api = createImageGenerationApi({
+      getMode: () => this.settings.engine,
+      readiness: () => this.apiReadiness(),
+      isBusy: () => this.isBusy(),
+      harden: (input) => hardenParams(input, this.hardenContext()),
+      run: async (params, onProgress) => {
+        // Ein Konsument haelt seine api-Referenz ueber unser Entladen hinaus. Ohne diesen
+        // Guard baut ensureLocalEngine() eine neue GPU-Session fuer eine Plugin-Instanz,
+        // die es nicht mehr gibt — und niemand disposed sie je.
+        if (this.unloaded) return { ok: false, message: "plugin unloaded" };
+        this.apiRunning = true;
+        try {
+          return await this.runGeneration(params, onProgress, { external: true });
+        } finally {
+          this.apiRunning = false;
+        }
+      },
+      save: (image, createNote) => this.saveApiImage(image, createNote),
+      defaultCreateNote: () => this.settings.createMode === "note",
+    });
+
     // migrateSettings VOR mergeSettings: das neue Feld `engine` entscheidet sich am alten
     // Endpunkt (0.5-Nutzer bleiben im Server-Modus), nicht am Default.
     this.settings = validateSettings(
@@ -69,9 +112,6 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.state.mode = this.settings.engine;
     this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
     this.state.engine = { kind: this.settings.engine === "builtin" ? "gpu-checking" : "not-downloaded" };
-
-    registerI18n();
-    setLang(pickLang(getLanguage()));
 
     this.settingTab = new LigSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
@@ -162,7 +202,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   onunload(): void {
-    // Eine laufende generate() pollt per setInterval und wartet auf einen nicht abbrechbaren
+    // Eine laufende runGeneration() pollt per setInterval und wartet auf einen nicht abbrechbaren
     // HTTP-Call. Das Flag sorgt dafür, dass deren Callbacks nach dem Entladen zu No-ops werden
     // (kein State-Mutieren, kein refreshViews, kein History-Schreiben). Die eingebaute Engine
     // hält GPU-Sessions und evtl. einen Download — beides abräumen (0.1-Leak-Befund).
@@ -180,10 +220,78 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** Läuft gerade eine Generierung (oder das Laden davor)? Modus-Wechsel und Entfernen warten
    *  darauf — die GPU-Sessions dürfen nicht unter einem aktiven UNet-Schritt weggezogen werden
-   *  (Review 2026-08-19). */
+   *  (Review 2026-08-19). `apiRunning` deckt die Anlaufphase eines Fremdlaufs ab, bevor
+   *  runGeneration() state.run überhaupt auf "external" gesetzt hat. */
   isBusy(): boolean {
     const k = this.state.run.kind;
-    return k === "contacting" || k === "loading-model" || k === "generating";
+    return this.apiRunning || k === "contacting" || k === "loading-model"
+      || k === "generating" || k === "external";
+  }
+
+  /** Netzfreie Bereitschaft fuer status(). Spiegelt den zuletzt ermittelten Zustand —
+   *  ein Netzaufruf gehoert hier nicht hin (der Vertrag sagt das zu). */
+  private apiReadiness(): { ready: true } | { ready: false; reason: ApiFailure } {
+    if (this.settings.engine === "builtin") {
+      const e = this.state.engine;
+      if (e.kind === "ready") return { ready: true };
+      if (e.kind === "gpu-missing") return { ready: false, reason: "no-gpu" };
+      return { ready: false, reason: "model-not-downloaded" };
+    }
+    const s = this.state.server;
+    if (s.kind === "ok") return { ready: true };
+    if (s.kind === "unconfigured") return { ready: false, reason: "not-configured" };
+    return { ready: false, reason: "unreachable" };
+  }
+
+  private currentModelName(): string {
+    return this.settings.engine === "builtin"
+      ? BUILTIN_MODEL.id
+      : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
+  }
+
+  /** Der EINE Kontext, unter dem gehaertet wird — Panel wie Provider-API. Zwei Kontexte
+   *  waeren zwei Wahrheiten: die API meldete dann andere Parameter, als das Panel in seine
+   *  Notiz schreibt. Genau dafuer liegt die Haertung in core/params.ts an einer Stelle. */
+  private hardenContext(): HardenContext {
+    return {
+      mode: this.settings.engine,
+      defaultSteps: this.settings.defaultSteps,
+      model: this.currentModelName(),
+      now: new Date(),
+      randomSeed: () => Math.floor(Math.random() * 2 ** 31),
+    };
+  }
+
+  /** Der einzige Vault-Write der Provider-API. Nutzt dieselbe Ablage wie der Create-Knopf
+   *  (Ausgabeziel, Dedup, optional Ergebnis-Notiz) — ein Fremdplugin soll nicht an der
+   *  Einstellung des Nutzers vorbei schreiben. */
+  private async saveApiImage(image: ApiImage, createNote: boolean): Promise<ApiSaveResult> {
+    // Derselbe Grund wie beim `run`-Guard oben: ein Konsument haelt seine api-Referenz ueber
+    // unser Entladen hinaus. Der Vertrag ist generate() → Mensch schaut sich das Bild an →
+    // save() — genau in dieser Pause kann der Nutzer das Plugin deaktivieren. this.app bleibt
+    // nach onunload gueltig, also wuerde createBinary anstandslos in den Vault schreiben; ein
+    // entladenes Plugin darf den Vault aber nicht mehr anfassen.
+    if (this.unloaded) return { ok: false, reason: "write-failed", message: "plugin unloaded" };
+    const { created, ...rest } = image.params;
+    const params: GenParams = { ...rest, date: created };
+    let file: TFile;
+    try {
+      const path = await this.resolveImagePath(buildImageFilename(new Date(params.date), params.seed));
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${image.base64}`));
+    } catch (e) {
+      return { ok: false, reason: "write-failed", message: e instanceof Error ? e.message : String(e) };
+    }
+    if (!createNote) return { ok: true, imagePath: file.path, notePath: null };
+    // Ab hier ist das Bild bereits geschrieben. Ein Fehler in der Notiz darf es NICHT
+    // entwerten (dieselbe Lehre wie saveImage() unten) — deshalb eigener try, und der
+    // Rueckgabewert bleibt ok mit notePath: null statt eines write-failed, das den Aufrufer
+    // die bereits gespeicherte Datei nicht mehr finden liesse.
+    try {
+      const note = await this.createNote(params, file.path);
+      return { ok: true, imagePath: file.path, notePath: note.path };
+    } catch {
+      return { ok: true, imagePath: file.path, notePath: null };
+    }
   }
 
   private setEngineState(e: EngineState): void {
@@ -357,21 +465,40 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
-  private async generate(steps: number, seed: number, cfg: number, width: number, height: number): Promise<void> {
-    if (this.state.run.kind === "contacting" || this.state.run.kind === "generating" || this.state.run.kind === "loading-model") return;
+  /** Rechnet ein Bild — bereits gehärtete Parameter, Backend-Wahl, Sekundentakt und
+   *  ProgressPoller. Fasst NICHT an: state.image, settings.history, state.prompt — das ist
+   *  Sache des Aufrufers (Panel: generate() unten; Provider-API: plugin.api.generate() ->
+   *  ApiDeps.run() oben). Setzt aber state.run und ruft refreshViews(), weil die
+   *  Fortschrittsanzeige zum Lauf gehört, nicht zum Aufrufer. Hat KEINE eigene Busy-Sperre —
+   *  die sitzt beim jeweiligen Aufrufer (Panel: generate() unten; API: plugin-api.ts +
+   *  apiRunning), der garantiert, dass hier nie zwei Läufe gleichzeitig starten.
+   *  `opts.external`: der Lauf kommt über die Provider-API, nicht vom eigenen Klick — die
+   *  Statuszeile zeigt dafür durchgehend "external" (mit dem zuletzt bekannten Prozentsatz)
+   *  statt der Phasen-Zustände contacting/loading-model/generating. */
+  private async runGeneration(
+    params: GenParams,
+    onProgress?: ApiRequest["onProgress"],
+    opts?: { external?: boolean },
+  ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
-    // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit.
-    if (builtin ? this.state.engine.kind !== "ready" : this.state.server.kind !== "ok") return;
-    const prompt = this.state.prompt;
-    // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
-    // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde.
-    const negativePrompt = builtin ? "" : this.state.negativePrompt;
-    const effCfg = builtin ? 1 : cfg;
-    const effW = builtin ? BUILTIN_MODEL.size : width;
-    const effH = builtin ? BUILTIN_MODEL.size : height;
-    const model = builtin ? BUILTIN_MODEL.id : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
     const backend: ImageBackend = builtin ? this.ensureLocalEngine() : new Txt2ImgClient(this.settings.endpoint, httpPostJson);
-    this.state.run = { kind: "contacting" };
+    const external = opts?.external === true;
+    // `phase` ist die WAHRE Phase und steuert den Kontrollfluss unten (Poller/Timer); im
+    // Fremdlauf faellt state.run (die ANGEZEIGTE Phase) fuer die gesamte Laufzeit auf
+    // "external" — ohne die Trennung wuerden die r.kind-Checks unten staendig an "external"
+    // vorbeilaufen, weil sie dort contacting/loading-model/generating erwarten. "done" markiert
+    // den Abschluss (Erfolg oder Fehler), damit ein spät eintreffender Poll keinen bereits
+    // beendeten Lauf mehr ueberschreibt.
+    let phase: "contacting" | "loading-model" | "generating" | "done" = "contacting";
+    let genPct: number | null = null;
+    const setRun = (
+      r: { kind: "contacting" } | { kind: "loading-model"; elapsedSec: number } | { kind: "generating"; pct: number | null; elapsedSec: number },
+    ): void => {
+      phase = r.kind;
+      if (r.kind === "generating") genPct = r.pct;
+      this.state.run = external ? { kind: "external", pct: r.kind === "generating" ? r.pct : null } : r;
+    };
+    setRun({ kind: "contacting" });
     this.refreshViews();
     // Fortschritt. Server: 1-s-Polling auf /sdapi/v1/progress; liefert der Server keins (404,
     // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden. Nach dem ersten
@@ -381,69 +508,102 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     let elapsed = 0;
     const poller = builtin ? null : new ProgressPoller(this.settings.endpoint, (u) => httpGetJson(u, 1000));
     if (builtin) {
-      this.ensureLocalEngine().onPhase = (phase, step, total) => {
+      this.ensureLocalEngine().onPhase = (ph, step, total) => {
         if (this.unloaded) return;
-        if (phase === "loading-model") this.state.run = { kind: "loading-model", elapsedSec: elapsed };
-        else if (step !== undefined && total !== undefined && total > 0)
-          this.state.run = { kind: "generating", pct: Math.round((step / total) * 100), elapsedSec: elapsed };
+        if (ph === "loading-model") {
+          setRun({ kind: "loading-model", elapsedSec: elapsed });
+          onProgress?.(null, "loading-model");
+        } else if (step !== undefined && total !== undefined && total > 0) {
+          const pct = Math.round((step / total) * 100);
+          setRun({ kind: "generating", pct, elapsedSec: elapsed });
+          onProgress?.(pct, "generating");
+        }
         this.refreshViews();
       };
     }
     const tick = window.setInterval(() => {
       if (this.unloaded) return; // Plugin entladen → keine späten State-Mutationen mehr
       elapsed += 1;
-      const r = this.state.run;
-      if (r.kind === "loading-model") {
-        this.state.run = { kind: "loading-model", elapsedSec: elapsed };
+      if (phase === "loading-model") {
+        setRun({ kind: "loading-model", elapsedSec: elapsed });
+        onProgress?.(null, "loading-model");
         this.refreshViews();
         return;
       }
-      if (r.kind !== "generating" && r.kind !== "contacting") return;
+      if (phase !== "generating" && phase !== "contacting") return;
       if (!poller) {
-        if (r.kind === "generating") {
-          this.state.run = { kind: "generating", pct: r.pct, elapsedSec: elapsed };
+        if (phase === "generating") {
+          setRun({ kind: "generating", pct: genPct, elapsedSec: elapsed });
+          onProgress?.(genPct, "generating");
           this.refreshViews();
         }
         return;
       }
       void poller.poll().then((pct) => {
         if (this.unloaded) return;
-        if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
-          this.state.run = { kind: "generating", pct, elapsedSec: elapsed };
+        if (phase === "generating" || phase === "contacting") {
+          setRun({ kind: "generating", pct, elapsedSec: elapsed });
+          onProgress?.(pct, "generating");
+        }
         this.refreshViews();
       });
     }, 1000);
-    let succeeded = false;
     try {
-      const png = await backend.generate({ prompt, negativePrompt, width: effW, height: effH, steps, seed, cfg: effCfg });
+      const png = await backend.generate(params);
+      phase = "done";
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
-      // keine State-Mutation, kein refreshViews, kein History-Schreiben — nur das finally
-      // räumt den Timer ab. return löst finally aus und überspringt den Post-await-Block.
-      if (this.unloaded) return;
-      this.state.image = {
-        dataUrl: `data:image/png;base64,${png}`,
-        params: { prompt, negativePrompt, seed, steps, cfg: effCfg, model, width: effW, height: effH, date: isoStamp(new Date()) },
-      };
+      // keine State-Mutation, kein refreshViews — nur das finally räumt den Timer ab.
+      if (this.unloaded) return { ok: true, base64: png };
       this.state.run = { kind: "idle" };
-      succeeded = true;
+      return { ok: true, base64: png };
     } catch (e) {
-      if (this.unloaded) return;
+      phase = "done";
       const msg = e instanceof Error ? e.message : String(e);
+      if (this.unloaded) return { ok: false, message: msg };
       this.state.run = { kind: "error", message: msg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
       if (!builtin) void this.checkServer();
+      return { ok: false, message: msg };
     } finally {
       // Timer immer abräumen (auch wenn onunload zwischen zwei Polls fiel) — verhindert
       // weiteres Feuern; refreshViews aber nur, solange das Plugin noch aktiv ist.
       window.clearInterval(tick);
+      // `onPhase` wird nur fuer diesen einen Lauf gesetzt (Zeile oben), aber nie zurueckgesetzt —
+      // ohne das haelt this.localEngine nach dem Aufloesen des Laufs weiter eine Closure ueber
+      // ein fremdes onProgress fest (bei einem API-Lauf), die niemand mehr braucht. Der naechste
+      // Lauf ueberschreibt onPhase ohnehin selbst; das hier schliesst nur die Luecke dazwischen.
+      if (builtin && this.localEngine) this.localEngine.onPhase = undefined;
       if (!this.unloaded) this.refreshViews();
     }
-    if (succeeded && this.state.image) {
-      const p = this.state.image.params;
+  }
+
+  private async generate(steps: number, seed: number, cfg: number, width: number, height: number): Promise<void> {
+    // ViewModel deaktiviert den Generate-Knopf schon bei jedem busy-Zustand (inkl. "external") —
+    // dieser Check ist die Defensive dahinter und muss deshalb dieselbe Menge sperren wie
+    // isBusy(), sonst koennte ein Klick waehrend eines Fremdlaufs zwei runGeneration()-Aufrufe
+    // gleichzeitig lostreten.
+    if (this.isBusy()) return;
+    const builtin = this.settings.engine === "builtin";
+    // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit.
+    if (builtin ? this.state.engine.kind !== "ready" : this.state.server.kind !== "ok") return;
+    // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
+    // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams
+    // neutralisiert das still statt es abzulehnen (Keine-Attrappen-Linie).
+    const params = hardenParams(
+      { prompt: this.state.prompt, negativePrompt: this.state.negativePrompt, width, height, steps, seed, cfg },
+      this.hardenContext(),
+    );
+    const result = await this.runGeneration(params);
+    // Ergebnis kann nach onunload eintreffen — runGeneration hat dann selbst schon keine
+    // späte State-Mutation vorgenommen; hier zusätzlich kein Bild, keine Historie schreiben.
+    if (this.unloaded) return;
+    if (result.ok) {
+      this.state.image = { dataUrl: `data:image/png;base64,${result.base64}`, params };
       this.settings.history = pushHistory(this.settings.history, {
-        prompt: p.prompt, negativePrompt: p.negativePrompt, seed: p.seed, steps: p.steps,
-        cfg: p.cfg, model: p.model, width: p.width, height: p.height, created: p.date,
+        prompt: params.prompt, negativePrompt: params.negativePrompt, seed: params.seed, steps: params.steps,
+        cfg: params.cfg, model: params.model, width: params.width, height: params.height, created: params.date,
       });
+      this.refreshViews();
       void this.saveSettings();
     }
   }

@@ -1,7 +1,7 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
-import { STEPS } from "./generation";
+import { backendCapabilities } from "./generation";
 import { allAssets, BUILTIN_MODEL, totalBytes } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
@@ -31,7 +31,11 @@ export type RunState =
    *  möglich; ohne eigene Phase sähe das aus wie ein Hänger (0.2-Backlog Punkt 5). */
   | { kind: "loading-model"; elapsedSec: number }
   | { kind: "generating"; pct: number | null; elapsedSec: number }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  /** Ein Fremdplugin rechnet ueber die Provider-API. Sichtbar, damit das Panel nicht tot
+   *  wirkt und die busy-Absage auf den eigenen Klick erklaerbar ist — das Ergebnis landet
+   *  aber weder in `image` noch in der Historie. */
+  | { kind: "external"; pct: number | null };
 
 /** Die Parameter, aus denen ein Bild entstanden ist — beim Generieren eingefroren, damit
  *  die Ergebnis-Notiz das Bild beschreibt, das man sieht (und nicht den inzwischen
@@ -154,6 +158,10 @@ function runStatus(s: PanelState): PanelViewModel["status"] {
     return s.run.pct !== null
       ? { icon: "loader", text: t("status.generatingPct", s.run.pct), cls: "is-checking" }
       : { icon: "loader", text: t("status.generatingElapsed", formatElapsed(s.run.elapsedSec)), cls: "is-checking" };
+  if (s.run.kind === "external")
+    return s.run.pct !== null
+      ? { icon: "loader", text: t("status.externalRunPct", s.run.pct), cls: "is-checking" }
+      : { icon: "loader", text: t("status.externalRun"), cls: "is-checking" };
   return { icon: "circle-check", text: t("status.ready"), cls: "is-ok" };
 }
 
@@ -178,9 +186,11 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
 }
 
 export function buildViewModel(s: PanelState): PanelViewModel {
-  const busy = s.run.kind === "contacting" || s.run.kind === "generating" || s.run.kind === "loading-model";
+  const busy = s.run.kind === "contacting" || s.run.kind === "generating"
+    || s.run.kind === "loading-model" || s.run.kind === "external";
   const builtin = s.mode === "builtin";
   const backendReady = builtin ? s.engine.kind === "ready" : s.server.kind === "ok";
+  const caps = backendCapabilities(s.mode);
 
   const status = builtin ? engineStatus(s) : serverStatus(s);
   const empty = builtin ? engineEmpty(s, busy) : serverEmpty(s, busy);
@@ -197,9 +207,14 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     generateEnabled: backendReady && !busy && s.prompt.trim().length > 0 && !recipeUnchanged(s),
     insertEnabled: s.image !== null && s.editorActive && !busy,
     showImage: s.image !== null,
-    controls: builtin
-      ? { negative: false, cfg: false, size: false, stepsMin: BUILTIN_MODEL.steps.min, stepsMax: BUILTIN_MODEL.steps.max }
-      : { negative: true, cfg: true, size: true, stepsMin: STEPS.min, stepsMax: STEPS.max },
+    controls: {
+      negative: caps.negativePrompt,
+      cfg: caps.cfg,
+      // „Größe wählbar" ist genau die Abwesenheit einer festen Größe.
+      size: caps.fixedSize === null,
+      stepsMin: caps.minSteps,
+      stepsMax: caps.maxSteps,
+    },
     modelLabel,
   };
 }

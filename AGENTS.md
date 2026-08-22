@@ -97,6 +97,17 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **Cache-Namen nicht verwechseln:** 0.6-Assets liegen in `local-image-generator-assets` mit
   hash-gebundenen, URL-unabhaengigen Schluesseln; `legacy-cache.ts` loescht weiterhin nur
   `local-image-generator-models` (0.4). Die zwei kollidieren nicht.
+- **Die Download-Zusage der Provider-API ist strukturell, nicht bloss gegated.** `generate()`
+  im builtin-Modus laedt ohne Klick des Nutzers keine Bytes — das gilt nicht nur, weil das
+  Bereitschafts-Gate es abweist, sondern weil es keinen zweiten Ladepfad gibt: `ModelStore.getBuffer`/
+  `getText` gehen ueber `matchOrThrow` (`src/obsidian/model-store.ts`), das bei einem
+  Cache-Fehltreffer **wirft** und nie laedt. Der einzige Ladepfad ist `ModelStore.download`,
+  aufgerufen ausschliesslich von `startDownload()`, das an genau zwei vom Nutzer geklickte
+  Bedienelemente haengt und in `ApiDeps` (`src/main.ts`) nicht vorkommt. Selbst ohne das
+  Bereitschafts-Gate endet ein builtin-`generate()` ohne Assets als
+  `{ ok: false, reason: "failed" }`. Diese Garantie ist staerker als ein Smoke-Punkt sie liefern
+  koennte (GUI-Smoke-Punkt 18b misst nur die Form von `capabilities`, im Server-Zweig — siehe
+  `docs/SMOKE.md` § 2026-08-22).
 - **`new Function(` im Bundle ist die ORT-Glue (Emscripten-embind)** — BEHAVIOR-Disclosure
   einer gebuendelten Dependency, notenneutral (publishing.md); `check-clean` laesst es
   begruendet zu, `eval(` bleibt verboten. Bundle ~184 KB (`check:clean`, gemessen 2026-08-20 nach
@@ -161,6 +172,20 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   den gemeldeten Modellnamen als Statushinweis; es waehlt nie ein Modell aus.
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
   Provider-API 0.2 rastet darauf ein.
+- **Die Provider-API laedt NIE nach.** `generate()` gibt bei fehlenden Assets
+  `model-not-downloaded` zurueck. „Ohne Klick fliesst kein Byte" ist eine Zusage an den
+  Nutzer — ein Fremdplugin darf sie nicht umgehen.
+- **`isBusy()` deckt beide Wege.** Panel-Laeufe UND API-Laeufe; sonst zieht ein
+  Moduswechsel die GPU-Sessions unter einem Fremdlauf weg.
+- **Die Haertung hat genau eine Quelle** (`src/core/params.ts`, `hardenParams`). Zwei
+  Haertungen bedeuten, dass die API andere Werte meldet, als das Panel in die Notiz schreibt.
+- **`ApiParams.created` vs. `GenParams.date`** ist Absicht, kein Versehen: der Vertrag darf
+  nicht mitwandern, wenn intern umbenannt wird.
+- **Der Erstellungs-Zeitstempel wird AM ANFANG gesetzt, nicht am Ende.** `GenParams.date`
+  traegt den Moment der ANFRAGE, nicht der Fertigstellung — die Haertung ist die einzige Quelle
+  fuer Panel und API, und eine Doppel-Zeitstempel-Setzung wuerde die zwei berichten
+  unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
+  Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
 
 ## Store-Scorecard (gemessen 2026-08-22, Release 0.6.1)
 

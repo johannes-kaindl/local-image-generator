@@ -72,6 +72,61 @@ match Obsidian's own language setting — no separate language option to set.
   <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/style-chips.png" alt="The style chips under the prompt field: Sumi-e, Watercolor, Photo and Oil." width="380">
 </p>
 
+## For plugin developers
+
+This plugin exposes image generation to other Obsidian plugins. Read it defensively —
+it may be missing or disabled:
+
+```ts
+const api = (app as any).plugins?.plugins?.["local-image-generator"]?.api;
+if (api?.apiVersion === 1) {
+  const s = api.status();               // synchronous, no network
+  if (s.ready) {
+    const r = await api.generate({ prompt: "a quiet lake at dawn" });
+    if (r.ok) {
+      // r.image.base64 — PNG, no data: prefix
+      // r.image.params — what was ACTUALLY computed, not what you asked for
+      await api.save(r.image);          // optional: writes to the user's output folder
+    }
+  }
+}
+```
+
+`status().capabilities` tells you what the active backend can honour. The built-in engine
+is guidance-free and fixed at 512×512, so a CFG or size control in your UI would be a prop.
+
+The API never starts a download. If the model is missing you get
+`{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button
+themselves.
+
+**`status()` can be stale.** It is synchronous and makes no network call — in server mode it
+reports the *last known* reachability, checked on load, after a failed run, on a mode switch,
+or when the user clicks **Test connection**. If the server was down and has since come back up,
+`status().ready` stays `false` (and `generate()` keeps refusing) until the user reopens the
+panel and reconnects — there is currently no way to force a recheck from the API.
+
+`generate()`'s failure `reason`:
+
+| `reason` | when |
+| --- | --- |
+| `busy` | a generation is already running (yours, another plugin's, or the panel's) |
+| `not-configured` | server mode, no endpoint set in settings |
+| `unreachable` | server mode, endpoint set but not responding — see the staleness note above |
+| `model-not-downloaded` | built-in mode, the model isn't downloaded — this plugin never downloads on its own |
+| `no-gpu` | built-in mode, the GPU doesn't meet the built-in engine's requirements |
+| `failed` | the backend threw while generating; `message` carries its raw, untranslated text |
+
+`save(image, opts?)` resolves to `{ ok: true, imagePath, notePath }` — `notePath` is `null`
+when no note was requested (`opts.createNote === false`, or it falls back to the user's own
+setting) or when the note write itself failed after the image was already saved (the image
+save still counts as success) — or to `{ ok: false, reason: "write-failed", message }` if
+writing the *image* failed (disk error, or the plugin was disabled between your `generate()`
+and `save()` calls).
+
+`onProgress?(pct, phase)` on the request lets you show a load phase instead of a hang: `phase`
+is `"loading-model"` or `"generating"`; `pct` is `0`–`100`, or `null` when the backend reports
+no progress (Draw Things has no progress endpoint) — show an indeterminate spinner in that case.
+
 ## Installation
 
 1. Install and enable the plugin from Obsidian's Community Plugins browser

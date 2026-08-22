@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Provider-API for other Obsidian plugins: `status()`, `generate()`, `save()` via
+  `app.plugins.plugins["local-image-generator"].api` (version 1). Generation and vault
+  writes are separate calls, so a consumer can show the image before asking to save it.
+- A run started by another plugin is now visible in the panel and blocks Generate while
+  it lasts; its result stays out of your image view and history.
+
+### Changed
+
+- The timestamp on a generated image is now set at the start of the run, not at the end.
+  This means the creation time in a result note, the history entry, and the filename carry
+  the moment the generation was **requested**, not the moment it finished — in server mode
+  that is seconds, in built-in mode it can be minutes. The change ensures the panel and
+  the plugin API report the same timestamp, since both use the same hardening source.
+
 ## [0.6.1] — 2026-08-21
 
 ### Changed
