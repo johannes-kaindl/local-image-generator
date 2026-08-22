@@ -275,7 +275,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // entladenes Plugin darf den Vault aber nicht mehr anfassen.
     if (this.unloaded) return { ok: false, reason: "write-failed", message: "plugin unloaded" };
     const { created, ...rest } = image.params;
-    const params: GenParams = { ...rest, date: created };
+    const params: GenParams = { ...rest, date: created, initImage: null, denoising: null };
     let file: TFile;
     try {
       const path = await this.resolveImagePath(buildImageFilename(new Date(params.date), params.seed));
@@ -550,7 +550,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       });
     }, 1000);
     try {
-      const png = await backend.generate(params);
+      const png = await backend.generate({ ...params, initImageData: null });
       phase = "done";
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
       // keine State-Mutation, kein refreshViews — nur das finally räumt den Timer ab.

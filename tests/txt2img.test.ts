@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { parseOptionsModel, parseProgressPct, ProgressPoller, Txt2ImgClient } from "../src/core/txt2img";
 
-const req = { prompt: "a cat", negativePrompt: "blurry", width: 768, height: 512, steps: 20, seed: 42, cfg: 7 };
+const req = { prompt: "a cat", negativePrompt: "blurry", width: 768, height: 512, steps: 20, seed: 42, cfg: 7,
+  initImageData: null, denoising: null };
 
 describe("Txt2ImgClient", () => {
   it("mappt das Rezept auf den A1111-Body und liefert images[0]", async () => {

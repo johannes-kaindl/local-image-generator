@@ -43,6 +43,10 @@ export interface ApiParams {
   steps: number; seed: number; cfg: number;
   model: string;      // im Server-Modus wählt ihn der Server, wir melden ihn nur
   created: string;    // lokale Zeit ohne Offset, wie in den Ergebnis-Notizen
+  /** Nicht-null ⇔ es wurde von einer Vorlage aus weitergerechnet (img2img). Der Konsument
+   *  hat das Bild selbst geschickt, bekommt es also nicht zurueck — wohl aber die Staerke,
+   *  mit der es geaendert wurde, sonst schreibt er falsche Metadaten in seine Notiz. */
+  denoising: number | null;
 }
 
 export interface ApiImage { base64: string; params: ApiParams }   // PNG ohne data:-Präfix
@@ -123,7 +127,12 @@ export interface ApiDeps {
  *  Form: `date` heisst im Vertrag `created`, und der Vertrag darf nicht mitwandern,
  *  wenn wir intern umbenennen. */
 function toApiParams(g: GenParams): ApiParams {
-  const { date, ...rest } = g;
+  // `initImage` faellt hier heraus wie `date` umbenannt wird — und aus demselben Grund: der
+  // Vertrag ist nicht die interne Form. Intern ist es ein VAULT-PFAD, im Vertrag heisst
+  // `initImage` die Base64-Vorlage des Konsumenten (ApiRequest). Beides unter einem Namen
+  // zurueckzugeben, waere ein Feld mit zwei Bedeutungen; bei einem API-Lauf ist der Pfad
+  // ohnehin immer null.
+  const { date, initImage: _pfad, ...rest } = g;
   return { ...rest, created: date };
 }
 

@@ -53,6 +53,14 @@ export interface GenParams {
   height: number;
   /** Lokaler ISO-8601-Stempel, siehe isoStamp() in filename.ts. */
   date: string;
+  /** Vault-PFAD der Vorlage — nicht ihre Bytes (die waeren pro Historien-Eintrag ein
+   *  Megabyte in data.json). null heisst „keine Vorlage bekannt": entweder txt2img, oder
+   *  ein API-Lauf, dessen Bytes gar keine Vault-Datei haben. Ob img2img gerechnet wurde,
+   *  sagt `denoising`, nicht dieses Feld. */
+  initImage: string | null;
+  /** Nicht-null ⇔ es war ein img2img-Lauf. Nie ein Vorgabewert bei txt2img — das waere
+   *  eine Angabe ueber etwas, das nicht stattgefunden hat. */
+  denoising: number | null;
 }
 
 export interface PanelState {

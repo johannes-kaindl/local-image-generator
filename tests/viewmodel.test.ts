@@ -9,6 +9,8 @@ beforeEach(() => {
 });
 
 const baseParams: GenParams = {
+  initImage: null,
+  denoising: null,
   prompt: "a cat",
   negativePrompt: "",
   seed: 1,

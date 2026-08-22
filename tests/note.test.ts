@@ -3,6 +3,8 @@ import { buildImageNote } from "../src/core/note";
 import type { GenParams } from "../src/core/viewmodel";
 
 const params = (over: Partial<GenParams> = {}): GenParams => ({
+  initImage: null,
+  denoising: null,
   prompt: "an apple",
   seed: 199801046,
   steps: 4,
@@ -88,6 +90,8 @@ describe("buildImageNote", () => {
   it("Frontmatter enthält width/height zwischen model und created", () => {
     const note = buildImageNote(
       {
+        initImage: null,
+        denoising: null,
         prompt: "a",
         seed: 1,
         steps: 2,

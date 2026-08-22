@@ -37,6 +37,7 @@ describe("backendCapabilities", () => {
     expect(backendCapabilities("builtin")).toEqual({
       negativePrompt: false,
       cfg: false,
+      initImage: false,
       minSteps: BUILTIN_MODEL.steps.min,
       maxSteps: BUILTIN_MODEL.steps.max,
       fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
@@ -44,7 +45,14 @@ describe("backendCapabilities", () => {
   });
   it("server kann alles, was das Panel anbietet", () => {
     expect(backendCapabilities("server")).toEqual({
-      negativePrompt: true, cfg: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null,
+      negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null,
     });
+  });
+});
+
+describe("img2img-Faehigkeit", () => {
+  it("nur der Server-Modus kann ein Ausgangsbild", () => {
+    expect(backendCapabilities("server").initImage).toBe(true);
+    expect(backendCapabilities("builtin").initImage).toBe(false);
   });
 });

@@ -12,6 +12,14 @@ export interface ImageRequest {
   steps: number;
   seed: number;
   cfg: number;
+  /** Die BYTES der Vorlage (Base64-PNG ohne `data:`-Praefix), null bei txt2img. Heisst
+   *  bewusst anders als `GenParams.initImage` (dort: der Vault-PFAD) — der Auftrag traegt
+   *  das Bild, das Rezept nur seine Herkunft. Bei gleichem Namen haette der Spread
+   *  `{ ...params, … }` in runGeneration still einen Pfad als Bilddaten verschickt; als
+   *  Pflichtfeld mit eigenem Namen faengt das der Typecheck ab. */
+  initImageData: string | null;
+  /** Nur bei img2img gesetzt (A1111: `denoising_strength`). */
+  denoising: number | null;
 }
 
 export interface ImageBackend {

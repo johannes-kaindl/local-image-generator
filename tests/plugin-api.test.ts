@@ -5,6 +5,7 @@ import { STEPS } from "../src/core/generation";
 
 const params = {
   prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
+  initImage: null, denoising: null,
   model: BUILTIN_MODEL.id, width: 512, height: 512, date: "2026-08-22T22:15:00",
 };
 
@@ -68,6 +69,9 @@ describe("generate()", () => {
           prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
           model: BUILTIN_MODEL.id, width: 512, height: 512,
           created: "2026-08-22T22:15:00",
+          // `denoising` gehoert zum Vertrag (null = es war kein img2img); der interne
+          // Vault-PFAD `initImage` gehoert NICHT hinein — er heisst im Vertrag etwas anderes.
+          denoising: null,
         },
       },
     });
