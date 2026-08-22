@@ -92,6 +92,26 @@ describe("hardenParams", () => {
     expect(p.seed).toBe(4242); // faellt auf randomSeed() zurueck, wie ein fehlender Seed
   });
 
+  // `finite(input.seed, ctx.randomSeed())` wertet den Fallback bei JEDEM Aufruf aus, auch
+  // wenn der Aufrufer einen brauchbaren Seed mitschickt — das alte `??` schloss kurz. Heute
+  // folgenlos (eine Ziehung zu viel), aber `randomSeed` ist ein injizierter Callback: sobald
+  // er je einen Seiteneffekt bekommt (Zaehler, PRNG-Fortschaltung, Protokoll), zieht die
+  // Haertung ihn hinter dem Ruecken des Aufrufers weiter.
+  it("zieht keinen Zufalls-Seed, wenn der Auftrag einen brauchbaren mitbringt", () => {
+    let gezogen = 0;
+    const c = { ...ctx("server"), randomSeed: () => { gezogen++; return 4242; } };
+    expect(hardenParams({ prompt: "x", seed: 7 }, c).seed).toBe(7);
+    expect(gezogen).toBe(0);
+  });
+
+  it("zieht den Zufalls-Seed genau einmal, wenn der Auftrag keinen brauchbaren hat", () => {
+    let gezogen = 0;
+    const c = { ...ctx("server"), randomSeed: () => { gezogen++; return 4242; } };
+    expect(hardenParams({ prompt: "x" }, c).seed).toBe(4242);
+    expect(hardenParams({ prompt: "x", seed: Number.NaN }, c).seed).toBe(4242);
+    expect(gezogen).toBe(2);
+  });
+
   it("nimmt im Server-Modus ohne cfg/width/height die dokumentierten Defaults", () => {
     const p = hardenParams({ prompt: "x" }, ctx("server"));
     expect(p.cfg).toBe(CFG.default);

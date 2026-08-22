@@ -32,8 +32,14 @@ export interface HardenContext {
 // Schedule, gezeichnetes Nichts, JSON.stringify des Aufrufers macht daraus `null`). Deshalb
 // ein eigener Finite-Guard fuer die Regler, die clampInt nicht selbst absichert (cfg, width,
 // height, seed haben keine sinnvolle Ober-/Untergrenze hier, nur einen Fallback).
-function finite(value: number | undefined, fallback: number): number {
-  return value !== undefined && Number.isFinite(value) ? value : fallback;
+// Der Fallback darf auch ein Thunk sein: `ctx.randomSeed` ist ein injizierter Callback, und
+// ein eifrig ausgewerteter Fallback zieht ihn bei JEDEM Aufruf — auch wenn der Auftrag einen
+// brauchbaren Seed mitbringt. Heute folgenlos (eine Ziehung zu viel), aber sobald `randomSeed`
+// je einen Seiteneffekt bekommt (Zaehler, PRNG-Fortschaltung), schaltet die Haertung ihn hinter
+// dem Ruecken des Aufrufers weiter. Konstante Fallbacks bleiben Werte — kein Thunk-Rauschen.
+function finite(value: number | undefined, fallback: number | (() => number)): number {
+  if (value !== undefined && Number.isFinite(value)) return value;
+  return typeof fallback === "function" ? fallback() : fallback;
 }
 
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
@@ -51,7 +57,7 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
     width: caps.fixedSize?.width ?? finite(input.width, DEFAULT_SIZE.width),
     height: caps.fixedSize?.height ?? finite(input.height, DEFAULT_SIZE.height),
     steps: clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps),
-    seed: finite(input.seed, ctx.randomSeed()),
+    seed: finite(input.seed, () => ctx.randomSeed()),
     model: ctx.model,
     date: isoStamp(ctx.now),
   };

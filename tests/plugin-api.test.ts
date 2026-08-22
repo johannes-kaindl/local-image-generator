@@ -148,6 +148,44 @@ describe("save()", () => {
     expect(seen).toBe(false);
   });
 
+  // Der Vertrag sagt: `save()` nimmt das, was `generate()` geliefert hat. Ein Konsument kann
+  // die Params aber verändern, bevor er sie zurückreicht — und `save()` formt daraus einen
+  // VAULT-PFAD (buildImageFilename interpoliert `created` und `seed` direkt). Ohne Prüfung
+  // ergibt ein kaputtes `created` den Dateinamen `lig-NaNNaNNaN-NaNNaNNaN-s7.png`, und ein
+  // `seed`, der zur Laufzeit kein number ist (TS schützt einen JS-Aufrufer nicht), formt den
+  // Pfad frei mit. Keine Rechteausweitung — wer die API rufen kann, kann auch app.vault —
+  // aber ein buggy Nachbar soll keinen Pfad formen, den niemand gemeint hat.
+  it("schreibt NICHT, wenn `created` kein lesbarer Zeitstempel ist", async () => {
+    let geschrieben = false;
+    const api = createImageGenerationApi(
+      deps({ save: async () => { geschrieben = true; return { ok: true, imagePath: "a.png", notePath: null }; } }),
+    );
+    const r = await api.save({ ...image, params: { ...image.params, created: "kaputt" } });
+    expect(geschrieben).toBe(false);
+    expect(r.ok).toBe(false);
+    expect(r).toMatchObject({ reason: "write-failed" });
+  });
+
+  it("schreibt NICHT, wenn `seed` keine endliche Zahl ist", async () => {
+    let geschrieben = false;
+    const mk = () =>
+      deps({ save: async () => { geschrieben = true; return { ok: true, imagePath: "a.png", notePath: null }; } });
+
+    const nan = await createImageGenerationApi(mk()).save({ ...image, params: { ...image.params, seed: Number.NaN } });
+    expect(nan).toMatchObject({ ok: false, reason: "write-failed" });
+
+    // Ein JS-Aufrufer ohne TypeScript kann hier alles hineinlegen — genau der Fall, für den
+    // die Prüfung da ist. Der Cast steht für "was zur Laufzeit ankommen kann", nicht für
+    // erlaubte Nutzung des Vertrags.
+    const pfad = await createImageGenerationApi(mk()).save({
+      ...image,
+      params: { ...image.params, seed: "../../geheim" as unknown as number },
+    });
+    expect(pfad).toMatchObject({ ok: false, reason: "write-failed" });
+
+    expect(geschrieben).toBe(false);
+  });
+
   it("meldet einen Schreibfehler als Wert", async () => {
     const api = createImageGenerationApi(
       deps({ save: async () => ({ ok: false, reason: "write-failed", message: "EACCES" }) }),

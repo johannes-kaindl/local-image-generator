@@ -57,8 +57,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   private localEngine: LocalEngineBackend | null = null;
   private downloadAbort: AbortController | null = null;
   onEngineStateChanged: (() => void) | null = null;
-  private state: PanelState = {
-    mode: "server", // in onload aus settings.engine gesetzt
+  // `mode` fehlt hier bewusst: es IST settings.engine und wird in getPanelState() abgeleitet
+  // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
+  // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
+  private state: Omit<PanelState, "mode"> = {
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
     run: { kind: "idle" },
@@ -109,7 +111,6 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       mergeSettings(DEFAULT_SETTINGS, migrateSettings(await this.loadData())),
       SETTINGS_SCHEMA,
     );
-    this.state.mode = this.settings.engine;
     this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
     this.state.engine = { kind: this.settings.engine === "builtin" ? "gpu-checking" : "not-downloaded" };
 
@@ -119,7 +120,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const host: ViewHost = {
       getPanelState: () => {
         this.state.editorActive = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor !== undefined;
-        return this.state;
+        // Die einzige Stelle, an der `mode` entsteht — abgeleitet, nicht gespiegelt.
+        return { ...this.state, mode: this.settings.engine };
       },
       getSettings: () => this.settings,
       setPrompt: (p) => {
@@ -310,7 +312,6 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
     this.settings.engine = mode;
     await this.saveSettings();
-    this.state.mode = mode;
     if (mode === "server") {
       // Ein laufender Download gehört zum verlassenen Modus — abbrechen, nicht im Verborgenen
       // weiterlaufen lassen (fertige Dateien bleiben im Cache).
@@ -560,7 +561,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       phase = "done";
       const msg = e instanceof Error ? e.message : String(e);
       if (this.unloaded) return { ok: false, message: msg };
-      this.state.run = { kind: "error", message: msg };
+      // Ein Fremdlauf hinterlaesst im Panel KEINE Spur — weder bei Erfolg (idle, oben) noch
+      // bei Fehler. Ohne diese Unterscheidung zeigte die Statuszeile die rohe Backend-Meldung
+      // eines fremden Laufs, als waere der EIGENE gescheitert. Der Aufrufer bekommt den
+      // Fehler ohnehin als Rueckgabewert und meldet ihn seinem Nutzer selbst; unsere
+      // Statuszeile gehoert dem eigenen Klick. (Ruling 2026-08-23, Task „Folgearbeit aus dem
+      // Provider-API-Abschlussreview" — Alternative war ein dritter i18n-Key.)
+      this.state.run = external ? { kind: "idle" } : { kind: "error", message: msg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
       if (!builtin) void this.checkServer();
       return { ok: false, message: msg };

@@ -127,6 +127,22 @@ function toApiParams(g: GenParams): ApiParams {
   return { ...rest, created: date };
 }
 
+/** `save()` formt aus den uebergebenen Params einen VAULT-PFAD: `buildImageFilename`
+ *  interpoliert `created` und `seed` direkt in den Dateinamen. Der Vertrag sagt zwar "gib
+ *  zurueck, was generate() geliefert hat", aber ein Konsument kann dazwischen alles
+ *  veraendern — und TypeScript schuetzt keinen JS-Aufrufer. Ohne diese Pruefung entsteht aus
+ *  einem kaputten `created` die Datei `lig-NaNNaNNaN-NaNNaNNaN-s7.png`, und ein `seed`, der
+ *  zur Laufzeit kein number ist, formt den Pfad frei mit. Das ist KEINE Rechteausweitung
+ *  (wer die API rufen kann, kann auch app.vault) — es haelt nur einen buggy Nachbarn davon
+ *  ab, einen Pfad zu formen, den niemand gemeint hat. Rueckgabe: Grund, oder null wenn ok. */
+function unusableParams(p: ApiParams | undefined | null): string | null {
+  if (p === undefined || p === null) return "image.params is missing";
+  if (typeof p.seed !== "number" || !Number.isFinite(p.seed)) return "params.seed must be a finite number";
+  if (typeof p.created !== "string" || Number.isNaN(new Date(p.created).getTime()))
+    return "params.created must be a readable timestamp";
+  return null;
+}
+
 export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   return {
     apiVersion: IMAGE_GENERATION_API_VERSION,
@@ -162,6 +178,11 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
     },
 
     async save(image: ApiImage, opts?: { createNote?: boolean }): Promise<ApiSaveResult> {
+      // Vor dem Vault-Write, nicht danach: ein abgewiesener Auftrag darf keine Datei
+      // hinterlassen. `write-failed` statt eines neuen Grundes — die Fehler-Union von v1
+      // bleibt unveraendert, und "geschrieben wurde nichts" trifft beides.
+      const bad = unusableParams(image?.params);
+      if (bad !== null) return { ok: false, reason: "write-failed", message: bad };
       return deps.save(image, opts?.createNote ?? deps.defaultCreateNote());
     },
   };
