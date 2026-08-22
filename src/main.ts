@@ -5,12 +5,14 @@
 // laufen ZUERST im onload, vor addSettingTab/registerView/addRibbonIcon/addCommand — sonst
 // rendern die ersten t()-Aufrufe rohe Keys.
 import { getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
-import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf, isoStamp } from "./core/filename";
+import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
 import { BUILTIN_MODEL, allAssets } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
+import { hardenParams } from "./core/params";
+import type { ApiRequest } from "./core/plugin-api";
 import { parseOptionsModel, ProgressPoller, Txt2ImgClient, type ImageBackend } from "./core/txt2img";
 import type { EngineState, GenParams, PanelState, ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
@@ -357,19 +359,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
-  private async generate(steps: number, seed: number, cfg: number, width: number, height: number): Promise<void> {
-    if (this.state.run.kind === "contacting" || this.state.run.kind === "generating" || this.state.run.kind === "loading-model") return;
+  /** Rechnet ein Bild — bereits gehärtete Parameter, Backend-Wahl, Sekundentakt und
+   *  ProgressPoller. Fasst NICHT an: state.image, settings.history, state.prompt — das ist
+   *  Sache des Aufrufers (Panel: generate() unten; später die Provider-API). Setzt aber
+   *  state.run und ruft refreshViews(), weil die Fortschrittsanzeige zum Lauf gehört, nicht
+   *  zum Aufrufer. */
+  private async runGeneration(
+    params: GenParams,
+    onProgress?: ApiRequest["onProgress"],
+  ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
-    // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit.
-    if (builtin ? this.state.engine.kind !== "ready" : this.state.server.kind !== "ok") return;
-    const prompt = this.state.prompt;
-    // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
-    // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde.
-    const negativePrompt = builtin ? "" : this.state.negativePrompt;
-    const effCfg = builtin ? 1 : cfg;
-    const effW = builtin ? BUILTIN_MODEL.size : width;
-    const effH = builtin ? BUILTIN_MODEL.size : height;
-    const model = builtin ? BUILTIN_MODEL.id : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
     const backend: ImageBackend = builtin ? this.ensureLocalEngine() : new Txt2ImgClient(this.settings.endpoint, httpPostJson);
     this.state.run = { kind: "contacting" };
     this.refreshViews();
@@ -383,9 +382,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     if (builtin) {
       this.ensureLocalEngine().onPhase = (phase, step, total) => {
         if (this.unloaded) return;
-        if (phase === "loading-model") this.state.run = { kind: "loading-model", elapsedSec: elapsed };
-        else if (step !== undefined && total !== undefined && total > 0)
-          this.state.run = { kind: "generating", pct: Math.round((step / total) * 100), elapsedSec: elapsed };
+        if (phase === "loading-model") {
+          this.state.run = { kind: "loading-model", elapsedSec: elapsed };
+          onProgress?.(null, "loading-model");
+        } else if (step !== undefined && total !== undefined && total > 0) {
+          const pct = Math.round((step / total) * 100);
+          this.state.run = { kind: "generating", pct, elapsedSec: elapsed };
+          onProgress?.(pct, "generating");
+        }
         this.refreshViews();
       };
     }
@@ -395,6 +399,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       const r = this.state.run;
       if (r.kind === "loading-model") {
         this.state.run = { kind: "loading-model", elapsedSec: elapsed };
+        onProgress?.(null, "loading-model");
         this.refreshViews();
         return;
       }
@@ -402,48 +407,72 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       if (!poller) {
         if (r.kind === "generating") {
           this.state.run = { kind: "generating", pct: r.pct, elapsedSec: elapsed };
+          onProgress?.(r.pct, "generating");
           this.refreshViews();
         }
         return;
       }
       void poller.poll().then((pct) => {
         if (this.unloaded) return;
-        if (this.state.run.kind === "generating" || this.state.run.kind === "contacting")
+        if (this.state.run.kind === "generating" || this.state.run.kind === "contacting") {
           this.state.run = { kind: "generating", pct, elapsedSec: elapsed };
+          onProgress?.(pct, "generating");
+        }
         this.refreshViews();
       });
     }, 1000);
-    let succeeded = false;
     try {
-      const png = await backend.generate({ prompt, negativePrompt, width: effW, height: effH, steps, seed, cfg: effCfg });
+      const png = await backend.generate(params);
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
-      // keine State-Mutation, kein refreshViews, kein History-Schreiben — nur das finally
-      // räumt den Timer ab. return löst finally aus und überspringt den Post-await-Block.
-      if (this.unloaded) return;
-      this.state.image = {
-        dataUrl: `data:image/png;base64,${png}`,
-        params: { prompt, negativePrompt, seed, steps, cfg: effCfg, model, width: effW, height: effH, date: isoStamp(new Date()) },
-      };
+      // keine State-Mutation, kein refreshViews — nur das finally räumt den Timer ab.
+      if (this.unloaded) return { ok: true, base64: png };
       this.state.run = { kind: "idle" };
-      succeeded = true;
+      return { ok: true, base64: png };
     } catch (e) {
-      if (this.unloaded) return;
       const msg = e instanceof Error ? e.message : String(e);
+      if (this.unloaded) return { ok: false, message: msg };
       this.state.run = { kind: "error", message: msg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
       if (!builtin) void this.checkServer();
+      return { ok: false, message: msg };
     } finally {
       // Timer immer abräumen (auch wenn onunload zwischen zwei Polls fiel) — verhindert
       // weiteres Feuern; refreshViews aber nur, solange das Plugin noch aktiv ist.
       window.clearInterval(tick);
       if (!this.unloaded) this.refreshViews();
     }
-    if (succeeded && this.state.image) {
-      const p = this.state.image.params;
+  }
+
+  private async generate(steps: number, seed: number, cfg: number, width: number, height: number): Promise<void> {
+    if (this.state.run.kind === "contacting" || this.state.run.kind === "generating" || this.state.run.kind === "loading-model") return;
+    const builtin = this.settings.engine === "builtin";
+    // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit.
+    if (builtin ? this.state.engine.kind !== "ready" : this.state.server.kind !== "ok") return;
+    const model = builtin ? BUILTIN_MODEL.id : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
+    // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
+    // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams
+    // neutralisiert das still statt es abzulehnen (Keine-Attrappen-Linie).
+    const params = hardenParams(
+      { prompt: this.state.prompt, negativePrompt: this.state.negativePrompt, width, height, steps, seed, cfg },
+      {
+        mode: this.settings.engine,
+        defaultSteps: this.settings.defaultSteps,
+        model,
+        now: new Date(),
+        randomSeed: () => Math.floor(Math.random() * 2 ** 31),
+      },
+    );
+    const result = await this.runGeneration(params);
+    // Ergebnis kann nach onunload eintreffen — runGeneration hat dann selbst schon keine
+    // späte State-Mutation vorgenommen; hier zusätzlich kein Bild, keine Historie schreiben.
+    if (this.unloaded) return;
+    if (result.ok) {
+      this.state.image = { dataUrl: `data:image/png;base64,${result.base64}`, params };
       this.settings.history = pushHistory(this.settings.history, {
-        prompt: p.prompt, negativePrompt: p.negativePrompt, seed: p.seed, steps: p.steps,
-        cfg: p.cfg, model: p.model, width: p.width, height: p.height, created: p.date,
+        prompt: params.prompt, negativePrompt: params.negativePrompt, seed: params.seed, steps: params.steps,
+        cfg: params.cfg, model: params.model, width: params.width, height: params.height, created: params.date,
       });
+      this.refreshViews();
       void this.saveSettings();
     }
   }
