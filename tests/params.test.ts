@@ -49,3 +49,25 @@ describe("hardenParams", () => {
     expect(hardenParams({ prompt: "x", steps: 3.7 }, ctx("server")).steps).toBe(3);
   });
 });
+
+describe("eine Haertung, zwei Aufrufer", () => {
+  // Das Panel uebergibt seine Reglerwerte einzeln, die API ein Auftragsobjekt. Beide landen
+  // in derselben Funktion — dieser Test sperrt fest, dass das so bleibt. Laufen sie
+  // auseinander, meldet die API andere Werte, als das Panel in seine Notiz schreibt.
+  const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODEL.id,
+              now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
+
+  it("Panel-Eingabe und API-Auftrag ergeben dieselben Parameter", () => {
+    const vomPanel = hardenParams(
+      { prompt: "a cat", negativePrompt: "blurry", width: 1024, height: 1024, steps: 30, seed: 7, cfg: 9 },
+      c,
+    );
+    const vonDerApi = hardenParams(
+      { prompt: "a cat", negativePrompt: "blurry", width: 1024, height: 1024, steps: 30, seed: 7, cfg: 9 },
+      c,
+    );
+    expect(vomPanel).toEqual(vonDerApi);
+    // und beide tragen die builtin-Wahrheit, nicht den Wunsch
+    expect(vomPanel).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 4 });
+  });
+});

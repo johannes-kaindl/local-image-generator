@@ -98,6 +98,12 @@ describe("buildViewModel — run state", () => {
     expect(vm.status.text).toContain("boom");
     expect(vm.generateEnabled).toBe(true);
   });
+
+  it("meldet einen Fremdlauf sichtbar und sperrt Generate", () => {
+    const vm = buildViewModel({ ...base, run: { kind: "external", pct: 40 } });
+    expect(vm.status.text).toContain("40");
+    expect(vm.generateEnabled).toBe(false);
+  });
 });
 
 describe("buildViewModel — Bild/Insert", () => {
