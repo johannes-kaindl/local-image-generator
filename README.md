@@ -72,6 +72,33 @@ match Obsidian's own language setting — no separate language option to set.
   <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/style-chips.png" alt="The style chips under the prompt field: Sumi-e, Watercolor, Photo and Oil." width="380">
 </p>
 
+## For plugin developers
+
+This plugin exposes image generation to other Obsidian plugins. Read it defensively —
+it may be missing or disabled:
+
+```ts
+const api = (app as any).plugins?.plugins?.["local-image-generator"]?.api;
+if (api?.apiVersion === 1) {
+  const s = api.status();               // synchronous, no network
+  if (s.ready) {
+    const r = await api.generate({ prompt: "a quiet lake at dawn" });
+    if (r.ok) {
+      // r.image.base64 — PNG, no data: prefix
+      // r.image.params — what was ACTUALLY computed, not what you asked for
+      await api.save(r.image);          // optional: writes to the user's output folder
+    }
+  }
+}
+```
+
+`status().capabilities` tells you what the active backend can honour. The built-in engine
+is guidance-free and fixed at 512×512, so a CFG or size control in your UI would be a prop.
+
+The API never starts a download. If the model is missing you get
+`{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button
+themselves.
+
 ## Installation
 
 1. Install and enable the plugin from Obsidian's Community Plugins browser

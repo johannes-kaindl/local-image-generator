@@ -161,6 +161,20 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   den gemeldeten Modellnamen als Statushinweis; es waehlt nie ein Modell aus.
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
   Provider-API 0.2 rastet darauf ein.
+- **Die Provider-API laedt NIE nach.** `generate()` gibt bei fehlenden Assets
+  `model-not-downloaded` zurueck. „Ohne Klick fliesst kein Byte" ist eine Zusage an den
+  Nutzer — ein Fremdplugin darf sie nicht umgehen.
+- **`isBusy()` deckt beide Wege.** Panel-Laeufe UND API-Laeufe; sonst zieht ein
+  Moduswechsel die GPU-Sessions unter einem Fremdlauf weg.
+- **Die Haertung hat genau eine Quelle** (`src/core/params.ts`, `hardenParams`). Zwei
+  Haertungen bedeuten, dass die API andere Werte meldet, als das Panel in die Notiz schreibt.
+- **`ApiParams.created` vs. `GenParams.date`** ist Absicht, kein Versehen: der Vertrag darf
+  nicht mitwandern, wenn intern umbenannt wird.
+- **Der Erstellungs-Zeitstempel wird AM ANFANG gesetzt, nicht am Ende.** `GenParams.date`
+  traegt den Moment der ANFRAGE, nicht der Fertigstellung — die Haertung ist die einzige Quelle
+  fuer Panel und API, und eine Doppel-Zeitstempel-Setzung wuerde die zwei berichten
+  unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
+  Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
 
 ## Store-Scorecard (gemessen 2026-08-22, Release 0.6.1)
 
