@@ -27,6 +27,14 @@ export interface ApiRequest {
   /** Fehlt der Seed, wird gewuerfelt — wie „Reroll" im Panel. Der verwendete Wert steht
    *  danach in `ApiParams.seed`, damit ein Konsument das Ergebnis reproduzieren kann. */
   seed?: number;
+  /** Vorlage fuer img2img: Base64-PNG **ohne** `data:`-Praefix. Fehlt es, ist der Lauf
+   *  txt2img. Nur im Server-Modus wirksam — `capabilities.initImage` sagt vorher, ob es
+   *  ueberhaupt angeboten werden darf; im builtin-Modus wird es still gestrichen statt
+   *  abgelehnt (Keine-Attrappen-Linie). */
+  initImage?: string;
+  /** Wie stark die Vorlage geaendert werden darf, 0..1 (A1111: `denoising_strength`).
+   *  Ohne `initImage` ohne Wirkung. Fehlt es, gilt 0.75. */
+  denoising?: number;
   /** `pct` ist null, wenn das Backend keinen Fortschritt liefert (Draw Things kennt
    *  /sdapi/v1/progress nicht). Die Phase kommt trotzdem — ein builtin-Lauf steht
    *  minutenlang in "loading-model", und ein Konsument ohne dieses Signal zeigt einen
@@ -43,6 +51,10 @@ export interface ApiParams {
   steps: number; seed: number; cfg: number;
   model: string;      // im Server-Modus wählt ihn der Server, wir melden ihn nur
   created: string;    // lokale Zeit ohne Offset, wie in den Ergebnis-Notizen
+  /** Nicht-null ⇔ es wurde von einer Vorlage aus weitergerechnet (img2img). Der Konsument
+   *  hat das Bild selbst geschickt, bekommt es also nicht zurueck — wohl aber die Staerke,
+   *  mit der es geaendert wurde, sonst schreibt er falsche Metadaten in seine Notiz. */
+  denoising: number | null;
 }
 
 export interface ApiImage { base64: string; params: ApiParams }   // PNG ohne data:-Präfix
@@ -68,6 +80,8 @@ export interface ApiStatus {
     cfg: boolean;
     maxSteps: number;
     fixedSize: { width: number; height: number } | null;
+    /** Kann dieses Backend von einer Vorlage aus weiterrechnen (img2img)? */
+    initImage: boolean;
   };
 }
 // Konkret: builtin → { negativePrompt: false, cfg: false, maxSteps: BUILTIN_MODEL.steps.max (4),
@@ -113,6 +127,9 @@ export interface ApiDeps {
   run(
     params: GenParams,
     onProgress?: ApiRequest["onProgress"],
+    /** Die BYTES der Vorlage — bewusst ein eigener Parameter statt eines Feldes in
+     *  `params`: das Rezept traegt nur die Herkunft, nie das Bild (Spec §1). */
+    initImageData?: string | null,
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }>;
   save(image: ApiImage, createNote: boolean): Promise<ApiSaveResult>;
   /** Voreinstellung des Nutzers (settings.createMode === "note"). */
@@ -123,7 +140,12 @@ export interface ApiDeps {
  *  Form: `date` heisst im Vertrag `created`, und der Vertrag darf nicht mitwandern,
  *  wenn wir intern umbenennen. */
 function toApiParams(g: GenParams): ApiParams {
-  const { date, ...rest } = g;
+  // `initImage` faellt hier heraus wie `date` umbenannt wird — und aus demselben Grund: der
+  // Vertrag ist nicht die interne Form. Intern ist es ein VAULT-PFAD, im Vertrag heisst
+  // `initImage` die Base64-Vorlage des Konsumenten (ApiRequest). Beides unter einem Namen
+  // zurueckzugeben, waere ein Feld mit zwei Bedeutungen; bei einem API-Lauf ist der Pfad
+  // ohnehin immer null.
+  const { date, initImage: _pfad, ...rest } = g;
   return { ...rest, created: date };
 }
 
@@ -163,6 +185,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
           cfg: caps.cfg,
           maxSteps: caps.maxSteps,
           fixedSize: caps.fixedSize,
+          initImage: caps.initImage,
         },
       };
     },
@@ -171,8 +194,16 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
       if (deps.isBusy()) return { ok: false, reason: "busy" };
       const r = deps.readiness();
       if (!r.ready) return { ok: false, reason: r.reason };
-      const params = deps.harden(req);
-      const out = await deps.run(params, req.onProgress);
+      // NIE `deps.harden(req)`: `ApiRequest.initImage` ist BASE64, `HardenInput.initImage`
+      // ist `{ ref }` — der bequeme Spread legte megabytegrosse Bilddaten ins Pfad-Feld und
+      // schriebe sie als `init_image: [[…]]` in die Ergebnis-Notiz. Die Uebersetzung ist
+      // deshalb ausdruecklich, und `{ ref: null }` sagt genau das Richtige: es gibt eine
+      // Vorlage, aber keine benennbare Herkunft.
+      const params = deps.harden({
+        ...req,
+        initImage: req.initImage !== undefined ? { ref: null } : undefined,
+      });
+      const out = await deps.run(params, req.onProgress, req.initImage ?? null);
       if (!out.ok) return { ok: false, reason: "failed", message: out.message };
       return { ok: true, image: { base64: out.base64, params: toApiParams(params) } };
     },

@@ -5,6 +5,7 @@ import { STEPS } from "../src/core/generation";
 
 const params = {
   prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
+  initImage: null, denoising: null,
   model: BUILTIN_MODEL.id, width: 512, height: 512, date: "2026-08-22T22:15:00",
 };
 
@@ -29,7 +30,7 @@ describe("status()", () => {
     expect(s.ready).toBe(true);
     expect(s.reason).toBeNull();
     expect(s.capabilities).toEqual({
-      negativePrompt: false, cfg: false,
+      negativePrompt: false, cfg: false, initImage: false,
       maxSteps: BUILTIN_MODEL.steps.max,
       fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
     });
@@ -52,7 +53,7 @@ describe("status()", () => {
     const s = createImageGenerationApi(deps({ getMode: () => "server" })).status();
     expect(s.engine).toBe("server");
     expect(s.capabilities).toEqual({
-      negativePrompt: true, cfg: true, maxSteps: STEPS.max, fixedSize: null,
+      negativePrompt: true, cfg: true, initImage: true, maxSteps: STEPS.max, fixedSize: null,
     });
   });
 });
@@ -68,6 +69,9 @@ describe("generate()", () => {
           prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
           model: BUILTIN_MODEL.id, width: 512, height: 512,
           created: "2026-08-22T22:15:00",
+          // `denoising` gehoert zum Vertrag (null = es war kein img2img); der interne
+          // Vault-PFAD `initImage` gehoert NICHT hinein — er heisst im Vertrag etwas anderes.
+          denoising: null,
         },
       },
     });
@@ -114,6 +118,47 @@ describe("generate()", () => {
     const r = await api.generate({ prompt: "x" });
     expect(api.status().reason).toBe("not-configured");
     expect(r).toEqual({ ok: false, reason: "not-configured" });
+  });
+});
+
+describe("generate() — img2img", () => {
+  it("meldet die img2img-Faehigkeit in capabilities", () => {
+    expect(createImageGenerationApi(deps({ getMode: () => "server" })).status().capabilities.initImage).toBe(true);
+    expect(createImageGenerationApi(deps()).status().capabilities.initImage).toBe(false);
+  });
+
+  // Der Vertrag nimmt BASE64, die Haertung nimmt { ref } — ein bequemes `harden(req)` haette
+  // zwei Megabyte Base64 ins Pfad-Feld gelegt und als `init_image: [[…]]` in die Notiz
+  // geschrieben. Dieser Test haelt die UEBERSETZUNG fest, nicht das Durchreichen.
+  it("uebersetzt Base64 in eine pfadlose Vorlage, statt es ins Pfad-Feld zu legen", async () => {
+    let gesehen: unknown = null;
+    const api = createImageGenerationApi(deps({ harden: (i) => { gesehen = i; return params; } }));
+    await api.generate({ prompt: "x", initImage: "AAAA", denoising: 0.4 });
+    expect((gesehen as { initImage: unknown }).initImage).toEqual({ ref: null });
+    expect((gesehen as { denoising: unknown }).denoising).toBe(0.4);
+    expect(JSON.stringify(gesehen)).not.toContain("AAAA");
+  });
+
+  it("reicht die Bytes am Rezept vorbei ans Backend", async () => {
+    let auftrag: unknown = null;
+    const api = createImageGenerationApi(
+      deps({
+        run: async (_p, _o, initImageData) => { auftrag = initImageData; return { ok: true, base64: "PNG" }; },
+      }),
+    );
+    await api.generate({ prompt: "x", initImage: "AAAA" });
+    expect(auftrag).toBe("AAAA");
+  });
+
+  it("ohne Vorlage bleibt die Haertung bei undefined", async () => {
+    let gesehen: unknown = null;
+    const api = createImageGenerationApi(deps({ harden: (i) => { gesehen = i; return params; } }));
+    await api.generate({ prompt: "x" });
+    expect((gesehen as { initImage: unknown }).initImage).toBeUndefined();
+  });
+
+  it("apiVersion bleibt 1 — die Erweiterung ist additiv", () => {
+    expect(createImageGenerationApi(deps()).status().apiVersion).toBe(1);
   });
 });
 

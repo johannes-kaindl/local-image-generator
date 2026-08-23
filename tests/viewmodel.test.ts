@@ -9,6 +9,8 @@ beforeEach(() => {
 });
 
 const baseParams: GenParams = {
+  initImage: null,
+  denoising: null,
   prompt: "a cat",
   negativePrompt: "",
   seed: 1,
@@ -21,6 +23,8 @@ const baseParams: GenParams = {
 };
 
 const base: PanelState = {
+  initImage: null,
+  denoising: null,
   mode: "server",
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
@@ -185,11 +189,15 @@ describe("buildViewModel — builtin engine (0.6)", () => {
   const builtin: PanelState = { ...base, mode: "builtin", server: { kind: "unconfigured" }, cfg: 1 };
 
   it("server-Modus: alle Regler sichtbar, Steps 1–50", () => {
-    expect(buildViewModel(base).controls).toEqual({ negative: true, cfg: true, size: true, stepsMin: 1, stepsMax: 50 });
+    expect(buildViewModel(base).controls).toEqual({
+      negative: true, cfg: true, size: true, initImage: true, denoising: false, stepsMin: 1, stepsMax: 50,
+    });
   });
   it("builtin/not-downloaded: Regler reduziert, CTA download, Generate gesperrt — der Server-Zustand ist egal", () => {
     const vm = buildViewModel(builtin);
-    expect(vm.controls).toEqual({ negative: false, cfg: false, size: false, stepsMin: 1, stepsMax: 4 });
+    expect(vm.controls).toEqual({
+      negative: false, cfg: false, size: false, initImage: false, denoising: false, stepsMin: 1, stepsMax: 4,
+    });
     expect(vm.empty?.ctaAction).toBe("download");
     expect(vm.status.cls).toBe("is-error");
     expect(vm.generateEnabled).toBe(false);
@@ -253,5 +261,72 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     expect(formatBytes(812e6)).toBe("812 MB");
     expect(formatBytes(1733e6)).toBe("1.7 GB");
     expect(formatBytes(530e3)).toBe("1 MB");
+  });
+});
+
+describe("Regler fuer img2img — zwei Fragen, nicht eine", () => {
+  const vorlage = { path: "Bilder/a.png", dataUrl: "data:image/png;base64,AAAA" };
+
+  it("die Vorlagen-Zeile gehoert dem Server-Modus", () => {
+    expect(buildViewModel({ ...base, mode: "server" }).controls.initImage).toBe(true);
+    expect(buildViewModel({ ...base, mode: "builtin" }).controls.initImage).toBe(false);
+  });
+
+  // Zweite Stufe: der Regler haengt nicht am Backend, sondern daran, ob es ueberhaupt etwas
+  // zu aendern gibt. Ein Denoise-Regler ohne Vorlage ist dieselbe Attrappe wie ein
+  // CFG-Regler im builtin-Modus — nur eine Ebene tiefer.
+  it("der Denoise-Regler erscheint erst mit einer Vorlage", () => {
+    expect(buildViewModel({ ...base, mode: "server", initImage: null }).controls.denoising).toBe(false);
+    expect(buildViewModel({ ...base, mode: "server", initImage: vorlage }).controls.denoising).toBe(true);
+  });
+
+  it("eine Vorlage aus einem frueheren Server-Lauf zeigt im builtin-Modus keinen Regler", () => {
+    const vm = buildViewModel({ ...base, mode: "builtin", initImage: vorlage });
+    expect(vm.controls.initImage).toBe(false);
+    expect(vm.controls.denoising).toBe(false);
+  });
+});
+
+describe("generateEnabled kennt img2img", () => {
+  const vorlage = { path: "Bilder/a.png", dataUrl: "data:image/png;base64,AAAA" };
+  // Ein Ergebnis, dessen Rezept exakt dem aktuellen Panel-Zustand entspricht: Generate ist
+  // ausgegraut, weil ein erneuter Lauf dasselbe Bild braechte.
+  const fertig: PanelState = {
+    ...base,
+    prompt: baseParams.prompt,
+    negativePrompt: baseParams.negativePrompt,
+    seed: baseParams.seed,
+    steps: baseParams.steps,
+    cfg: baseParams.cfg,
+    width: baseParams.width,
+    height: baseParams.height,
+    image: { dataUrl: "data:,", params: baseParams },
+  };
+
+  it("das unveraenderte Rezept sperrt Generate weiterhin", () => {
+    expect(buildViewModel(fertig).generateEnabled).toBe(false);
+  });
+
+  // Derselbe Seed mit Vorlage ergibt ein VOELLIG anderes Bild — der Lauf ginge an einen
+  // anderen Endpunkt. Ohne diesen Vergleich bleibt der Knopf gesperrt und das Feature ist
+  // aus dem Panel heraus unbenutzbar, sobald einmal ein Bild dasteht.
+  it("eine neu gesetzte Vorlage macht das Rezept wieder erzeugbar", () => {
+    const mit = buildViewModel({ ...fertig, initImage: vorlage, denoising: 0.4 });
+    expect(mit.generateEnabled).toBe(true);
+  });
+
+  it("eine geaenderte Aenderungsstaerke zaehlt als neues Rezept", () => {
+    const gerechnet = { ...baseParams, initImage: "Bilder/a.png", denoising: 0.4 };
+    const stand: PanelState = { ...fertig, image: { dataUrl: "data:,", params: gerechnet },
+                                initImage: vorlage, denoising: 0.4 };
+    expect(buildViewModel(stand).generateEnabled).toBe(false);
+    expect(buildViewModel({ ...stand, denoising: 0.8 }).generateEnabled).toBe(true);
+  });
+
+  it("das Entfernen der Vorlage zaehlt ebenfalls als neues Rezept", () => {
+    const gerechnet = { ...baseParams, initImage: "Bilder/a.png", denoising: 0.4 };
+    const stand: PanelState = { ...fertig, image: { dataUrl: "data:,", params: gerechnet },
+                                initImage: null, denoising: null };
+    expect(buildViewModel(stand).generateEnabled).toBe(true);
   });
 });

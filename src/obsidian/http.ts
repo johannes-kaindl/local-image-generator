@@ -1,5 +1,5 @@
 // Netz-Helfer über Obsidians requestUrl (CORS-frei) — kapselt den obsidian-Import,
-// damit Txt2ImgClient pure bleibt. Muster: yijing-oracle/src/obsidian/http.ts.
+// damit A1111Client pure bleibt. Muster: yijing-oracle/src/obsidian/http.ts.
 import { requestUrl } from "obsidian";
 import { withTimeout } from "../vendor/kit/timeout";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { hardenParams } from "../src/core/params";
 import { BUILTIN_MODEL } from "../src/core/model-manifest";
-import { CFG, DEFAULT_SIZE, STEPS } from "../src/core/generation";
+import { CFG, DEFAULT_SIZE, DENOISING, STEPS } from "../src/core/generation";
 
 const ctx = (mode: "builtin" | "server") => ({
   mode,
@@ -20,6 +20,7 @@ describe("hardenParams", () => {
     expect(p).toEqual({
       prompt: "a cat", negativePrompt: "blurry", width: 768, height: 512,
       steps: 30, seed: 7, cfg: 9, model: "someModel.safetensors", date: "2026-08-22T22:15:00",
+      initImage: null, denoising: null,
     });
   });
 
@@ -117,6 +118,44 @@ describe("hardenParams", () => {
     expect(p.cfg).toBe(CFG.default);
     expect(p.width).toBe(DEFAULT_SIZE.width);
     expect(p.height).toBe(DEFAULT_SIZE.height);
+  });
+});
+
+describe("hardenParams — Ausgangsbild und denoising", () => {
+  it("streicht das Ausgangsbild im builtin-Modus still", () => {
+    const p = hardenParams({ prompt: "x", initImage: { ref: "Bilder/a.png" }, denoising: 0.4 }, ctx("builtin"));
+    expect(p.initImage).toBeNull();
+    expect(p.denoising).toBeNull();
+  });
+
+  it("laesst denoising ohne Vorlage null — 0.75 waere eine Angabe ueber nichts", () => {
+    const p = hardenParams({ prompt: "x", denoising: 0.4 }, ctx("server"));
+    expect(p.initImage).toBeNull();
+    expect(p.denoising).toBeNull();
+  });
+
+  it("klemmt denoising mit Vorlage auf 0..1 und nimmt sonst den Vorgabewert", () => {
+    expect(hardenParams({ prompt: "x", initImage: { ref: "a.png" }, denoising: 5 }, ctx("server")).denoising)
+      .toBe(DENOISING.max);
+    expect(hardenParams({ prompt: "x", initImage: { ref: "a.png" }, denoising: -3 }, ctx("server")).denoising)
+      .toBe(DENOISING.min);
+    expect(hardenParams({ prompt: "x", initImage: { ref: "a.png" } }, ctx("server")).denoising)
+      .toBe(DENOISING.default);
+    expect(hardenParams({ prompt: "x", initImage: { ref: "a.png" }, denoising: Number.NaN }, ctx("server")).denoising)
+      .toBe(DENOISING.default);
+  });
+
+  it("traegt den Vault-Pfad ins Rezept, wenn es einen gibt", () => {
+    expect(hardenParams({ prompt: "x", initImage: { ref: "Bilder/a.png" } }, ctx("server")).initImage)
+      .toBe("Bilder/a.png");
+  });
+
+  // Der API-Fall: Bytes ohne Vault-Datei. Das Rezept traegt keinen Pfad, aber sehr wohl
+  // denoising — sonst meldete die API einen img2img-Lauf als txt2img zurueck.
+  it("ein Lauf ohne Vault-Pfad behaelt sein denoising", () => {
+    const p = hardenParams({ prompt: "x", initImage: { ref: null }, denoising: 0.4 }, ctx("server"));
+    expect(p.initImage).toBeNull();
+    expect(p.denoising).toBe(0.4);
   });
 });
 

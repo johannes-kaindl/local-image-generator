@@ -18,6 +18,9 @@ export const DEFAULT_SIZE: SizeOption = SIZES[0]!;
 
 export const STEPS = { min: 1, max: 50, default: 20 } as const;
 export const CFG = { min: 1, max: 15, step: 0.5, default: 7 } as const;
+/** Wieviel das Backend an einer Vorlage aendern darf (A1111: `denoising_strength`).
+ *  0 = Vorlage bleibt, 1 = quasi freie Erzeugung. Nur im img2img-Fall ueberhaupt gesetzt. */
+export const DENOISING = { min: 0, max: 1, step: 0.05, default: 0.75 } as const;
 
 /** Was ein Backend EHRLICH kann (Keine-Attrappen-Linie aus 0.2). Einzige Quelle: das
  *  ViewModel leitet daraus seine Regler ab, die Provider-API ihr `capabilities`-Feld.
@@ -28,6 +31,9 @@ export interface BackendCapabilities {
   cfg: boolean;
   minSteps: number;
   maxSteps: number;
+  /** Kann das Backend ein Ausgangsbild weiterrechnen (img2img)? Die eingebaute Engine
+   *  kann es nicht — ihr fehlt der VAE-Encoder (Roadmap-Posten 4a). */
+  initImage: boolean;
   /** Nicht-null heißt: das Backend kann NUR diese eine Größe (SD-Turbo ist auf 512²
    *  destilliert). null heißt: der Aufrufer wählt. */
   fixedSize: { width: number; height: number } | null;
@@ -38,9 +44,10 @@ export function backendCapabilities(mode: EngineChoice): BackendCapabilities {
     ? {
         negativePrompt: false,
         cfg: false,
+        initImage: false,
         minSteps: BUILTIN_MODEL.steps.min,
         maxSteps: BUILTIN_MODEL.steps.max,
         fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
       }
-    : { negativePrompt: true, cfg: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null };
+    : { negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null };
 }

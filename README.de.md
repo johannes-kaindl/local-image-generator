@@ -46,6 +46,11 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
   entsprechen — ein erneuter Lauf ohne Änderung brächte dasselbe Bild. **Neu würfeln**
   zieht einen frischen Seed und erzeugt trotzdem eine neue Variante; das Würfel-Symbol
   würfelt den Seed, ohne zu erzeugen.
+- **Von einem vorhandenen Bild ausgehen** (Server-Modus): eine Vorlage aus dem Vault
+  wählen — oder am gerade erzeugten Bild auf **Speichern & als Vorlage** klicken — und
+  einstellen, wie weit sich das Modell davon entfernen darf. Im eingebauten Modus fehlt
+  die Zeile ganz, weil SD-Turbo keinen VAE-Encoder hat und es nicht kann; der
+  Stärke-Regler erscheint erst, wenn wirklich eine Vorlage gesetzt ist.
 - Der Reiter **Verlauf** zeigt frühere Erzeugungen als vollständige Rezepte
   (Prompt · Negativ-Prompt · Seed · Schritte · Größe · CFG · Zeit) — nach Prompt
   gruppierbar, per Klick zurück in den Generator ladbar, einzeln löschbar oder komplett
@@ -93,7 +98,19 @@ if (api?.apiVersion === 1) {
 
 `status().capabilities` sagt dir, was das aktive Backend wirklich kann. Die eingebaute Engine
 ist guidance-frei und fest auf 512×512 — ein CFG- oder Größenregler in deiner Oberfläche wäre
-in diesem Modus eine Attrappe.
+in diesem Modus eine Attrappe. Dasselbe gilt für `capabilities.initImage`: nur das
+Server-Backend kann von einem vorhandenen Bild ausgehen.
+
+Für einen Lauf mit Vorlage: das Bild als Base64 (ohne `data:`-Präfix) mitgeben, dazu
+optional `denoising` zwischen 0 und 1 (Vorgabe `0.75` — höher heißt weiter weg vom Original):
+
+```ts
+if (api.status().capabilities.initImage) {
+  const r = await api.generate({ prompt: "derselbe See, in der Dämmerung", initImage: pngBase64, denoising: 0.4 });
+  // r.image.params.denoising sagt, was tatsächlich angewandt wurde — null heißt, es wurde
+  // ignoriert (der eingebaute Modus streicht es still, statt es vorzutäuschen).
+}
+```
 
 Die API startet nie selbst einen Download. Fehlt das Modell, bekommst du
 `{ ok: false, reason: "model-not-downloaded" }` — den Knopf muss der Nutzer selbst klicken.

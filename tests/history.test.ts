@@ -10,7 +10,8 @@ function e(
   negativePrompt = "",
   cfg = 7,
 ): HistoryEntry {
-  return { prompt, seed, steps, model: "sd-turbo", width: 512, height: 512, created, negativePrompt, cfg };
+  return { prompt, seed, steps, model: "sd-turbo", width: 512, height: 512, created, negativePrompt, cfg,
+           denoising: null, initImage: null };
 }
 
 describe("pushHistory", () => {
@@ -97,6 +98,8 @@ describe("deleteEntry", () => {
 
 describe("recipes 0.4 (model + size im Schlüssel)", () => {
   const base: HistoryEntry = {
+    denoising: null,
+    initImage: null,
     prompt: "apple",
     seed: 1,
     steps: 4,
@@ -127,6 +130,8 @@ describe("recipes 0.4 (model + size im Schlüssel)", () => {
 
 describe("recipes negativePrompt/cfg (Task 3)", () => {
   const base: HistoryEntry = {
+    denoising: null,
+    initImage: null,
     prompt: "apple",
     seed: 1,
     steps: 4,

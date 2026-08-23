@@ -1,5 +1,5 @@
 // Eingebautes Backend (Spec 0.6 §2/§5): SD-Turbo im Renderer über onnxruntime-web/WebGPU.
-// Implementiert dasselbe ImageBackend wie der Txt2ImgClient — der Router in main.ts sieht keinen
+// Implementiert dasselbe ImageBackend wie der A1111Client — der Router in main.ts sieht keinen
 // Unterschied. Alles Schwere ist injiziert (Store, Session-Fabrik, Runtime-Init, GPU-Check,
 // PNG-Encoder), damit die Ladeschritte in Node testbar sind. Kein obsidian-Import nötig.
 import { SdTurboEngine, type Session } from "../core/engine";
@@ -61,7 +61,7 @@ export class LocalEngineBackend implements ImageBackend {
     const steps = Math.min(this.model.steps.max, Math.max(this.model.steps.min, Math.round(req.steps)));
     const res = await engine.generate({ prompt: req.prompt, steps, seed: req.seed }, (s, t) => this.onPhase?.("generating", s, t));
     const dataUrl = this.deps.encodePng(res.rgba, res.width, res.height);
-    // Wie Txt2ImgClient: nackte Base64 — main.ts hängt das data:-Präfix selbst an.
+    // Wie A1111Client: nackte Base64 — main.ts hängt das data:-Präfix selbst an.
     return dataUrl.slice(dataUrl.indexOf(",") + 1);
   }
 

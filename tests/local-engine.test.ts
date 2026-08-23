@@ -40,7 +40,8 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
   return deps;
 }
 
-const req = { prompt: "cat", negativePrompt: "", width: 512, height: 512, steps: 2, seed: 7, cfg: 1 };
+const req = { prompt: "cat", negativePrompt: "", width: 512, height: 512, steps: 2, seed: 7, cfg: 1,
+  initImageData: null, denoising: null };
 
 describe("LocalEngineBackend", () => {
   it("erster generate lädt WASM, drei Sessions und den Tokenizer genau einmal — der zweite nicht mehr", async () => {

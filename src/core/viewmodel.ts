@@ -53,11 +53,27 @@ export interface GenParams {
   height: number;
   /** Lokaler ISO-8601-Stempel, siehe isoStamp() in filename.ts. */
   date: string;
+  /** Vault-PFAD der Vorlage — nicht ihre Bytes (die waeren pro Historien-Eintrag ein
+   *  Megabyte in data.json). null heisst „keine Vorlage bekannt": entweder txt2img, oder
+   *  ein API-Lauf, dessen Bytes gar keine Vault-Datei haben. Ob img2img gerechnet wurde,
+   *  sagt `denoising`, nicht dieses Feld. */
+  initImage: string | null;
+  /** Nicht-null ⇔ es war ein img2img-Lauf. Nie ein Vorgabewert bei txt2img — das waere
+   *  eine Angabe ueber etwas, das nicht stattgefunden hat. */
+  denoising: number | null;
 }
 
 export interface PanelState {
   /** Welches Backend gerade gilt (settings.engine). */
   mode: "builtin" | "server";
+  /** Aenderungsstaerke des Denoise-Reglers, null wenn keine Vorlage gesetzt ist. Liegt im
+   *  State (nicht nur im DOM), weil `recipeUnchanged` sie vergleichen muss: derselbe Seed
+   *  mit anderer Staerke ergibt ein anderes Bild. */
+  denoising: number | null;
+  /** Vorlage fuer img2img: Vault-Pfad (fuer Rezept und Notiz) plus dataUrl (fuer das
+   *  Vorschaubild UND den naechsten Lauf — die Bytes werden EINMAL gelesen, damit eine
+   *  inzwischen geaenderte Datei das Rezept nicht unterlaeuft). null = txt2img. */
+  initImage: { path: string; dataUrl: string } | null;
   engine: EngineState;
   server: ServerState;
   run: RunState;
@@ -82,7 +98,18 @@ export interface PanelViewModel {
   showImage: boolean;
   /** Welche Regler der Modus ehrlich anbieten kann (Keine-Attrappen-Linie aus 0.2): SD-Turbo ist
    *  guidance-frei und auf 512² destilliert — Negativ/CFG/Größe wären dort Attrappen. */
-  controls: { negative: boolean; cfg: boolean; size: boolean; stepsMin: number; stepsMax: number };
+  controls: {
+    negative: boolean;
+    cfg: boolean;
+    size: boolean;
+    /** Kann das BACKEND ein Ausgangsbild? Steuert die ganze Vorlagen-Zeile. */
+    initImage: boolean;
+    /** Gibt es ueberhaupt etwas zu aendern? Steuert nur den Denoise-Regler — eine zweite,
+     *  unabhaengige Frage: ohne Vorlage bewirkt er nichts und waere eine Attrappe. */
+    denoising: boolean;
+    stepsMin: number;
+    stepsMax: number;
+  };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
 }
@@ -123,7 +150,13 @@ function recipeUnchanged(s: PanelState): boolean {
     p.steps === s.steps &&
     p.cfg === s.cfg &&
     p.width === s.width &&
-    p.height === s.height
+    p.height === s.height &&
+    // img2img gehoert zum Rezept: derselbe Seed mit einer Vorlage ergibt ein voellig
+    // anderes Bild (anderer Endpunkt sogar). Ohne diesen Vergleich bliebe Generate nach
+    // dem Setzen einer Vorlage gesperrt — das Feature waere aus dem Panel heraus
+    // unbenutzbar, sobald einmal ein Ergebnis dasteht.
+    p.denoising === s.denoising &&
+    p.initImage === (s.initImage?.path ?? null)
   );
 }
 
@@ -212,6 +245,8 @@ export function buildViewModel(s: PanelState): PanelViewModel {
       cfg: caps.cfg,
       // „Größe wählbar" ist genau die Abwesenheit einer festen Größe.
       size: caps.fixedSize === null,
+      initImage: caps.initImage,
+      denoising: caps.initImage && s.initImage !== null,
       stepsMin: caps.minSteps,
       stepsMax: caps.maxSteps,
     },

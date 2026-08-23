@@ -54,6 +54,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 // Die CDP-Brücke liegt seit 2026-08-16 zentral im Dach (tools/obsidian-cdp/) und wird
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
@@ -391,6 +392,12 @@ const MODUS_REGLER = [
   ".lig-cfg",
   ".lig-cfg-value",
   ".lig-size-slot",
+  // img2img (0.8): die ganze Vorlagen-Zeile haengt am Modus. Der Denoise-Regler steht
+  // BEWUSST nicht hier — er haengt zusaetzlich daran, ob eine Vorlage gesetzt ist, und
+  // waere im Server-Modus ohne Vorlage korrekterweise unsichtbar. Ihn hier zu fuehren
+  // hiesse, die zweite Sichtbarkeitsstufe als Defekt zu melden.
+  ".lig-init-row",
+  ".lig-init-from-result",
 ] as const;
 
 /** Gerenderte Sichtbarkeit + Zustand jedes modusabhängigen Reglers, aus dem Renderer geholt.
@@ -538,6 +545,89 @@ async function runApiCheck(cdp: Cdp): Promise<void> {
     caps !== undefined && typeof caps["negativePrompt"] === "boolean" && typeof caps["maxSteps"] === "number",
     JSON.stringify(caps ?? null),
   );
+}
+
+/** Zähler des Mock-Servers (`.mock-a1111-counts.json`). null, wenn kein Mock läuft — dann
+ *  ist Punkt 19 nicht messbar und wird übersprungen statt geraten. */
+function mockCounts(): Record<string, number> | null {
+  const file = new URL("../.mock-a1111-counts.json", import.meta.url);
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, number>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Punkt 19: geht ein Lauf MIT Vorlage wirklich an /sdapi/v1/img2img?
+ *
+ * Gemessen wird am ZÄHLER DES SERVERS, nicht am Zustand des Panels. Der Unterschied ist der
+ * ganze Punkt: `state.initImage` kann gesetzt, `controls.denoising` sichtbar und das Rezept
+ * korrekt sein, während die Anfrage trotzdem am txt2img-Endpunkt landet — genau die
+ * Fehlerklasse, die ein zustandsbasierter Test nicht sehen kann (Lesson 2026-08-21).
+ * Der Mock antwortet zusätzlich mit 400, wenn ein img2img ohne `init_images` ankommt; ein
+ * reiner Endpunkt-Zähler würde diesen Fehler durchlassen.
+ *
+ * Der Lauf geht über die Provider-API statt über das Panel: dort ist die Vorlage ein
+ * Base64-Parameter, der Punkt braucht also keine Vault-Datei und keinen Klickpfad — und er
+ * misst denselben `runGeneration`-Weg, den auch der Generate-Knopf nimmt.
+ */
+async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
+  const NAME = "19. Ein Lauf mit Vorlage geht an /sdapi/v1/img2img";
+  const vorher = mockCounts();
+  if (vorher === null) {
+    skip(NAME, "kein Mock-Server (Zählerdatei fehlt) — am echten Server nicht messbar");
+    return;
+  }
+
+  // 1×1-PNG, transparent. Reicht als Vorlage: der Mock prüft die Form, nicht den Inhalt.
+  const PIXEL =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+  // Mutation und Wartephase getrennt (AGENTS-Gotcha): `Cdp.send` bricht nach 30 s ab, ein
+  // Bildlauf darf laenger dauern. Der Aufruf legt sein Ergebnis im Renderer ab, das Warten
+  // passiert hier auf der Node-Seite.
+  await cdp.evaluate(`
+    const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
+    window.__ligSmokeImg2Img = { fertig: false };
+    if (!api) { window.__ligSmokeImg2Img = { fertig: true, ok: false, reason: "keine API" }; return true; }
+    api.generate({ prompt: "smoke img2img", initImage: ${JSON.stringify(PIXEL)}, denoising: 0.4, steps: 1 })
+      .then((r) => {
+        window.__ligSmokeImg2Img = r.ok
+          ? { fertig: true, ok: true, denoising: r.image.params.denoising }
+          : { fertig: true, ok: false, reason: r.reason };
+      })
+      .catch((e) => { window.__ligSmokeImg2Img = { fertig: true, ok: false, reason: String(e) }; });
+    return true;
+  `);
+
+  const lauf = (await pollUntil(
+    () =>
+      cdp.evaluate<{ fertig: boolean; ok?: boolean; reason?: string; denoising?: number | null }>(
+        `return window.__ligSmokeImg2Img ?? { fertig: false };`,
+      ),
+    (v) => v.fertig,
+    generateTimeoutMs,
+    "warte auf den img2img-Lauf",
+    1000,
+  )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
+
+  await cdp.evaluate(`delete window.__ligSmokeImg2Img; return true;`).catch(() => undefined);
+
+  const nachher = mockCounts() ?? vorher;
+  const img2img = (nachher["img2img"] ?? 0) - (vorher["img2img"] ?? 0);
+  const txt2img = (nachher["txt2img"] ?? 0) - (vorher["txt2img"] ?? 0);
+
+  const teile: string[] = [];
+  if (!lauf.ok) teile.push(`generate() schlug fehl: ${lauf.reason ?? "unbekannt"}`);
+  if (img2img !== 1) teile.push(`img2img-Anfragen: ${img2img} (erwartet 1)`);
+  if (txt2img !== 0) teile.push(`txt2img-Anfragen: ${txt2img} (erwartet 0) — die Vorlage kam nicht an`);
+  // Der Rückgabewert muss den Lauf als img2img ausweisen, sonst schreibt ein Konsument
+  // txt2img-Metadaten in seine Notiz.
+  if (lauf.ok && lauf.denoising !== 0.4) teile.push(`params.denoising: ${String(lauf.denoising)} (erwartet 0.4)`);
+
+  record(NAME, teile.length === 0, teile.length === 0 ? `img2img +${img2img}, txt2img +${txt2img}, denoising ${String(lauf.denoising)}` : teile.join(" · "));
 }
 
 async function main(): Promise<void> {
@@ -1218,6 +1308,10 @@ async function main(): Promise<void> {
     // Bewusst ausserhalb der --builtin/--quick-Bedingung: der Punkt braucht weder Server
     // noch Assets, nur die registrierte Plugin-Instanz.
     await runApiCheck(cdp);
+
+    // --- 19. img2img am laufenden Wirt ---------------------------------------
+    // Braucht den Server-Modus (die eingebaute Engine kann kein img2img) und den Mock.
+    await runImg2ImgCheck(cdp, generateTimeoutMs);
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.

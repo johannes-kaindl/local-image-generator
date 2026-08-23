@@ -4,7 +4,8 @@
 //
 // Key-Namespaces: cmd.* (Commands) · view.* (View-Titel/Tabs) · generate.* (Generate-Panel) ·
 // status.* (Statuszeile) · empty.* (Leerzustände) · notice.* (new Notice(...)) ·
-// settings.<gruppe>.* (Settings-Tab) · history.* (History-Panel) · modal.* (confirmAction).
+// settings.<gruppe>.* (Settings-Tab) · history.* (History-Panel) · modal.* (confirmAction) ·
+// picker.* (Vorlagenbild-Auswahl).
 import { defineStrings } from "../vendor/kit/i18n";
 
 export const EN: Record<string, string> = {
@@ -30,6 +31,13 @@ export const EN: Record<string, string> = {
   "generate.randomSeed": "Randomize seed",
   "generate.presetsLabel": "Styles",
   "generate.insertNeedsEditor": "Open a note to insert the image",
+  "generate.initImage": "Reference",
+  "generate.initImagePick": "Choose…",
+  "generate.initImageClear": "Remove",
+  "generate.initImageNone": "No reference image",
+  "generate.initImageFromResult": "Save & use as reference",
+  "generate.denoising": "Change strength",
+  "picker.title": "Choose a reference image",
 
   "status.ready": "Ready",
   "status.error": "Error: {0}",
@@ -159,6 +167,13 @@ export const DE: Record<string, string> = {
   "generate.randomSeed": "Seed zufällig würfeln",
   "generate.presetsLabel": "Stile",
   "generate.insertNeedsEditor": "Notiz öffnen, um das Bild einzufügen",
+  "generate.initImage": "Vorlage",
+  "generate.initImagePick": "Wählen…",
+  "generate.initImageClear": "Entfernen",
+  "generate.initImageNone": "Kein Vorlagenbild",
+  "generate.initImageFromResult": "Speichern & als Vorlage",
+  "generate.denoising": "Änderungsstärke",
+  "picker.title": "Vorlagenbild wählen",
 
   "status.ready": "Bereit",
   "status.error": "Fehler: {0}",

@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Start from an existing image (img2img)** in server mode: choose a reference image from
+  your vault, or turn a result you just made into one with **Save & use as reference**, and
+  set how far the model may move away from it. Result notes record `denoising` and link the
+  reference; the History tab restores both — but only if the reference file still exists, so
+  a recipe never silently comes back as a plain text-to-image run.
+- The reference row is absent in built-in mode, where SD-Turbo cannot do it, and the strength
+  slider only appears once a reference is actually set.
+- Plugin API: `generate()` accepts `initImage` (base64) and `denoising`,
+  `status().capabilities.initImage` says whether the active backend can honour them, and the
+  returned params carry `denoising`. This is additive — `apiVersion` stays `1`.
+
 ### Fixed
 
 - A run started by *another* plugin that fails no longer appears in the panel as if your own

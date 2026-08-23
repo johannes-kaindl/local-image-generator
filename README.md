@@ -46,6 +46,11 @@ Either way, your prompts and images never leave your machine.
   would just reproduce the same image. **Reroll** rolls a fresh seed and
   generates a new variation regardless; use the dice icon to reroll the
   seed by hand without generating.
+- **Start from an existing image** (server mode): pick a reference image from your
+  vault — or hit **Save & use as reference** on a result you just made — and set how
+  far the model may move away from it. The row is absent in built-in mode, because
+  SD-Turbo has no VAE encoder and cannot do it; the strength slider only appears once
+  a reference is actually set.
 - Switch to the **History** tab to see your past generations as full recipes
   (prompt · negative prompt · seed · steps · size · CFG · time) — group them
   by prompt, click one to load its recipe back into Generate, delete single
@@ -94,6 +99,19 @@ if (api?.apiVersion === 1) {
 
 `status().capabilities` tells you what the active backend can honour. The built-in engine
 is guidance-free and fixed at 512×512, so a CFG or size control in your UI would be a prop.
+The same applies to `capabilities.initImage`: only the server backend can start from an
+existing image.
+
+To generate from a reference image, pass it as base64 (no `data:` prefix) plus an optional
+`denoising` between 0 and 1 (default `0.75` — higher means further from the original):
+
+```ts
+if (api.status().capabilities.initImage) {
+  const r = await api.generate({ prompt: "the same lake, at dusk", initImage: pngBase64, denoising: 0.4 });
+  // r.image.params.denoising tells you what was actually applied — null means it was
+  // ignored (built-in mode strips it silently rather than pretending to honour it).
+}
+```
 
 The API never starts a download. If the model is missing you get
 `{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button

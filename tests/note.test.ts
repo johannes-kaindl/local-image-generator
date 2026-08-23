@@ -3,6 +3,8 @@ import { buildImageNote } from "../src/core/note";
 import type { GenParams } from "../src/core/viewmodel";
 
 const params = (over: Partial<GenParams> = {}): GenParams => ({
+  initImage: null,
+  denoising: null,
   prompt: "an apple",
   seed: 199801046,
   steps: 4,
@@ -88,6 +90,8 @@ describe("buildImageNote", () => {
   it("Frontmatter enthält width/height zwischen model und created", () => {
     const note = buildImageNote(
       {
+        initImage: null,
+        denoising: null,
         prompt: "a",
         seed: 1,
         steps: 2,
@@ -101,5 +105,27 @@ describe("buildImageNote", () => {
       "img.png",
     );
     expect(note).toMatch(/model: flux2-klein-4b\nwidth: 1024\nheight: 576\ncreated:/);
+  });
+});
+
+describe("buildImageNote — img2img", () => {
+  it("schreibt denoising und init_image bei einem Lauf mit Vorlage", () => {
+    const md = buildImageNote(params({ denoising: 0.4, initImage: "Bilder/a.png" }), "Bilder/neu.png");
+    expect(md).toContain("denoising: 0.4");
+    expect(md).toContain('init_image: "[[Bilder/a.png]]"');
+  });
+
+  it("laesst beide Felder weg, wenn es kein img2img war", () => {
+    const md = buildImageNote(params(), "Bilder/neu.png");
+    expect(md).not.toContain("denoising");
+    expect(md).not.toContain("init_image");
+  });
+
+  // Ein Fremdplugin schickt Bytes ohne Vault-Datei. Dann ist der Lauf trotzdem img2img —
+  // nur die Herkunft ist nicht benennbar. Die Notiz behauptet dann keine.
+  it("schreibt denoising ohne init_image, wenn die Vorlage keinen Pfad hat", () => {
+    const md = buildImageNote(params({ denoising: 0.4, initImage: null }), "Bilder/neu.png");
+    expect(md).toContain("denoising: 0.4");
+    expect(md).not.toContain("init_image");
   });
 });
