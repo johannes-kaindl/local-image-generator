@@ -76,6 +76,8 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 15 | Die eingebaute Engine liefert ein Bild, die Notiz trägt `model: sd-turbo` und `steps ≤ 4` | Ende-zu-Ende ohne Server: Ladephase, Schritte, Rezept-Ehrlichkeit |
 | 16 | Zurück auf „Server" bringt die Regler zurück | der Wechsel darf nichts hinterlassen |
 | 17 | Die modusabhängigen Regler sind auch **gerendert** weg — und kommen zurück | `getComputedStyle`, nicht `classList`: die Klasse war beim Bug vom 2026-08-21 gesetzt, das CSS zog nicht |
+| 18 | Die Provider-API ist am laufenden Obsidian registriert und formtreu | `this.api` im onload und die Erreichbarkeit über `app.plugins.plugins` sieht man nur am Wirt |
+| 19 | Ein Lauf **mit Vorlage** geht an `/sdapi/v1/img2img` | am **Zähler des Servers** gemessen, nicht am Panel-Zustand — der kann korrekt sein, während die Anfrage am falschen Endpunkt landet |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -89,6 +91,20 @@ Zeile heißt „Bilderordner" — das las sich zwei Runden lang wie ein Produktd
 falschem `visible`-Prädikat sind ausgenommen; sie sollen ja gerade **nicht** auftauchen.
 Dazu eine Negativkontrolle: findet die Suche auch einen Unsinnsbegriff, beweist ein Treffer
 nichts. Fehlt die Suche ganz (Obsidian < 1.13), wird der Punkt übersprungen statt rot.
+
+### Warum Punkt 19 am Zähler misst und nicht am Panel
+
+Die Vorlage kann gesetzt, `controls.denoising` sichtbar und das Rezept korrekt sein — und
+die Anfrage trotzdem am txt2img-Endpunkt landen. Ein Prüfpunkt, der `state.initImage` liest,
+sieht davon nichts (dieselbe Fehlerklasse wie beim Regler-Bug vom 2026-08-21: korrekter
+Zustand, falsche Wirkung). Deshalb liest er `.mock-a1111-counts.json` **vor und nach** dem
+Lauf und vergleicht die Differenz; der Mock antwortet zusätzlich mit 400, wenn ein
+`img2img` ohne `init_images` ankommt, was ein reiner Endpunkt-Zähler durchließe.
+
+Ohne laufenden Mock ist die Zählerdatei nicht da — dann wird der Punkt **übersprungen**
+statt geraten. Der Lauf geht bewusst über die Provider-API: dort ist die Vorlage ein
+Base64-Parameter, der Punkt braucht also keine Vault-Datei und keinen Klickpfad und misst
+denselben `runGeneration`-Weg wie der Generate-Knopf.
 
 **Nicht automatisiert** — dafür bleibt die Hand-Runde: „sieht gut aus", Bildqualität,
 Layout-Gefühl, Theme-Ästhetik.

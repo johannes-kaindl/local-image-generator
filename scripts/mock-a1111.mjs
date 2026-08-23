@@ -1,7 +1,10 @@
 // A1111-Mock für den GUI-Smoke ohne echten Bild-Server (Ersatz-Abnahme, 2026-08-18).
-// Kennt die drei Endpunkte, die das Plugin nutzt: /options (Modellname), /progress
-// (404 wie Draw Things — Anfragen werden gezählt), /txt2img (wartet DELAY_MS, liefert ein
-// 256×256-Rausch-PNG aus dem Seed der Anfrage, groß genug für Smoke-Punkt 7). Zähler landen in .mock-a1111-counts.json.
+// Kennt die vier Endpunkte, die das Plugin nutzt: /options (Modellname), /progress
+// (404 wie Draw Things — Anfragen werden gezählt), /txt2img und /img2img (warten DELAY_MS,
+// liefern ein 256×256-Rausch-PNG aus dem Seed der Anfrage, groß genug für Smoke-Punkt 7).
+// Zähler landen in .mock-a1111-counts.json — an ihnen misst Smoke-Punkt 19, ob ein Lauf mit
+// Vorlage WIRKLICH am img2img-Endpunkt ankommt (der Panel-Zustand kann korrekt sein, während
+// die Anfrage woanders landet).
 //
 //   node scripts/mock-a1111.mjs                # Port 7861
 //   MOCK_PORT=7862 MOCK_DELAY_MS=3000 node scripts/mock-a1111.mjs
@@ -51,7 +54,7 @@ function noisePng(size = 256, seed = 7) {
 // Seed-treu wie ein echter Server: anderer Seed → anderes Bild. Sonst sähe ein Prüfpunkt,
 // der auf ein NEUES Bild wartet (Smoke 7/15), nie eines (gemessen 2026-08-19).
 const pngFor = (seed) => noisePng(256, Number.isFinite(seed) ? seed : 7);
-const counts = { options: 0, progress: 0, txt2img: 0 };
+const counts = { options: 0, progress: 0, txt2img: 0, img2img: 0 };
 const persist = () => writeFileSync(COUNTS_FILE, JSON.stringify(counts));
 const json = (res, status, body) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
 
@@ -59,16 +62,26 @@ http.createServer((req, res) => {
   const path = new URL(req.url ?? "/", "http://x").pathname;
   if (path === "/sdapi/v1/options") { counts.options++; persist(); return json(res, 200, { model: "mock-model.ckpt" }); }
   if (path === "/sdapi/v1/progress") { counts.progress++; persist(); return json(res, 404, { detail: "Not Found" }); }
-  if (path === "/sdapi/v1/txt2img") {
-    counts.txt2img++; persist();
+  if (path === "/sdapi/v1/txt2img" || path === "/sdapi/v1/img2img") {
+    const img2img = path.endsWith("/img2img");
+    if (img2img) counts.img2img++; else counts.txt2img++;
+    persist();
     let body = "";
     req.on("data", (c) => { body += c; });
     req.on("end", () => {
       let seed = 7;
-      try { seed = Number(JSON.parse(body).seed); } catch { /* kein JSON → Default */ }
+      try {
+        const parsed = JSON.parse(body);
+        seed = Number(parsed.seed);
+        // Formtreue statt blossem Zaehlen: ein img2img ohne init_images ist ein Fehler des
+        // Plugins, den ein reiner Endpunkt-Zaehler nicht sehen wuerde.
+        if (img2img && !Array.isArray(parsed.init_images)) {
+          return json(res, 400, { detail: "img2img without init_images" });
+        }
+      } catch { /* kein JSON → Default */ }
       setTimeout(() => json(res, 200, { images: [pngFor(seed)] }), DELAY_MS);
     });
     return;
   }
   res.writeHead(404); res.end();
-}).listen(PORT, "127.0.0.1", () => console.log(`mock a1111 auf http://127.0.0.1:${PORT} · txt2img dauert ${DELAY_MS} ms · Zähler: ${COUNTS_FILE.pathname}`));
+}).listen(PORT, "127.0.0.1", () => console.log(`mock a1111 auf http://127.0.0.1:${PORT} · txt2img/img2img dauern ${DELAY_MS} ms · Zähler: ${COUNTS_FILE.pathname}`));
