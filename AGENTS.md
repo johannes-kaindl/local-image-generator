@@ -241,33 +241,47 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
   Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
 
-## Store-Scorecard (gemessen 2026-08-23, Release 0.7.0)
+## Store-Scorecard (gemessen 2026-08-23, Release 0.8.0)
 
-**Health `Excellent` · Review `Passed`** — zum dritten Mal in Folge, und erstmals **mit einer
-oeffentlichen Plugin-API**. Keine `low`/`medium`/`high`-Befunde.
+**Health `Excellent` · Review `Passed`** — zum vierten Mal in Folge, diesmal mit
+**zero warnings**. Keine `low`/`medium`/`high`-Befunde.
 
-**Die Befundliste ist gegenueber 0.6.1 unveraendert.** Das ist der eigentliche Messwert: eine
-`plugin.api`, ueber die ein FREMDES Plugin Bilder erzeugen und in den Vault schreiben laesst,
-erzeugt **keine neue Kategorie**. Insbesondere bleibt `Vault Write` ein `pass` — der Scanner
-bewertet den *Weg* (Obsidian-API statt `fs`), nicht den Ausloeser. Wer eine API plant, muss
-dafuer also nichts einpreisen.
+**Die Befundliste hat sich gegenueber 0.7.0 um GENAU EINE `info`-Zeile veraendert — und die
+laesst sich auf eine einzige Codezeile zurueckfuehren:**
 
-`pass`: Attestierungen fuer `main.js`/`styles.css`, `Build reproduced the release main.js
-byte-for-byte`, keine verwundbaren Abhaengigkeiten, **`Vault Write`**.
+> `**Vault Enumeration**: Enumerates all files in the vault (vault.getFiles, getMarkdownFiles, …).`
 
-`info` (kostet die Note nicht): `AGPL copyleft`, `Number of network request calls`,
-`runtime base64 encode or decode`, **`Dynamic Code Execution`** (das `new Function(` der
+Ursache ist `app.vault.getFiles()` im `ImagePickerModal` (`src/obsidian/image-picker.ts:21`) —
+die Vorlagen-Auswahl fuer img2img. In 0.7.0 gab es keinen einzigen `getFiles`-Aufruf; der Scanner
+misst also praezise, was dazukam.
+
+**Damit ist ein Kostensatz gemessen, der ueber dieses Plugin hinausgeht:** ein Vault-Datei-Picker
+(`FuzzySuggestModal` ueber `vault.getFiles()`) kostet **eine `info`-Zeile und sonst nichts** —
+die Note bleibt `Passed`. Wer eine Dateiauswahl plant, muss dafuer nichts einpreisen. `info` ist
+eine *Recommendation*, keine *Warning*; nur `medium` und darueber druecken die Note.
+
+`pass` (unveraendert): Attestierungen fuer `main.js`/`styles.css`, `Build reproduced the release
+main.js byte-for-byte`, keine verwundbaren Abhaengigkeiten, **`Vault Write`**.
+
+`info`: `AGPL copyleft`, `Number of network request calls`, `runtime base64 encode or decode`,
+**`Vault Enumeration`** (neu, s.o.), **`Dynamic Code Execution`** (das `new Function(` der
 Emscripten-embind in der ORT-Glue), `Plugin references unrecognized WASM files`.
 
 ⚠️ **Drei Pruefungen liefen wieder gar nicht:** `Malware scan not available`,
-`Obfuscation scan not available`, `Network requests scan not available` — dritte Version in
-Folge. Das steht unter `info` und sieht wie ein Befund aus, ist aber die Abwesenheit einer
+`Obfuscation scan not available`, `Network requests scan not available` — **vierte Version in
+Folge**. Das steht unter `info` und sieht wie ein Befund aus, ist aber die Abwesenheit einer
 Messung. Nicht als Freibrief lesen: wer eine riskante Bauart plant, hat hier **keine**
 Bestaetigung bekommen, nur kein Widerwort.
 
+**Was 0.7.0 schon gezeigt hatte und weiter gilt:** eine oeffentliche `plugin.api`, ueber die ein
+FREMDES Plugin Bilder erzeugen und in den Vault schreiben laesst, erzeugt **keine** neue
+Kategorie — `Vault Write` bleibt ein `pass`, weil der Scanner den *Weg* bewertet (Obsidian-API
+statt `fs`), nicht den Ausloeser. Dasselbe gilt fuer img2img: ein zweiter HTTP-Endpunkt zum
+selben Server kostet nichts.
+
 Nachlesen: `python3 <obsidian-store-recherche>/scripts/scorecard.py local-image-generator`.
 **Der Scan laeuft nie von selbst an** — nach jedem Release im Developer Dashboard einen
-Rescan anstossen (0.7.0: von Johannes am 2026-08-23 angestossen, Ergebnis oben).
+Rescan anstossen (0.8.0: von Johannes am 2026-08-23 angestossen, Ergebnis oben).
 
 ## Historie: die in-process-Engine (bis 0.4) und der Thin-Client (0.5)
 
