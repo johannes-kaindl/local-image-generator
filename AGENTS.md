@@ -18,6 +18,8 @@ Verlauf, Ablage im Vault) vor **zwei austauschbaren Backends** (seit 0.6, Spec i
   geprueft. 512 px, Steps 1–4, kein Negativ/CFG (Keine-Attrappen-Linie).
 - **Server:** Draw Things, AUTOMATIC1111, Forge oder SD.Next ueber deren gemeinsame
   A1111-kompatible HTTP-API — dem Server gehoeren Modell und Hardware, volle Regler.
+  Seit 0.8 zusaetzlich **img2img**: von einer Vault-Vorlage aus weiterrechnen. Der eingebaute
+  Modus kann das NICHT (kein VAE-Encoder) — die Zeile ist dort ganz weg, nicht deaktiviert.
 
 Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History). Beide Backends
 implementieren `ImageBackend` (`src/core/txt2img.ts`); `main.ts` routet nach
@@ -151,7 +153,9 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   jedem Lauf (auch `--quick`, er braucht weder Server noch Assets) und schiebt den Steps-Regler
   vorher selbst ueber das builtin-Maximum — ohne dieses Klemmen kann die Beschriftung gar nicht
   danebenliegen, und der Punkt blieb in der Gegenprobe gruen, obwohl der Defekt drin war.
-- **Drei Endpunkte, mehr nicht (Server-Modus):** `POST /sdapi/v1/txt2img` erzeugt,
+- **Vier Endpunkte, mehr nicht (Server-Modus):** `POST /sdapi/v1/txt2img` erzeugt,
+  `POST /sdapi/v1/img2img` rechnet von einer Vorlage aus weiter (seit 0.8; derselbe Body plus
+  `init_images` und `denoising_strength`),
   `GET /sdapi/v1/progress` liefert den Fortschritt (1-s-Polling), `GET /sdapi/v1/options`
   nennt das aktive Modell und dient als Verbindungstest. Alles Weitere gehoert dem
   Server, nicht uns.
@@ -177,6 +181,31 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Nutzer — ein Fremdplugin darf sie nicht umgehen.
 - **`isBusy()` deckt beide Wege.** Panel-Laeufe UND API-Laeufe; sonst zieht ein
   Moduswechsel die GPU-Sessions unter einem Fremdlauf weg.
+- **Das Ausgangsbild (img2img) ist KEIN Rezept-Parameter.** `GenParams.initImage` ist ein
+  VAULT-PFAD, `ImageRequest.initImageData` sind die BASE64-Bytes — bewusst verschiedene
+  Namen. Grund fuer die Trennung: `GenParams` wandert in `settings.history`, also in
+  `data.json`, das bei jedem `saveSettings()` komplett geschrieben wird; ein eingebettetes
+  PNG waere dort ein Megabyte pro Eintrag. Grund fuer die verschiedenen NAMEN: `runGeneration`
+  baut den Auftrag als `{ ...params, initImageData }`, und bei gleichem Namen haette ein
+  vergessener Override still einen Pfad als Bilddaten an den Server geschickt. Als
+  Pflichtfeld mit eigenem Namen faengt das der Typecheck.
+- **Ob img2img gerechnet wurde, sagt `denoising` — nicht `initImage`.** Der Pfad darf null
+  sein, waehrend sehr wohl ein Bild mitlaeuft: ein Fremdplugin schickt ueber die API Bytes
+  ohne Vault-Datei. Deshalb ist auch `HardenInput.initImage` ein `{ ref: string | null }`:
+  die ANWESENHEIT des Objekts ist das Signal, `ref` nur die Herkunft. Haengte das Signal am
+  Pfad, verlore jeder API-Lauf sein `denoising` und die Notiz meldete einen img2img-Lauf als
+  txt2img. Aus demselben Grund darf `ApiRequest` NIE ungeprueft als `HardenInput`
+  durchgereicht werden (`deps.harden(req)`) — dort heisst `initImage` Base64.
+- **Der Denoise-Regler hat ZWEI Sichtbarkeitsbedingungen, nicht eine.**
+  `controls.initImage` = kann das Backend es (Modus), `controls.denoising` = gibt es eine
+  Vorlage zu aendern. Ein Regler ohne Vorlage bewirkt nichts und waere dieselbe Attrappe wie
+  ein CFG-Regler im builtin-Modus. Deshalb steht `.lig-denoise` auch NICHT in `MODUS_REGLER`
+  von `scripts/gui-smoke.ts`: dort gefuehrt, wuerde Punkt 17 die zweite Stufe als Defekt melden.
+- **„Speichern & als Vorlage" speichert wirklich — das ist der Punkt.** Der Knopf legt das
+  Ergebnis erst im Vault ab und macht dann dessen Pfad zur Vorlage. Ohne das entstuende eine
+  Vorlage ohne benennbare Herkunft, und die Ergebnis-Notiz muesste „Vorlage: das vorige
+  Ergebnis" behaupten. Legt nur das Bild an, nie eine Notiz — `createMode` gilt fuer
+  Ergebnisse, nicht fuer Zwischenschritte.
 - **Die Haertung hat genau eine Quelle** (`src/core/params.ts`, `hardenParams`). Zwei
   Haertungen bedeuten, dass die API andere Werte meldet, als das Panel in die Notiz schreibt.
 - **Ein Fremdlauf hinterlaesst im Panel KEINE Spur — auch nicht als Fehler.** `runGeneration`
