@@ -63,6 +63,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
   private state: Omit<PanelState, "mode"> = {
     initImage: null,
+    denoising: null,
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
     run: { kind: "idle" },
@@ -138,6 +139,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         this.state.cfg = r.cfg;
         this.state.width = r.width;
         this.state.height = r.height;
+        this.state.denoising = r.denoising;
       },
       generate: (r) => void this.generate(r),
       pickInitImage: () => {

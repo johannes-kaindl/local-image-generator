@@ -66,6 +66,10 @@ export interface GenParams {
 export interface PanelState {
   /** Welches Backend gerade gilt (settings.engine). */
   mode: "builtin" | "server";
+  /** Aenderungsstaerke des Denoise-Reglers, null wenn keine Vorlage gesetzt ist. Liegt im
+   *  State (nicht nur im DOM), weil `recipeUnchanged` sie vergleichen muss: derselbe Seed
+   *  mit anderer Staerke ergibt ein anderes Bild. */
+  denoising: number | null;
   /** Vorlage fuer img2img: Vault-Pfad (fuer Rezept und Notiz) plus dataUrl (fuer das
    *  Vorschaubild UND den naechsten Lauf — die Bytes werden EINMAL gelesen, damit eine
    *  inzwischen geaenderte Datei das Rezept nicht unterlaeuft). null = txt2img. */
@@ -146,7 +150,13 @@ function recipeUnchanged(s: PanelState): boolean {
     p.steps === s.steps &&
     p.cfg === s.cfg &&
     p.width === s.width &&
-    p.height === s.height
+    p.height === s.height &&
+    // img2img gehoert zum Rezept: derselbe Seed mit einer Vorlage ergibt ein voellig
+    // anderes Bild (anderer Endpunkt sogar). Ohne diesen Vergleich bliebe Generate nach
+    // dem Setzen einer Vorlage gesperrt — das Feature waere aus dem Panel heraus
+    // unbenutzbar, sobald einmal ein Ergebnis dasteht.
+    p.denoising === s.denoising &&
+    p.initImage === (s.initImage?.path ?? null)
   );
 }
 

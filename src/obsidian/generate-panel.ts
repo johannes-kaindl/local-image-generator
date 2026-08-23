@@ -266,17 +266,20 @@ export class GeneratePanel implements HubPanel<TabId> {
     return { width: w!, height: h! };
   }
 
-  /** Die EINE Lesestelle der DOM-Felder. `denoising` bleibt null, solange keine Vorlage
-   *  gesetzt ist — der Regler steht dann auf seinem Startwert, aber gemeint ist er nicht. */
+  /** Die EINE Lesestelle der DOM-Felder. `denoising` gilt genau dann, wenn der Regler auch
+   *  SICHTBAR ist — dieselbe Ableitung, nicht eine zweite: `controls.denoising` faellt das
+   *  Urteil (Backend kann es UND eine Vorlage ist gesetzt). Ein eigener Check hier waere im
+   *  builtin-Modus mit haengengebliebener Vorlage bereits auseinandergelaufen. */
   private currentRecipe(): PanelRecipe {
     const { width, height } = this.currentSize();
+    const sichtbar = buildViewModel(this.host.getPanelState()).controls.denoising;
     return {
       steps: Number(this.stepsEl.value),
       seed: Number(this.seedEl.value),
       cfg: Number(this.cfgEl.value),
       width,
       height,
-      denoising: this.host.getPanelState().initImage !== null ? Number(this.denoiseEl.value) : null,
+      denoising: sichtbar ? Number(this.denoiseEl.value) : null,
     };
   }
 
@@ -306,8 +309,11 @@ export class GeneratePanel implements HubPanel<TabId> {
   }
 
   refresh(): void {
-    const state = this.host.getPanelState();
+    // setRecipe ZUERST, dann lesen: das ViewModel vergleicht das Ergebnis-Rezept gegen den
+    // Panel-Zustand (recipeUnchanged → generateEnabled). Andersherum misst es den vorigen
+    // Reglerstand, und der Generate-Knopf haengt eine Aenderung hinterher.
     this.host.setRecipe(this.currentRecipe());
+    const state = this.host.getPanelState();
     this.renderChips();
     const vm = buildViewModel(state);
 
