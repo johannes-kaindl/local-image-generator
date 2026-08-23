@@ -66,6 +66,10 @@ export interface GenParams {
 export interface PanelState {
   /** Welches Backend gerade gilt (settings.engine). */
   mode: "builtin" | "server";
+  /** Vorlage fuer img2img: Vault-Pfad (fuer Rezept und Notiz) plus dataUrl (fuer das
+   *  Vorschaubild UND den naechsten Lauf — die Bytes werden EINMAL gelesen, damit eine
+   *  inzwischen geaenderte Datei das Rezept nicht unterlaeuft). null = txt2img. */
+  initImage: { path: string; dataUrl: string } | null;
   engine: EngineState;
   server: ServerState;
   run: RunState;
@@ -90,7 +94,18 @@ export interface PanelViewModel {
   showImage: boolean;
   /** Welche Regler der Modus ehrlich anbieten kann (Keine-Attrappen-Linie aus 0.2): SD-Turbo ist
    *  guidance-frei und auf 512² destilliert — Negativ/CFG/Größe wären dort Attrappen. */
-  controls: { negative: boolean; cfg: boolean; size: boolean; stepsMin: number; stepsMax: number };
+  controls: {
+    negative: boolean;
+    cfg: boolean;
+    size: boolean;
+    /** Kann das BACKEND ein Ausgangsbild? Steuert die ganze Vorlagen-Zeile. */
+    initImage: boolean;
+    /** Gibt es ueberhaupt etwas zu aendern? Steuert nur den Denoise-Regler — eine zweite,
+     *  unabhaengige Frage: ohne Vorlage bewirkt er nichts und waere eine Attrappe. */
+    denoising: boolean;
+    stepsMin: number;
+    stepsMax: number;
+  };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
 }
@@ -220,6 +235,8 @@ export function buildViewModel(s: PanelState): PanelViewModel {
       cfg: caps.cfg,
       // „Größe wählbar" ist genau die Abwesenheit einer festen Größe.
       size: caps.fixedSize === null,
+      initImage: caps.initImage,
+      denoising: caps.initImage && s.initImage !== null,
       stepsMin: caps.minSteps,
       stepsMax: caps.maxSteps,
     },
