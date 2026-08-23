@@ -57,15 +57,25 @@ def to_fp16(src: Path, dst: Path, part: str, split: list[str]) -> None:
     m = OnnxModel(model)
     m.convert_float_to_float16(keep_io_types=True, use_symbolic_shape_infer=True)
     dst.mkdir(parents=True, exist_ok=True)
-    # m.save_model_to_file(..., use_external_data_format=False) muss auch im split-Zweig
-    # ZUERST laufen — sonst liegen die Gewichte noch in einer optimum-Fremddatei und der
-    # Splitter faende kein raw_data.
-    m.save_model_to_file(str(dst / "model.onnx"), use_external_data_format=False)
     if part in split:
+        # Protobuf kann keine Nachricht ueber 2 GiB serialisieren — genau DESHALB gibt es den
+        # Splitter (SDXL-Turbos fp16-UNet liegt bei ~4,78 GiB). use_external_data_format=False
+        # waere hier also gar nicht erst aufrufbar (EncodeError, gemessen 2026-08-23); stattdessen
+        # MIT External Data speichern, das legt eine grosse TEMPORAERE Sammel-Datei
+        # "<model>.onnx.data" an (OnnxModel.save: location = Path(output_path + ".data").name).
+        # split_external_data laedt ohnehin mit load_external_data=True und findet raw_data damit
+        # auch aus dieser Datei. Die temporaere Datei muss danach weg: sie waere sonst zusaetzlich
+        # zu den Buckets im Manifest (build-assets.mjs) und beim Upload dabei — mehrere GB Redundanz.
+        m.save_model_to_file(str(dst / "model.onnx"), use_external_data_format=True)
+        tmp_data = dst / "model.onnx.data"
         buckets = split_external_data(dst / "model.onnx", dst, part)
+        if tmp_data.exists():
+            tmp_data.unlink()
         total = sum(b.stat().st_size for b in buckets)
         print(f"      → {len(buckets)} Buckets, {total / 1e9:.2f} GB")
         return
+    # Nicht-gestueckelte Teile (SD-Turbo: alle drei) bleiben bei der alten harten 2-GiB-Grenze.
+    m.save_model_to_file(str(dst / "model.onnx"), use_external_data_format=False)
     size = (dst / "model.onnx").stat().st_size
     print(f"      → {dst / 'model.onnx'} ({size / 1e6:.0f} MB)")
     if size >= 2**31:
