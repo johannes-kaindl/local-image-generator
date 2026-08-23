@@ -20,7 +20,7 @@ import {
   type ApiSaveResult,
   type ImageGenerationApi,
 } from "./core/plugin-api";
-import { parseOptionsModel, ProgressPoller, Txt2ImgClient, type ImageBackend } from "./core/txt2img";
+import { parseOptionsModel, ProgressPoller, A1111Client, type ImageBackend } from "./core/txt2img";
 import type { EngineState, GenParams, PanelState, ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
@@ -482,7 +482,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     opts?: { external?: boolean },
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
-    const backend: ImageBackend = builtin ? this.ensureLocalEngine() : new Txt2ImgClient(this.settings.endpoint, httpPostJson);
+    const backend: ImageBackend = builtin ? this.ensureLocalEngine() : new A1111Client(this.settings.endpoint, httpPostJson);
     const external = opts?.external === true;
     // `phase` ist die WAHRE Phase und steuert den Kontrollfluss unten (Poller/Timer); im
     // Fremdlauf faellt state.run (die ANGEZEIGTE Phase) fuer die gesamte Laufzeit auf

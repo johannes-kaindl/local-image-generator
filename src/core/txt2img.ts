@@ -1,5 +1,7 @@
-// A1111-kompatibler txt2img-Client (Spec §3) — pure, HTTP injiziert; Referenz:
+// A1111-kompatibler Client (Spec §3) — pure, HTTP injiziert; Referenz:
 // yijing-oracle/src/obsidian/image-client.ts. Deckt Draw Things, A1111, Forge, SD.Next.
+// Spricht ZWEI Endpunkte: txt2img und (seit 0.8) img2img. Der Auftrag entscheidet, nicht
+// der Aufrufer — deshalb heisst die Klasse nicht mehr Txt2ImgClient.
 import { normalizeEndpoint } from "../vendor/kit/endpoint";
 
 export type HttpPostJson = (url: string, body: unknown) => Promise<{ status: number; json: unknown }>;
@@ -27,14 +29,18 @@ export interface ImageBackend {
   generate(req: ImageRequest): Promise<string>;
 }
 
-export class Txt2ImgClient implements ImageBackend {
+export class A1111Client implements ImageBackend {
   constructor(
     private readonly endpoint: string,
     private readonly post: HttpPostJson,
   ) {}
 
   async generate(req: ImageRequest): Promise<string> {
-    const url = `${normalizeEndpoint(this.endpoint)}/sdapi/v1/txt2img`;
+    // Die Bytes im Auftrag entscheiden den Endpunkt. Beide sprechen denselben Body-Stil,
+    // img2img ergaenzt nur `init_images` und `denoising_strength`.
+    const img2img = req.initImageData !== null;
+    const kind = img2img ? "img2img" : "txt2img";
+    const url = `${normalizeEndpoint(this.endpoint)}/sdapi/v1/${kind}`;
     const { status, json } = await this.post(url, {
       prompt: req.prompt,
       negative_prompt: req.negativePrompt,
@@ -43,11 +49,14 @@ export class Txt2ImgClient implements ImageBackend {
       steps: req.steps,
       seed: req.seed,
       cfg_scale: req.cfg,
+      ...(img2img ? { init_images: [req.initImageData], denoising_strength: req.denoising } : {}),
     });
-    if (status !== 200) throw new Error(`txt2img HTTP ${status}`);
+    // Der Endpunktname steht in der Meldung: ein Server, der txt2img kann und img2img nicht
+    // (oder umgekehrt), ist sonst nicht von einem toten Server zu unterscheiden.
+    if (status !== 200) throw new Error(`${kind} HTTP ${status}`);
     const images = (json as { images?: unknown })?.images;
     const first: unknown = Array.isArray(images) ? images[0] : undefined;
-    if (typeof first !== "string" || !first) throw new Error("txt2img: empty result");
+    if (typeof first !== "string" || !first) throw new Error(`${kind}: empty result`);
     return first;
   }
 }
