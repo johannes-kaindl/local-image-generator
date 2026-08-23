@@ -38,7 +38,7 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
 
 4. **Für die eingebaute Engine (Punkte 13–16, seit 0.6) ein lokaler Asset-Server** — in einem
    zweiten Terminal `npm run smoke:assets` (serviert `dist-assets/`, also die eigene Konversion
-   aus `tools/convert-sd-turbo.sh` plus ORT-WASM, auf `http://127.0.0.1:7862` mit CORS). Die
+   aus `tools/convert-model.sh sd-turbo` plus ORT-WASM, auf `http://127.0.0.1:7862` mit CORS). Die
    Punkte laufen nur mit `--builtin` **und** erreichbarem Asset-Server; sie **löschen die
    Modell-Dateien aus dem Plugin-Cache und laden sie neu** (2,5 GB) — deshalb nie gegen das
    HF-Repo, sondern nur gegen diesen Server. Der Server-Teil (1–11) läuft ohne Bild-Server

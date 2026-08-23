@@ -31,8 +31,10 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 
 - **Gate:** `npm run gate` (typecheck + check:manifest + vitest + lint + check:pure + build +
   check:clean) — vor jedem Commit grün.
-- **Assets (eingebaute Engine):** `tools/convert-sd-turbo.sh` (uv-Venv, optimum + ORT-fp16-
-  Konverter) erzeugt `dist-assets/` (gitignored), `npm run assets` hasht sie und schreibt
+- **Assets (eingebaute Engine):** `tools/convert-model.sh <sd-turbo|sdxl-turbo>`
+  (`npm run assets:convert -- <sd-turbo|sdxl-turbo>`; uv-Venv, optimum + ORT-fp16-Konverter,
+  seit der zweiten Modellstufe modellparametrisiert in `tools/convert/convert_model.py`)
+  erzeugt `dist-assets/` (gitignored), `npm run assets` hasht sie und schreibt
   `src/core/engine-manifest.generated.ts` (**nie von Hand**), `npm run assets:verify` prueft
   I/O-Namen/Dtypes/Shapes mit onnxruntime-node, `npm run assets:upload` laedt ins HF-Repo
   (`johannes-kaindl/local-image-generator-models`, per `HF_MODELS_REPO` ueberschreibbar).

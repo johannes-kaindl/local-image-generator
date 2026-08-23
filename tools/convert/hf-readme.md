@@ -36,7 +36,7 @@ SHA-256 pinned in the plugin release, and stores them outside the vault.
 The ONNX files are the plugin's **own conversion** of the official
 [`stabilityai/sd-turbo`](https://huggingface.co/stabilityai/sd-turbo) weights: `optimum`
 ONNX export, then onnxruntime's float16 conversion with `keep_io_types=True`. The script is
-`tools/convert/convert_sd_turbo.py` in the plugin repository; no third-party conversion is
+`tools/convert/convert_model.py` in the plugin repository; no third-party conversion is
 used. **Powered by Stability AI.**
 
 ## License

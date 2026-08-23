@@ -341,7 +341,7 @@ anderer Netzzugriff, keine Telemetrie.
   [Stability AI Community License](https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md)
   — frei für Forschung, nicht-kommerzielle und begrenzt kommerzielle Nutzung; lies die
   Lizenz, bevor du erzeugte Bilder kommerziell verwendest. *Powered by Stability AI.* Die
-  Konversion ist aus den offiziellen Gewichten mit `tools/convert-sd-turbo.sh`
+  Konversion ist aus den offiziellen Gewichten mit `tools/convert-model.sh sd-turbo`
   reproduzierbar; keine Drittkonversion ist beteiligt.
 - **Server-Modus:** das Modell ist, was deine Server-App geladen hat — seine Lizenz gilt
   für die Bilder, die es erzeugt. Prüfe seine Modellkarte, bevor du erzeugte Bilder

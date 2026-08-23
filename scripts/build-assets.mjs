@@ -3,7 +3,7 @@
 // gebündelte onnxruntime-web/webgpu-Glue tatsächlich referenziert (WASM-Paarung, AGENTS.md-
 // Gotcha: falsche Paarung = stiller Ewig-Hänger), und schreibt src/core/engine-manifest.generated.ts.
 //
-//   node scripts/build-assets.mjs           # voll: braucht dist-assets/sd-turbo (tools/convert-sd-turbo.sh)
+//   node scripts/build-assets.mjs           # voll: braucht dist-assets/sd-turbo (tools/convert-model.sh sd-turbo)
 //   node scripts/build-assets.mjs --check   # Gate: nur der ort_wasm-Eintrag muss zu node_modules passen
 //
 // Modell-Hashes sind statisch (CI kann 2,6 GB nicht neu bauen); der WASM-Eintrag ist es nicht —
@@ -64,7 +64,7 @@ if (CHECK) {
 }
 
 for (const rel of Object.values(MODEL_FILES)) {
-  if (!existsSync(join(DIST, rel))) { console.error(`build-assets: ${rel} fehlt in dist-assets/ — erst tools/convert-sd-turbo.sh`); process.exit(1); }
+  if (!existsSync(join(DIST, rel))) { console.error(`build-assets: ${rel} fehlt in dist-assets/ — erst tools/convert-model.sh sd-turbo`); process.exit(1); }
 }
 mkdirSync(join(DIST, dirname(ort.path)), { recursive: true });
 copyFileSync(ort.src, join(DIST, ort.path));
@@ -79,7 +79,7 @@ console.log(`  ${"ort_wasm".padEnd(13)} ${(wasm.bytes / 1e6).toFixed(1).padStart
 
 const lines = Object.entries(assets).map(([k, v]) => `  ${k}: { path: ${JSON.stringify(v.path)}, bytes: ${v.bytes}, sha256: ${JSON.stringify(v.sha256)} },`);
 writeFileSync(OUT, `// generiert von scripts/build-assets.mjs — NIE von Hand editieren (Gate: npm run check:manifest).
-// Hashes der eigenen SD-Turbo-Konversion (tools/convert-sd-turbo.sh) und der ORT-WASM-Datei,
+// Hashes der eigenen SD-Turbo-Konversion (tools/convert-model.sh sd-turbo) und der ORT-WASM-Datei,
 // die das gebündelte onnxruntime-web/webgpu-Glue referenziert.
 export const ORT_VERSION = ${JSON.stringify(ort.version)};
 export const GENERATED_ASSETS = {

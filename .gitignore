@@ -14,3 +14,4 @@ main.js
 # Konvertierte Modell-Assets (npm run assets) — nie ins Repo, gehen ins HF-Repo
 dist-assets/
 tools/convert/.venv/
+tools/convert/__pycache__/

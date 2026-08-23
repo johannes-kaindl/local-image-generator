@@ -348,7 +348,7 @@ No other network access, no telemetry.
   — free for research, non-commercial and limited commercial use; read the
   license before using generated images commercially. *Powered by Stability
   AI.* The conversion is reproducible from the official weights with
-  `tools/convert-sd-turbo.sh`; no third-party conversion is involved.
+  `tools/convert-model.sh sd-turbo`; no third-party conversion is involved.
 - **Server mode:** the model is whatever your server app has loaded — its
   license applies to the images it makes. Check its model card before using
   generated images, especially for commercial purposes.
