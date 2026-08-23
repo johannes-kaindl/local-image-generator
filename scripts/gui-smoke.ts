@@ -55,6 +55,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 // Die CDP-Brücke liegt seit 2026-08-16 zentral im Dach (tools/obsidian-cdp/) und wird
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
@@ -550,7 +551,12 @@ async function runApiCheck(cdp: Cdp): Promise<void> {
 /** Zähler des Mock-Servers (`.mock-a1111-counts.json`). null, wenn kein Mock läuft — dann
  *  ist Punkt 19 nicht messbar und wird übersprungen statt geraten. */
 function mockCounts(): Record<string, number> | null {
-  const file = new URL("../.mock-a1111-counts.json", import.meta.url);
+  // NICHT relativ zu `import.meta.url`: dieser Treiber wird nach `.gui-smoke.mjs` ins
+  // REPO-ROOT gebundelt, `../` zeigte von dort eine Ebene zu hoch (gemessen 2026-08-23 im
+  // ersten Lauf — der Punkt uebersprang sich mit „Zaehlerdatei fehlt", obwohl der Mock lief).
+  // Der Mock selbst liegt in scripts/ und rechnet dort korrekt mit `../`. npm-Skripte laufen
+  // im Paket-Root, cwd ist damit die verlaessliche Bezugsgroesse.
+  const file = join(process.cwd(), ".mock-a1111-counts.json");
   if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, "utf8")) as Record<string, number>;

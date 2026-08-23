@@ -177,6 +177,47 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-23 · 0.8-dev (img2img) · Obsidian 1.13.7 · A1111-Mock (Port 7861) · **16/16 grün, Punkt 19 mit Gegenprobe**
+
+Erster Lauf mit img2img. Punkt 17 misst jetzt **7 Regler** je Richtung (die Vorlagen-Zeile
+und „Speichern & als Vorlage" kamen dazu), 18b meldet `initImage: true`, Punkt 19 ist grün:
+`img2img +1, txt2img +0, denoising 0.4`.
+
+**Punkt 19 hat sich im ersten Lauf selbst übersprungen — und das war ein echter Defekt, kein
+fehlender Mock.** Gemeldet wurde „kein Mock-Server (Zählerdatei fehlt)", während der Mock lief
+und die Datei gefüllt im Repo-Root lag. Ursache: `mockCounts()` löste den Pfad über
+`new URL("../.mock-a1111-counts.json", import.meta.url)` auf — aus `scripts/mock-a1111.mjs`
+heraus ist das richtig, aber der **Treiber wird nach `.gui-smoke.mjs` ins Repo-Root gebundelt**,
+und von dort zeigt `../` eine Ebene zu hoch. Der Pfad kommt jetzt aus `process.cwd()`
+(npm-Skripte laufen im Paket-Root).
+
+Das ist die Lehre in Reinform: der Punkt war gebaut, getippt und plausibel — und hätte bei
+jedem künftigen Lauf „übersprungen" gemeldet, also **nie** etwas gemessen, ohne je rot zu
+werden. Ein übersprungener Prüfpunkt, dessen Grund man nicht nachrechnet, ist ein blinder Fleck
+mit grünem Anstrich.
+
+**Gegenprobe gefahren** (`const img2img = false` in `A1111Client.generate`, deployt, gemessen,
+zurückgenommen): Punkt 19 wird rot mit
+`img2img-Anfragen: 0 (erwartet 1) · txt2img-Anfragen: 1 (erwartet 0) — die Vorlage kam nicht an`.
+Damit ist belegt, dass er misst und nicht bloß grün ist.
+
+**Zusätzlich von Hand am Wirt geprüft (kein Prüfpunkt, per CDP):** der **Klickpfad** durchs
+Panel, den Punkt 19 nicht abdeckt — er geht über die Provider-API. Vorlage über
+`setInitImage` gesetzt → Vorschaubild, Pfad-Text und Regler erscheinen; Regler auf 0.35
+geschoben, **Generate geklickt** → `denoising 0.35`, `initImage` gesetzt; Notiz geschrieben →
+Frontmatter trägt `denoising: 0.35` und `init_image: "[[…]]"` an der vorgesehenen Stelle.
+Beide Sichtbarkeitsstufen einzeln belegt: ohne Vorlage ist die Zeile da, aber Regler und
+„Entfernen" sind weg; im builtin-Modus ist die ganze Zeile weg samt
+„Speichern & als Vorlage"; zurück im Server-Modus ist sie wieder da.
+
+⚠️ Beim Wiederholen dieser Handprüfung: **die Vorbedingung herstellen, nicht annehmen.** Der
+erste Durchgang meldete die Zeile „Regler noch nicht sichtbar" fälschlich als rot — die Vorlage
+aus dem vorigen Durchgang lebte noch im State. Dieselbe Falle, die Punkt 19 durch seine
+Vorher-Messung vermeidet.
+
+Vault-Zustand nachher geprüft: kein `_lig-gui-smoke`, Settings auf den Ausgangswerten
+(`engine: builtin`, leerer Endpunkt), Historie unverändert, Testartefakte entfernt.
+
 ### 2026-08-22 · 0.6.1 · Obsidian 1.13.7 · A1111-Mock (Port 7860) · Punkt 18 (Provider-API) · **`--quick` 8/8 grün, voller Lauf 15/15 grün**
 
 Lauf zum Bau von Punkt 18 (`app.plugins.plugins["local-image-generator"].api` am laufenden
