@@ -15,6 +15,11 @@ const EXPECT_SD_TURBO = {
   unet: { inputs: ["sample", "timestep", "encoder_hidden_states"], firstOutput: "out_sample" },
   vae_decoder: { inputs: ["latent_sample"], firstOutput: "sample" },
 };
+// unet.inputs "text_embeds"/"time_ids": aus dem Spike-Plan uebernommene ERWARTUNG (Task-3-Brief
+// Step 5), an dieser Konversion noch NICHT nachgemessen — dist-assets/sdxl-turbo/ war beim
+// Schreiben dieser Zeilen noch unvollstaendig. Bestaetigt wird das erst mit einem echten
+// npm run assets:verify dist-assets/sdxl-turbo (Brief Step 5). Die Pruefung bleibt trotzdem
+// fail-safe: eine falsche Erwartung faellt als "✗" auf, nicht als stiller Fehlschlag.
 const EXPECT_SDXL_TURBO = {
   text_encoder: { inputs: ["input_ids"], firstOutput: "last_hidden_state", requireHiddenStates: true },
   text_encoder_2: { inputs: ["input_ids"], firstOutput: "last_hidden_state", requireHiddenStates: true },
@@ -47,10 +52,13 @@ for (const [part, exp] of Object.entries(EXPECT)) {
   let size;
   try {
     size = statSync(path).size;
-  } catch {
-    // sdxl-turbo hat text_encoder_2 zusaetzlich zu sd-turbo — fehlt ein Teil (noch laufende
-    // Konversion, oder ein Modell ohne diesen Teil), wird er uebersprungen statt das ganze
-    // Skript abzubrechen.
+  } catch (err) {
+    // Nur ein fehlendes Verzeichnis/Datei (ENOENT) wird uebersprungen — sdxl-turbo hat
+    // text_encoder_2 zusaetzlich zu sd-turbo, und waehrend die Konversion noch laeuft, kann ein
+    // Teil vorruebergehend fehlen. Jeder ANDERE Fehler (Rechte, kaputtes Dateisystem, ...) ist
+    // gravierender als ein fehlender hidden_states-Output und darf NICHT stillschweigend als
+    // "übersprungen" mit Exit 0 durchgehen — er wird weitergereicht.
+    if (err.code !== "ENOENT") throw err;
     console.log(`… ${part}: übersprungen (nicht vorhanden unter ${path})`);
     continue;
   }
