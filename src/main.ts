@@ -609,6 +609,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.settings.history = pushHistory(this.settings.history, {
         prompt: params.prompt, negativePrompt: params.negativePrompt, seed: params.seed, steps: params.steps,
         cfg: params.cfg, model: params.model, width: params.width, height: params.height, created: params.date,
+        denoising: params.denoising, initImage: params.initImage,
       });
       this.refreshViews();
       void this.saveSettings();

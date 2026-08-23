@@ -65,6 +65,8 @@ describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
           created: "2026-07-17T10:00:00",
           negativePrompt: "blurry, low quality",
           cfg: 8,
+          denoising: null,
+          initImage: null,
         },
       ],
       historyView: "grouped",
@@ -188,6 +190,8 @@ describe("Historie-Migration", () => {
       created: "2026-07-17T10:00:00",
       negativePrompt: "",
       cfg: 7,
+      denoising: null,
+      initImage: null,
     };
     const s = validate({ history: [entry] });
     expect(s.history).toEqual([entry]);
@@ -225,6 +229,30 @@ describe("validateSettings — tote Keys mfluxPath/modelsDir/selectedModel (seit
     expect(s.selectedModel).toBe("");
     expect(s.mfluxPath).toBe("");
     expect(s.modelsDir).toBe("");
+  });
+});
+
+describe("Historie-Migration 0.8 (img2img)", () => {
+  // Alt-Eintraege wissen nichts von img2img. `null` heisst „war kein img2img" — ein
+  // Vorgabewert (0.75) waere eine Angabe ueber einen Lauf, der nie stattgefunden hat.
+  it("Alt-Eintraege ohne img2img-Felder bekommen null, nicht einen Vorgabewert", () => {
+    const s = validate({
+      history: [{ prompt: "a", seed: 1, steps: 2, model: "sd-turbo", created: "x",
+                  width: 512, height: 512, negativePrompt: "", cfg: 7 }],
+    });
+    expect(s.history[0]!.denoising).toBeNull();
+    expect(s.history[0]!.initImage).toBeNull();
+    expect(s.history[0]!.prompt).toBe("a"); // nichts verloren
+  });
+
+  it("uebernimmt vorhandene img2img-Werte unveraendert", () => {
+    const s = validate({
+      history: [{ prompt: "a", seed: 1, steps: 2, model: "m", created: "x",
+                  width: 512, height: 512, negativePrompt: "", cfg: 7,
+                  denoising: 0.4, initImage: "Bilder/a.png" }],
+    });
+    expect(s.history[0]!.denoising).toBe(0.4);
+    expect(s.history[0]!.initImage).toBe("Bilder/a.png");
   });
 });
 

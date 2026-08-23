@@ -11,6 +11,8 @@ const FM_ORDER = [
   "seed",
   "steps",
   "cfg",
+  "denoising",
+  "init_image",
   "model",
   "width",
   "height",
@@ -28,6 +30,11 @@ export function buildImageNote(params: GenParams, imageLink: string): string {
     seed: params.seed,
     steps: params.steps,
     cfg: params.cfg,
+    // Beide nur bei einem img2img-Lauf — und `init_image` zusaetzlich nur, wenn die Vorlage
+    // eine benennbare Herkunft hat. Ein API-Lauf schickt Bytes ohne Vault-Datei; die Notiz
+    // behauptet dann keine Quelle, nennt aber sehr wohl die Aenderungsstaerke.
+    ...(params.denoising !== null ? { denoising: params.denoising } : {}),
+    ...(params.initImage !== null ? { init_image: `[[${params.initImage}]]` } : {}),
     model: params.model,
     width: params.width,
     height: params.height,

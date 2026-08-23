@@ -39,6 +39,11 @@ export interface HistoryEntry {
   height: number;
   /** Lokaler ISO-8601-Stempel, beim Generier-Erfolg eingefroren (siehe isoStamp). */
   created: string;
+  /** Nicht-null ⇔ der Eintrag war ein img2img-Lauf (Spec 0.8 §1/§7). */
+  denoising: number | null;
+  /** Vault-Pfad der Vorlage, nicht ihre Bytes — die Historie liegt in data.json. null heisst
+   *  „keine benennbare Herkunft": txt2img, oder ein API-Lauf ohne Vault-Datei. */
+  initImage: string | null;
 }
 
 export interface LigSettings {
@@ -117,11 +122,13 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
     .filter(
       (
         h,
-      ): h is Omit<HistoryEntry, "width" | "height" | "negativePrompt" | "cfg"> & {
+      ): h is Omit<HistoryEntry, "width" | "height" | "negativePrompt" | "cfg" | "denoising" | "initImage"> & {
         width?: unknown;
         height?: unknown;
         negativePrompt?: unknown;
         cfg?: unknown;
+        denoising?: unknown;
+        initImage?: unknown;
       } =>
         isPlainObject(h) &&
         typeof h["prompt"] === "string" &&
@@ -138,6 +145,10 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
       // Migration 0.4→0.5: Alt-Einträge kannten weder negativePrompt noch cfg (Spec §5/§8).
       negativePrompt: typeof h.negativePrompt === "string" ? h.negativePrompt : "",
       cfg: typeof h.cfg === "number" ? h.cfg : 7,
+      // Migration 0.7→0.8: img2img ist neu. null heisst „war keins" — ein Vorgabewert waere
+      // eine Angabe ueber einen Lauf, der nie stattgefunden hat (Spec §1).
+      denoising: typeof h.denoising === "number" ? h.denoising : null,
+      initImage: typeof h.initImage === "string" ? h.initImage : null,
     }));
 }
 
