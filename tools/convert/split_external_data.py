@@ -22,6 +22,12 @@ from onnx.external_data_helper import _get_all_tensors
 
 BUCKET_BYTES = 400 * 1024 * 1024
 ALIGN = 64
+# onnxs eigenes convert_model_to_external_data() hat denselben Default: sehr kleine Tensoren
+# (Achsen fuer Unsqueeze, Formen fuer Reshape) braucht die Shape-Inferenz schon beim Laden des
+# Modells INLINE — extern gemacht, bricht der Ladevorgang selbst, nicht erst die Inferenz
+# (gemessen 2026-08-24 am echten SDXL-Turbo-UNet: "Cannot parse data from external tensors"
+# beim Unsqueeze-Knoten).
+SIZE_THRESHOLD = 1024
 
 
 def _set_external(tensor: TensorProto, location: str, offset: int, length: int) -> None:
@@ -38,6 +44,7 @@ def split_external_data(
     part: str,
     bucket_bytes: int = BUCKET_BYTES,
     align: int = ALIGN,
+    size_threshold: int = SIZE_THRESHOLD,
 ) -> list[Path]:
     model = onnx.load(str(model_path), load_external_data=True)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -60,6 +67,8 @@ def split_external_data(
     for tensor in _get_all_tensors(model):
         raw = tensor.raw_data
         if not raw:                      # nicht-raw Initializer (selten, klein) bleiben inline
+            continue
+        if len(raw) < size_threshold:    # Shape-Inferenz braucht diese Werte schon beim Laden
             continue
         # Ein Tensor wird NIE geteilt: passt er nicht mehr, faengt ein neuer Bucket an.
         # Ist er allein groesser als das Budget, bekommt er seinen eigenen Bucket.
