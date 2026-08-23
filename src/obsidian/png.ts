@@ -13,9 +13,14 @@ export function rgbaToDataUrl(rgba: Uint8ClampedArray, w: number, h: number): st
   return canvas.toDataURL("image/png");
 }
 
+/** Der Base64-Teil einer dataUrl, ohne `data:<mime>;base64,`-Praefix — genau die Form, die
+ *  die A1111-API in `init_images` erwartet und die die Provider-API als `initImage` nimmt. */
+export function base64OfDataUrl(dataUrl: string): string {
+  return dataUrl.slice(dataUrl.indexOf(",") + 1);
+}
+
 export function dataUrlToBytes(dataUrl: string): ArrayBuffer {
-  const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-  const bin = atob(b64);
+  const bin = atob(base64OfDataUrl(dataUrl));
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out.buffer;

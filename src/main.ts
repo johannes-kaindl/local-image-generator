@@ -4,7 +4,7 @@
 // i18n (docs/superpowers/specs/2026-07-17-i18n-design.md §2): registerI18n() + setLang()
 // laufen ZUERST im onload, vor addSettingTab/registerView/addRibbonIcon/addCommand — sonst
 // rendern die ersten t()-Aufrufe rohe Keys.
-import { getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
+import { arrayBufferToBase64, getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
 import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
@@ -28,9 +28,10 @@ import { hasLegacyCache } from "./obsidian/legacy-cache";
 import { LocalEngineBackend } from "./obsidian/local-engine";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
-import { dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
+import { base64OfDataUrl, dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
 import { LigSettingTab } from "./obsidian/settings-tab";
-import { GeneratorView, VIEW_TYPE, type ViewHost } from "./obsidian/view";
+import { ImagePickerModal } from "./obsidian/image-picker";
+import { GeneratorView, VIEW_TYPE, type PanelRecipe, type ViewHost } from "./obsidian/view";
 import { normalizeEndpoint } from "./vendor/kit/endpoint";
 import { mergeSettings } from "./vendor/kit/settings";
 import { validateSettings } from "./vendor/kit/settings_schema";
@@ -89,14 +90,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       readiness: () => this.apiReadiness(),
       isBusy: () => this.isBusy(),
       harden: (input) => hardenParams(input, this.hardenContext()),
-      run: async (params, onProgress) => {
+      run: async (params, onProgress, initImageData) => {
         // Ein Konsument haelt seine api-Referenz ueber unser Entladen hinaus. Ohne diesen
         // Guard baut ensureLocalEngine() eine neue GPU-Session fuer eine Plugin-Instanz,
         // die es nicht mehr gibt — und niemand disposed sie je.
         if (this.unloaded) return { ok: false, message: "plugin unloaded" };
         this.apiRunning = true;
         try {
-          return await this.runGeneration(params, onProgress, { external: true });
+          return await this.runGeneration(params, initImageData ?? null, onProgress, { external: true });
         } finally {
           this.apiRunning = false;
         }
@@ -131,14 +132,22 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       setNegativePrompt: (p) => {
         this.state.negativePrompt = p;
       },
-      setRecipe: (steps, seed, cfg, width, height) => {
-        this.state.steps = steps;
-        this.state.seed = seed;
-        this.state.cfg = cfg;
-        this.state.width = width;
-        this.state.height = height;
+      setRecipe: (r) => {
+        this.state.steps = r.steps;
+        this.state.seed = r.seed;
+        this.state.cfg = r.cfg;
+        this.state.width = r.width;
+        this.state.height = r.height;
       },
-      generate: (steps, seed, cfg, width, height) => void this.generate(steps, seed, cfg, width, height),
+      generate: (r) => void this.generate(r),
+      pickInitImage: () => {
+        new ImagePickerModal(this.app, (f) => void this.setInitImage(f)).open();
+      },
+      clearInitImage: () => {
+        this.state.initImage = null;
+        this.refreshViews();
+      },
+      useResultAsInitImage: () => void this.useResultAsInitImage(),
       recheckServer: () => void this.checkServer(),
       downloadModel: () => void this.startDownload(),
       cancelDownload: () => this.cancelDownload(),
@@ -149,6 +158,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         setting.openTabById("local-image-generator");
       },
       restoreRecipe: (entry) => {
+        // Die Vorlage gehoert zum Rezept — aber nur, wenn die Datei noch da ist. Ein
+        // stillschweigend als txt2img wieder aufgelegter img2img-Eintrag waere genau die
+        // Sorte Luege, die die Keine-Attrappen-Linie verbietet (Spec §7): der Nutzer sieht
+        // die leere Vorlagen-Zeile und weiss, dass er sie neu waehlen muss.
+        const quelle = entry.initImage !== null ? this.app.vault.getAbstractFileByPath(entry.initImage) : null;
+        if (quelle instanceof TFile) void this.setInitImage(quelle);
+        else this.state.initImage = null;
         // Rezept direkt in die DOM-Felder des Generate-Panels füllen und dorthin wechseln —
         // ohne neuen globalen Zustand (die Panels halten ihre eigenen Felder).
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
@@ -268,6 +284,41 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   /** Der einzige Vault-Write der Provider-API. Nutzt dieselbe Ablage wie der Create-Knopf
    *  (Ausgabeziel, Dedup, optional Ergebnis-Notiz) — ein Fremdplugin soll nicht an der
    *  Einstellung des Nutzers vorbei schreiben. */
+  /** Vault-Datei → Vorlage. Die Bytes werden EINMAL gelesen und als dataUrl gehalten: das
+   *  Vorschaubild braucht sie, und der naechste Lauf schickt genau diese Bytes. Ein zweites
+   *  Lesen zum Generier-Zeitpunkt koennte eine inzwischen geaenderte Datei erwischen — die
+   *  Notiz naennte dann einen Pfad, dessen Inhalt nie ins Bild eingegangen ist. */
+  private async setInitImage(file: TFile): Promise<void> {
+    try {
+      const bytes = await this.app.vault.readBinary(file);
+      const ext = file.extension.toLowerCase();
+      const mime = ext === "jpg" ? "image/jpeg" : `image/${ext}`;
+      this.state.initImage = { path: file.path, dataUrl: `data:${mime};base64,${arrayBufferToBase64(bytes)}` };
+      this.refreshViews();
+    } catch (e) {
+      new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
+    }
+  }
+
+  /** „Speichern & als Vorlage": legt das gerade erzeugte Bild im Vault ab und macht es zur
+   *  Vorlage. Speichert BEWUSST zuerst — eine Vorlage ohne Vault-Pfad haette in der
+   *  Ergebnis-Notiz keine benennbare Herkunft (Spec §4). Nur das Bild, nie eine Notiz:
+   *  `createMode` gilt fuer Ergebnisse, nicht fuer Zwischenschritte. */
+  private async useResultAsInitImage(): Promise<void> {
+    const img = this.state.image;
+    if (!img) return;
+    let file: TFile;
+    try {
+      const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
+    } catch (e) {
+      new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
+      return;
+    }
+    new Notice(t("notice.saved", file.path));
+    await this.setInitImage(file);
+  }
+
   private async saveApiImage(image: ApiImage, createNote: boolean): Promise<ApiSaveResult> {
     // Derselbe Grund wie beim `run`-Guard oben: ein Konsument haelt seine api-Referenz ueber
     // unser Entladen hinaus. Der Vertrag ist generate() → Mensch schaut sich das Bild an →
@@ -276,7 +327,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // entladenes Plugin darf den Vault aber nicht mehr anfassen.
     if (this.unloaded) return { ok: false, reason: "write-failed", message: "plugin unloaded" };
     const { created, ...rest } = image.params;
-    const params: GenParams = { ...rest, date: created, initImage: null, denoising: null };
+    // `initImage` (der Vault-Pfad) bleibt null: ein API-Konsument schickt Bytes, keine
+    // Vault-Datei. `denoising` kommt aus dem Vertrag — die Notiz nennt die Staerke.
+    const params: GenParams = { ...rest, date: created, initImage: null };
     let file: TFile;
     try {
       const path = await this.resolveImagePath(buildImageFilename(new Date(params.date), params.seed));
@@ -479,6 +532,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *  statt der Phasen-Zustände contacting/loading-model/generating. */
   private async runGeneration(
     params: GenParams,
+    /** Die BYTES der Vorlage (Base64 ohne data:-Praefix) oder null. Bewusst ein eigener
+     *  Parameter statt eines Feldes in `params`: das Rezept traegt nur die Herkunft, nie
+     *  das Bild — sonst laege ein Megabyte pro Eintrag in data.json (Spec §1). */
+    initImageData: string | null,
     onProgress?: ApiRequest["onProgress"],
     opts?: { external?: boolean },
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
@@ -551,7 +608,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       });
     }, 1000);
     try {
-      const png = await backend.generate({ ...params, initImageData: null });
+      const png = await backend.generate({ ...params, initImageData });
       phase = "done";
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
       // keine State-Mutation, kein refreshViews — nur das finally räumt den Timer ab.
@@ -585,7 +642,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
-  private async generate(steps: number, seed: number, cfg: number, width: number, height: number): Promise<void> {
+  private async generate(r: PanelRecipe): Promise<void> {
     // ViewModel deaktiviert den Generate-Knopf schon bei jedem busy-Zustand (inkl. "external") —
     // dieser Check ist die Defensive dahinter und muss deshalb dieselbe Menge sperren wie
     // isBusy(), sonst koennte ein Klick waehrend eines Fremdlaufs zwei runGeneration()-Aufrufe
@@ -597,11 +654,28 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
     // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams
     // neutralisiert das still statt es abzulehnen (Keine-Attrappen-Linie).
+    const init = this.state.initImage;
     const params = hardenParams(
-      { prompt: this.state.prompt, negativePrompt: this.state.negativePrompt, width, height, steps, seed, cfg },
+      {
+        prompt: this.state.prompt,
+        negativePrompt: this.state.negativePrompt,
+        width: r.width,
+        height: r.height,
+        steps: r.steps,
+        seed: r.seed,
+        cfg: r.cfg,
+        // REZEPT: nur die Herkunft. Die Anwesenheit des Objekts ist das img2img-Signal.
+        initImage: init !== null ? { ref: init.path } : undefined,
+        denoising: r.denoising ?? undefined,
+      },
       this.hardenContext(),
     );
-    const result = await this.runGeneration(params);
+    // AUFTRAG: die Bytes, getrennt vom Rezept (Spec §1). Die Bedingung haengt an
+    // `denoising`, NICHT an `params.initImage`: Letzteres ist der Pfad und darf null sein,
+    // waehrend sehr wohl ein Bild mitlaeuft (API-Fall). `denoising !== null` ist per
+    // Haertung genau dann wahr, wenn es ein Ausgangsbild gibt.
+    const initData = params.denoising !== null && init !== null ? base64OfDataUrl(init.dataUrl) : null;
+    const result = await this.runGeneration(params, initData);
     // Ergebnis kann nach onunload eintreffen — runGeneration hat dann selbst schon keine
     // späte State-Mutation vorgenommen; hier zusätzlich kein Bild, keine Historie schreiben.
     if (this.unloaded) return;

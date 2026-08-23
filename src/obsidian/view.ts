@@ -11,13 +11,32 @@ import { buildHubInto, type HubController, type HubPanel, type TabId } from "./h
 
 export const VIEW_TYPE = "local-image-generator";
 
+/** Was das Panel gerade eingestellt hat. Frueher fuenf positionale Zahlen — mit `denoising`
+ *  waeren es sechs gleichartige gewesen, und zwei Zahlenlisten nebeneinander sind eine
+ *  Verwechslung mit Ansage. `denoising: null` heisst „keine Vorlage im Spiel". */
+export interface PanelRecipe {
+  steps: number;
+  seed: number;
+  cfg: number;
+  width: number;
+  height: number;
+  denoising: number | null;
+}
+
 export interface ViewHost {
   getPanelState(): PanelState;
   getSettings(): LigSettings;
   setPrompt(p: string): void;
   setNegativePrompt(p: string): void;
-  setRecipe(steps: number, seed: number, cfg: number, width: number, height: number): void;
-  generate(steps: number, seed: number, cfg: number, width: number, height: number): void;
+  setRecipe(r: PanelRecipe): void;
+  generate(r: PanelRecipe): void;
+  /** Vorlage aus dem Vault waehlen (oeffnet den Bild-Picker). */
+  pickInitImage(): void;
+  clearInitImage(): void;
+  /** Das gerade erzeugte Bild ablegen und ALS VORLAGE setzen. Speichert bewusst zuerst:
+   *  eine Vorlage ohne Vault-Pfad haette in der Ergebnis-Notiz keine benennbare Herkunft
+   *  (Spec §4). Legt nur das Bild an, nie eine Notiz. */
+  useResultAsInitImage(): void;
   recheckServer(): void;
   /** Eingebaute Engine: Modell-Download aus dem Panel starten/abbrechen (Spec 0.6 §6). */
   downloadModel(): void;

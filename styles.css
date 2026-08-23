@@ -63,6 +63,31 @@
 .okit-hub-tab.is-active { color: var(--text-normal); border-bottom-color: var(--interactive-accent); }
 .okit-hub-content { flex: 1 1 auto; min-height: 0; position: relative; overflow: hidden; }
 .okit-hub-panel { height: 100%; overflow: auto; }
+/* Vorlagen-Zeile (img2img, 0.8). Steht bewusst VOR .is-hidden: die Aus-Schaltung traegt nur
+   eine Klasse und verloere gegen jede spaetere Ein-Klassen-Regel, die display setzt. */
+.lig-init-row {
+  align-items: center;
+  gap: var(--size-4-2);
+}
+
+.lig-init-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.lig-init-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+}
+
 .okit-hub-panel.is-hidden { display: none; }
 
 .lig-chips { gap: var(--size-4-1); }

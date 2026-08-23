@@ -4,10 +4,10 @@ import { setIcon, setTooltip } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
 import { t } from "../vendor/kit/i18n";
 import { buildViewModel } from "../core/viewmodel";
-import { CFG, SIZES, STEPS, type SizeOption } from "../core/generation";
+import { CFG, DENOISING, SIZES, STEPS, type SizeOption } from "../core/generation";
 import type { HistoryEntry } from "../core/settings";
 import type { HubPanel, TabId } from "./hub";
-import type { ViewHost } from "./view";
+import type { PanelRecipe, ViewHost } from "./view";
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 2_147_483_647);
@@ -29,6 +29,14 @@ export class GeneratePanel implements HubPanel<TabId> {
   private cfgValueEl!: HTMLElement;
   private cfgLabelEl!: HTMLElement;
   private negativePromptRowEl!: HTMLElement;
+  private initRowEl!: HTMLElement;
+  private initThumbEl!: HTMLImageElement;
+  private initPathEl!: HTMLElement;
+  private initClearBtn!: HTMLButtonElement;
+  private denoiseLabelEl!: HTMLElement;
+  private denoiseEl!: HTMLInputElement;
+  private denoiseValueEl!: HTMLElement;
+  private initFromResultBtn!: HTMLButtonElement;
   /** Zuletzt angewandter Steps-Bereich — Rebuild der Slider-Grenzen nur bei Moduswechsel. */
   private stepsRange: { min: number; max: number } | null = null;
   private seedEl!: HTMLInputElement;
@@ -78,6 +86,16 @@ export class GeneratePanel implements HubPanel<TabId> {
       this.refresh();
     });
 
+    // Vorlagen-Zeile (img2img). Ganz versteckt, wenn das Backend kein Ausgangsbild kann.
+    this.initRowEl = root.createDiv({ cls: "lig-row lig-init-row" });
+    this.initRowEl.createSpan({ text: t("generate.initImage"), cls: "lig-label" });
+    this.initThumbEl = this.initRowEl.createEl("img", { cls: "lig-init-thumb" });
+    this.initPathEl = this.initRowEl.createSpan({ cls: "lig-init-path" });
+    const initPickBtn = this.initRowEl.createEl("button", { text: t("generate.initImagePick") });
+    initPickBtn.addEventListener("click", () => this.host.pickInitImage());
+    this.initClearBtn = this.initRowEl.createEl("button", { text: t("generate.initImageClear") });
+    this.initClearBtn.addEventListener("click", () => this.host.clearInitImage());
+
     this.chipsEl = root.createDiv({ cls: "lig-row lig-chips" });
 
     const controls = root.createDiv({ cls: "lig-row" });
@@ -119,6 +137,25 @@ export class GeneratePanel implements HubPanel<TabId> {
       this.cfgValueEl.setText(this.cfgEl.value);
       this.refresh();
     });
+    // Eigene Klasse wie bei lig-cfg-label: der GUI-Smoke muss genau dieses Element messen
+    // koennen, ein blosses .lig-label ist von den Nachbarn nicht zu unterscheiden.
+    this.denoiseLabelEl = controls.createSpan({ text: t("generate.denoising"), cls: "lig-label lig-denoise-label" });
+    const startDenoise = String(DENOISING.default);
+    this.denoiseEl = controls.createEl("input", {
+      cls: "lig-denoise",
+      attr: {
+        type: "range",
+        min: String(DENOISING.min),
+        max: String(DENOISING.max),
+        step: String(DENOISING.step),
+        value: startDenoise,
+      },
+    });
+    this.denoiseValueEl = controls.createSpan({ text: startDenoise, cls: "lig-denoise-value" });
+    this.denoiseEl.addEventListener("input", () => {
+      this.denoiseValueEl.setText(this.denoiseEl.value);
+      this.refresh();
+    });
     controls.createSpan({ text: t("generate.seed"), cls: "lig-label" });
     this.seedEl = controls.createEl("input", {
       cls: "lig-seed",
@@ -138,8 +175,7 @@ export class GeneratePanel implements HubPanel<TabId> {
 
     this.generateBtn = controls.createEl("button", { text: t("generate.button.generate"), cls: "mod-cta lig-generate" });
     this.generateBtn.addEventListener("click", () => {
-      const { width, height } = this.currentSize();
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
+      this.host.generate(this.currentRecipe());
     });
 
     this.emptyEl = root.createDiv({ cls: "lig-empty" });
@@ -160,13 +196,14 @@ export class GeneratePanel implements HubPanel<TabId> {
       // Reroll = neuer Zufalls-Seed + generieren. Der obere "Generate"-Knopf nimmt den
       // Seed aus dem Feld und würfelt nie — so sagt jeder Knopf, was er tut.
       this.seedEl.value = String(randomSeed());
-      const { width, height } = this.currentSize();
-      this.host.generate(Number(this.stepsEl.value), Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
+      this.host.generate(this.currentRecipe());
     });
     this.createBtn = actions.createEl("button", { text: t("generate.button.create"), cls: "mod-cta" });
     this.createBtn.addEventListener("click", () => this.host.saveImage("create"));
     this.insertBtn = actions.createEl("button", { text: t("generate.button.insert"), cls: "mod-cta" });
     this.insertBtn.addEventListener("click", () => this.host.saveImage("insert"));
+    this.initFromResultBtn = actions.createEl("button", { text: t("generate.initImageFromResult"), cls: "lig-init-from-result" });
+    this.initFromResultBtn.addEventListener("click", () => this.host.useResultAsInitImage());
 
     const status = root.createDiv({ cls: "lig-row lig-status" });
     this.statusIconEl = status.createSpan({ cls: "lig-status-icon" });
@@ -229,6 +266,20 @@ export class GeneratePanel implements HubPanel<TabId> {
     return { width: w!, height: h! };
   }
 
+  /** Die EINE Lesestelle der DOM-Felder. `denoising` bleibt null, solange keine Vorlage
+   *  gesetzt ist — der Regler steht dann auf seinem Startwert, aber gemeint ist er nicht. */
+  private currentRecipe(): PanelRecipe {
+    const { width, height } = this.currentSize();
+    return {
+      steps: Number(this.stepsEl.value),
+      seed: Number(this.seedEl.value),
+      cfg: Number(this.cfgEl.value),
+      width,
+      height,
+      denoising: this.host.getPanelState().initImage !== null ? Number(this.denoiseEl.value) : null,
+    };
+  }
+
   /** Ein Rezept aus der Historie in die DOM-Felder schreiben. Der Host wechselt danach
    *  auf den Generate-Tab; refresh() zieht Chips/Aktiv-Zustand nach. */
   applyRecipe(entry: HistoryEntry): void {
@@ -244,6 +295,10 @@ export class GeneratePanel implements HubPanel<TabId> {
     const cfg = Math.min(CFG.max, Math.max(CFG.min, entry.cfg));
     this.cfgEl.value = String(cfg);
     this.cfgValueEl.setText(String(cfg));
+    // Die Vorlage selbst setzt der HOST (nur er kann den Vault lesen) — hier nur der Regler.
+    const denoise = entry.denoising ?? DENOISING.default;
+    this.denoiseEl.value = String(denoise);
+    this.denoiseValueEl.setText(String(denoise));
     const inCatalog = SIZES.some((s) => s.width === entry.width && s.height === entry.height);
     const size = inCatalog ? { width: entry.width, height: entry.height } : SIZES[0]!;
     this.sizeEl!.value = `${size.width}x${size.height}`;
@@ -251,9 +306,8 @@ export class GeneratePanel implements HubPanel<TabId> {
   }
 
   refresh(): void {
-    const { width, height } = this.currentSize();
-    this.host.setRecipe(Number(this.stepsEl.value), Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
     const state = this.host.getPanelState();
+    this.host.setRecipe(this.currentRecipe());
     this.renderChips();
     const vm = buildViewModel(state);
 
@@ -266,6 +320,18 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.cfgEl.toggleClass("is-hidden", !vm.controls.cfg);
     this.cfgValueEl.toggleClass("is-hidden", !vm.controls.cfg);
     this.sizeRowEl.toggleClass("is-hidden", !vm.controls.size);
+    // Zwei getrennte Fragen (Spec §3): kann das BACKEND ein Ausgangsbild (ganze Zeile), und
+    // gibt es ueberhaupt eine Vorlage zu aendern (nur der Regler)?
+    this.initRowEl.toggleClass("is-hidden", !vm.controls.initImage);
+    this.denoiseLabelEl.toggleClass("is-hidden", !vm.controls.denoising);
+    this.denoiseEl.toggleClass("is-hidden", !vm.controls.denoising);
+    this.denoiseValueEl.toggleClass("is-hidden", !vm.controls.denoising);
+    this.initFromResultBtn.toggleClass("is-hidden", !vm.controls.initImage);
+    const init = state.initImage;
+    this.initThumbEl.toggleClass("is-hidden", init === null);
+    this.initClearBtn.toggleClass("is-hidden", init === null);
+    if (init !== null) this.initThumbEl.src = init.dataUrl;
+    this.initPathEl.setText(init?.path ?? t("generate.initImageNone"));
     if (this.stepsRange?.min !== vm.controls.stepsMin || this.stepsRange.max !== vm.controls.stepsMax) {
       this.stepsRange = { min: vm.controls.stepsMin, max: vm.controls.stepsMax };
       // Vor dem Setzen der Grenzen lesen — danach hat der Browser bereits geklemmt.
@@ -283,7 +349,7 @@ export class GeneratePanel implements HubPanel<TabId> {
       this.stepsValueEl.setText(String(clamped));
       if (clamped !== vorher) {
         // Rezept im Host nachziehen, sonst rechnet generate() mit dem alten Wert.
-        this.host.setRecipe(clamped, Number(this.seedEl.value), Number(this.cfgEl.value), width, height);
+        this.host.setRecipe(this.currentRecipe());
       }
     }
 
