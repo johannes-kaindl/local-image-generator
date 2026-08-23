@@ -83,6 +83,25 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Bundles passen — `onnxruntime-web/webgpu` referenziert `ort-wasm-simd-threaded.asyncify.wasm`,
   nicht jsep. Falsche Paarung = stiller Ewig-Haenger. `scripts/build-assets.mjs` liest den
   Namen aus dem Bundle und hasht genau diese Datei; `check:manifest` bewacht es.
+- **Ein Modell ueber 2 GiB geht nur mit GESTUECKELTER External Data — und nur unter WebGPU.**
+  Gemessen 2026-08-23 im Renderer (Obsidian 1.13.7 / Electron 39 / Chromium 142, M5 Pro):
+  ein plain `ArrayBuffer` endet bei ~2,0 GiB, `WebAssembly.Memory` bei exakt 4 GiB (wasm32,
+  65536 Seiten). Eine monolithische `.onnx_data` von 4,78 GiB (SDXL-Turbos UNet) ist damit
+  gar nicht uebergebbar — der Export muss die Tensoren auf mehrere Dateien verteilen
+  (`convert_model_to_external_data(all_tensors_to_one_file=False)`). ORTs `externalData`
+  nimmt `Blob | Uint8Array | ArrayBuffer`, also unseren Cache-API-Pfad; die URL-Variante
+  wuerde ORT selbst fetchen lassen und ist deshalb ausgeschlossen.
+  **Die 4-GiB-Grenze des WASM-Heaps bindet dabei NICHT**, weil der WebGPU-EP die Gewichte
+  direkt von JS in GPU-Puffer laedt (Glue-Callback: `case 0` schreibt in `HEAPU8`, `case 1`
+  laedt zur GPU hoch). Gegenprobe am identischen 4,75-GiB-Modell, einzige Variable der EP:
+  `wasm` stirbt mit `std::bad_alloc`, `webgpu` baut die Session in 1,1 s.
+  ⚠️ **Spitzenspeicher ist rund das Doppelte der Modellgroesse** — ORT gibt die JS-Puffer
+  erst nach `createSession` frei (`unmountExternalData` im `finally`), bis dahin liegen
+  Gewichte in JS UND auf der GPU; auf Apple Silicon ist das derselbe Speicherpool.
+- **Die WebGPU-Limits im Obsidian-Renderer sind weit ueber den Spec-Defaults** (gemessen
+  2026-08-23, M5 Pro): `maxBufferSize` und `maxStorageBufferBindingSize` je 4 GiB statt
+  256/128 MiB, `shader-f16` vorhanden, 16 GiB GPU-Belegung ohne device-lost. Puffergrenzen
+  sind hier also kein Engpass — die JS-Seite ist es.
 - **Feeds an die Session anpassen, nie hardcoden:** `Session.inputTypes` (Dtype) UND
   `Session.inputShapes` (Rang). Die eigene Konversion deklariert `timestep` als 0-d-Skalar
   (`shape []`) — `dims [1]` bricht das UNet mit „Gemm: must be 2 dimensional" (gemessen
