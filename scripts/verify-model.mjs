@@ -20,9 +20,16 @@ const EXPECT_SD_TURBO = {
 // Schreiben dieser Zeilen noch unvollstaendig. Bestaetigt wird das erst mit einem echten
 // npm run assets:verify dist-assets/sdxl-turbo (Brief Step 5). Die Pruefung bleibt trotzdem
 // fail-safe: eine falsche Erwartung faellt als "✗" auf, nicht als stiller Fehlschlag.
+// requireHiddenStates zaehlt Ausgaenge mit dem PRAEFIX "hidden_states" (der Export liefert sie
+// einzeln indiziert: hidden_states.0, hidden_states.1, ... — nicht als ein Ausgang namens
+// "hidden_states"). Mindestens drei werden verlangt, weil es ohne die einen "vorletzten" gar
+// nicht geben kann. text_encoder_2 verzichtet bewusst auf firstOutput: der zweite Encoder liefert
+// die pooled Embeddings (text_embeds) zuerst, last_hidden_state danach — das ist am echten Modell
+// gemessen (2026-08-24) keine Fehlkonversion, sondern die Reihenfolge dieses Exports. Die
+// Reihenfolge ist keine Zusage und wird deshalb nicht geprueft; stattdessen requiredOutputs.
 const EXPECT_SDXL_TURBO = {
   text_encoder: { inputs: ["input_ids"], firstOutput: "last_hidden_state", requireHiddenStates: true },
-  text_encoder_2: { inputs: ["input_ids"], firstOutput: "last_hidden_state", requireHiddenStates: true },
+  text_encoder_2: { inputs: ["input_ids"], requiredOutputs: ["text_embeds", "last_hidden_state"], requireHiddenStates: true },
   unet: {
     inputs: ["sample", "timestep", "encoder_hidden_states", "text_embeds", "time_ids"],
     firstOutput: "out_sample",
@@ -69,19 +76,23 @@ for (const [part, exp] of Object.entries(EXPECT)) {
   const inputs = [...s.inputNames];
   const meta = Object.fromEntries((s.inputMetadata ?? []).map((m) => [m.name, m.isTensor ? `${m.type}${JSON.stringify(m.shape ?? [])}` : "?"]));
   const outputs = [...s.outputNames];
+  const hiddenStatesOutputs = outputs.filter((n) => n.startsWith("hidden_states"));
   const okInputs = exp.inputs.every((n) => inputs.includes(n));
-  const okOut = outputs[0] === exp.firstOutput;
-  const okHiddenStates = !exp.requireHiddenStates || outputs.includes("hidden_states");
+  const okOut = !exp.firstOutput || outputs[0] === exp.firstOutput;
+  const okRequiredOutputs = (exp.requiredOutputs ?? []).every((n) => outputs.includes(n));
+  const okHiddenStates = !exp.requireHiddenStates || hiddenStatesOutputs.length >= 3;
   const bucketNote = buckets.length > 0 ? ` · ${buckets.length} Buckets` : "";
+  const hiddenNote = exp.requireHiddenStates ? ` · ${hiddenStatesOutputs.length} hidden_states` : "";
   const totalSize = size + buckets.reduce((sum, b) => sum + b.data.length, 0);
-  const line = `${part}: ${(totalSize / 1e6).toFixed(0)} MB${bucketNote} · inputs ${JSON.stringify(meta)} · outputs ${JSON.stringify(outputs)}`;
-  if (okInputs && okOut && okHiddenStates) {
+  const line = `${part}: ${(totalSize / 1e6).toFixed(0)} MB${bucketNote}${hiddenNote} · inputs ${JSON.stringify(meta)} · outputs ${JSON.stringify(outputs)}`;
+  if (okInputs && okOut && okRequiredOutputs && okHiddenStates) {
     console.log("✓ " + line);
   } else {
     const missing = [];
     if (!okInputs) missing.push(`inputs ${exp.inputs.join(",")}`);
     if (!okOut) missing.push(`out[0] ${exp.firstOutput}`);
-    if (!okHiddenStates) missing.push("output hidden_states (SDXL braucht den vorletzten Hidden-Layer, Spec §9.1)");
+    if (!okRequiredOutputs) missing.push(`outputs ${exp.requiredOutputs.join(",")}`);
+    if (!okHiddenStates) missing.push("mindestens 3 hidden_states.*-Ausgaenge (SDXL braucht den vorletzten Hidden-Layer, Spec §9.1)");
     console.error("✗ " + line + ` — erwartet ${missing.join(" · ")}`);
     bad++;
   }
