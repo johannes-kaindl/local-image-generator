@@ -27,6 +27,14 @@ export interface ApiRequest {
   /** Fehlt der Seed, wird gewuerfelt — wie „Reroll" im Panel. Der verwendete Wert steht
    *  danach in `ApiParams.seed`, damit ein Konsument das Ergebnis reproduzieren kann. */
   seed?: number;
+  /** Vorlage fuer img2img: Base64-PNG **ohne** `data:`-Praefix. Fehlt es, ist der Lauf
+   *  txt2img. Nur im Server-Modus wirksam — `capabilities.initImage` sagt vorher, ob es
+   *  ueberhaupt angeboten werden darf; im builtin-Modus wird es still gestrichen statt
+   *  abgelehnt (Keine-Attrappen-Linie). */
+  initImage?: string;
+  /** Wie stark die Vorlage geaendert werden darf, 0..1 (A1111: `denoising_strength`).
+   *  Ohne `initImage` ohne Wirkung. Fehlt es, gilt 0.75. */
+  denoising?: number;
   /** `pct` ist null, wenn das Backend keinen Fortschritt liefert (Draw Things kennt
    *  /sdapi/v1/progress nicht). Die Phase kommt trotzdem — ein builtin-Lauf steht
    *  minutenlang in "loading-model", und ein Konsument ohne dieses Signal zeigt einen
@@ -72,6 +80,8 @@ export interface ApiStatus {
     cfg: boolean;
     maxSteps: number;
     fixedSize: { width: number; height: number } | null;
+    /** Kann dieses Backend von einer Vorlage aus weiterrechnen (img2img)? */
+    initImage: boolean;
   };
 }
 // Konkret: builtin → { negativePrompt: false, cfg: false, maxSteps: BUILTIN_MODEL.steps.max (4),
@@ -117,6 +127,9 @@ export interface ApiDeps {
   run(
     params: GenParams,
     onProgress?: ApiRequest["onProgress"],
+    /** Die BYTES der Vorlage — bewusst ein eigener Parameter statt eines Feldes in
+     *  `params`: das Rezept traegt nur die Herkunft, nie das Bild (Spec §1). */
+    initImageData?: string | null,
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }>;
   save(image: ApiImage, createNote: boolean): Promise<ApiSaveResult>;
   /** Voreinstellung des Nutzers (settings.createMode === "note"). */
@@ -172,6 +185,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
           cfg: caps.cfg,
           maxSteps: caps.maxSteps,
           fixedSize: caps.fixedSize,
+          initImage: caps.initImage,
         },
       };
     },
@@ -180,8 +194,16 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
       if (deps.isBusy()) return { ok: false, reason: "busy" };
       const r = deps.readiness();
       if (!r.ready) return { ok: false, reason: r.reason };
-      const params = deps.harden(req);
-      const out = await deps.run(params, req.onProgress);
+      // NIE `deps.harden(req)`: `ApiRequest.initImage` ist BASE64, `HardenInput.initImage`
+      // ist `{ ref }` — der bequeme Spread legte megabytegrosse Bilddaten ins Pfad-Feld und
+      // schriebe sie als `init_image: [[…]]` in die Ergebnis-Notiz. Die Uebersetzung ist
+      // deshalb ausdruecklich, und `{ ref: null }` sagt genau das Richtige: es gibt eine
+      // Vorlage, aber keine benennbare Herkunft.
+      const params = deps.harden({
+        ...req,
+        initImage: req.initImage !== undefined ? { ref: null } : undefined,
+      });
+      const out = await deps.run(params, req.onProgress, req.initImage ?? null);
       if (!out.ok) return { ok: false, reason: "failed", message: out.message };
       return { ok: true, image: { base64: out.base64, params: toApiParams(params) } };
     },
