@@ -85,6 +85,32 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Bundles passen — `onnxruntime-web/webgpu` referenziert `ort-wasm-simd-threaded.asyncify.wasm`,
   nicht jsep. Falsche Paarung = stiller Ewig-Haenger. `scripts/build-assets.mjs` liest den
   Namen aus dem Bundle und hasht genau diese Datei; `check:manifest` bewacht es.
+- **Stueckeln heisst NICHT „alles auslagern": kleine Tensoren muessen inline bleiben.** Der
+  Bucket-Splitter (`tools/convert/split_external_data.py`) fuehrt deshalb `size_threshold=1024`
+  (der ONNX-Default). Ohne die Schwelle entsteht ein Modell, das strukturell einwandfrei aussieht
+  — richtige `location`-Strings, ausgerichtete Offsets, ladbare Buckets — und das ORT trotzdem
+  abweist: `[ShapeInferenceError] Cannot parse data from external tensors ... onnx::Unsqueeze_1780`.
+  Grund: Achsen fuer `Unsqueeze`, Formen fuer `Reshape` und Aehnliches braucht die Shape-Inferenz
+  schon beim LADEN, bevor irgendwer External Data aufloest. Gemessen 2026-08-24 am echten
+  SDXL-Turbo-UNet; fuenf gruene Splitter-Tests gegen synthetische Modelle hatten es nicht gesehen.
+- **Ein fp16-Modell ueber 2 GiB laesst sich nicht ohne External Data ZWISCHENSPEICHERN.**
+  `save_model_to_file(..., use_external_data_format=False)` stirbt bei 4,78 GiB mit
+  `google.protobuf.message.EncodeError: Failed to serialize proto` — protobuf serialisiert keine
+  Nachricht ueber 2 GiB. Der split-Zweig speichert deshalb MIT External Data (eine grosse
+  temporaere `model.onnx.data`), stueckelt daraus und loescht die Zwischendatei. Sie darf nicht
+  liegen bleiben: `build-assets.mjs` naehme sie ins Manifest, `assets:upload` lued sie mit hoch.
+- **SDXLs Text-Encoder liefern die Hidden States als INDIZIERTE EINZELAUSGAENGE**, nicht als
+  einen Ausgang `hidden_states`: `hidden_states.0` … `.12` beim ersten (CLIP-L, 13 Stueck) und
+  `.0` … `.32` beim zweiten (bigG, 33 Stueck). SDXL braucht den VORLETZTEN — also `.11` bzw.
+  `.31`. Wer auf den Namen `hidden_states` prueft, findet nie etwas; wer `last_hidden_state`
+  nimmt, bekommt kein Fehlerbild, sondern ein stillschweigend schlechteres Bild.
+  Ebenso: beim zweiten Encoder steht `text_embeds` (pooled) an Position 0, nicht
+  `last_hidden_state` — die Reihenfolge der Ausgaenge ist keine Zusage des Exports.
+- **Das Pad-Token ist pro Tokenizer verschieden — und die Abweichung sitzt beim ERSTEN.**
+  Gemessen 2026-08-23 an den HF-Configs: sd-turbo `!` = 0 · sdxl-turbo `tokenizer` (CLIP-L)
+  `<|endoftext|>` = **49407** · sdxl-turbo `tokenizer_2` (bigG) `!` = 0. Der bestehende
+  `tokenize()`-Default 0 ist fuer SD-Turbo und den ZWEITEN SDXL-Encoder richtig und fuer den
+  ERSTEN falsch. Auch das kostet nur Qualitaet, nie einen Fehler.
 - **Ein Modell ueber 2 GiB geht nur mit GESTUECKELTER External Data — und nur unter WebGPU.**
   Gemessen 2026-08-23 im Renderer (Obsidian 1.13.7 / Electron 39 / Chromium 142, M5 Pro):
   ein plain `ArrayBuffer` endet bei ~2,0 GiB, `WebAssembly.Memory` bei exakt 4 GiB (wasm32,
