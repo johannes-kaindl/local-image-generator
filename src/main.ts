@@ -9,7 +9,7 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
-import { BUILTIN_MODEL, allAssets } from "./core/model-manifest";
+import { assetsFor, BUILTIN_MODELS, modelById, RUNTIME_WASM, type AssetFile, type BuiltinModel, type BuiltinModelId } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
@@ -64,6 +64,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   private state: Omit<PanelState, "mode"> = {
     initImage: null,
     denoising: null,
+    downloadedModels: [],
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
     run: { kind: "idle" },
@@ -267,8 +268,27 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   private currentModelName(): string {
     return this.settings.engine === "builtin"
-      ? BUILTIN_MODEL.id
+      ? this.settings.builtinModel
       : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
+  }
+
+  /** Das gewaehlte eingebaute Modell (settings.builtinModel) — abgeleitet, keine zweite
+   *  Kopie. Oeffentlich: der Settings-Tab (Task 11) zeigt Name/Groesse/Lizenz darueber an. */
+  activeModel(): BuiltinModel {
+    return modelById(this.settings.builtinModel);
+  }
+
+  /** Alle Dateien des gewaehlten Modells inkl. Runtime-WASM — der Cache-/Download-Umfang fuer
+   *  refreshEngineState()/startDownload(). removeModel() nutzt bewusst NUR assetsFor(id): die
+   *  Runtime gehoert keinem Modell allein und darf beim Loeschen eines Modells nicht mit weg. */
+  private activeFiles(): AssetFile[] {
+    return [...assetsFor(this.settings.builtinModel), RUNTIME_WASM];
+  }
+
+  /** Welche eingebauten Modelle vollstaendig im Cache liegen — fuer den Settings-Tab (Task 11),
+   *  der pro Modell Download/Loeschen anbietet. */
+  get downloadedModels(): BuiltinModelId[] {
+    return this.state.downloadedModels;
   }
 
   /** Der EINE Kontext, unter dem gehaertet wird — Panel wie Provider-API. Zwei Kontexte
@@ -396,17 +416,26 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.setEngineState({ kind: "gpu-missing", reason: gpu });
       return;
     }
-    const complete = await this.modelStore.isComplete(allAssets()).catch(() => false);
+    const complete = await this.modelStore.isComplete(this.activeFiles()).catch(() => false);
     if (this.unloaded) return;
+    // Welche Modelle ueberhaupt im Cache liegen — unabhaengig vom aktiven, fuer den
+    // Settings-Tab (Task 11). Ohne RUNTIME_WASM: die zaehlt nicht als Teil eines Modells.
+    const geladen: BuiltinModelId[] = [];
+    for (const id of Object.keys(BUILTIN_MODELS) as BuiltinModelId[]) {
+      if (await this.modelStore.isComplete(assetsFor(id)).catch(() => false)) geladen.push(id);
+    }
+    if (this.unloaded) return;
+    this.state.downloadedModels = geladen;
     this.setEngineState({ kind: complete ? "ready" : "not-downloaded" });
   }
 
-  /** Opt-in-Download aller fehlenden Assets (Spec 0.6 §4: ohne Klick fließt kein Byte). */
+  /** Opt-in-Download aller fehlenden Assets des GEWAEHLTEN Modells (Spec 0.6 §4: ohne Klick
+   *  fließt kein Byte). */
   async startDownload(): Promise<void> {
     if (this.downloadAbort) return;
     const ac = new AbortController();
     this.downloadAbort = ac;
-    const files = allAssets();
+    const files = this.activeFiles();
     try {
       await this.modelStore.download(
         files,
@@ -445,8 +474,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.downloadAbort?.abort();
   }
 
-  /** Alle Assets aus dem Cache entfernen (Settings, nach Bestätigung); GPU-Sessions dazu frei. */
-  async removeModel(): Promise<boolean> {
+  /** Assets EINES Modells aus dem Cache entfernen (Settings, nach Bestätigung); GPU-Sessions
+   *  dazu frei. Default = das gewaehlte Modell (Ruf ohne Argument, wie der bestehende
+   *  Settings-Knopf ihn nutzt). Loescht bewusst OHNE RUNTIME_WASM — die gehoert keinem Modell
+   *  allein und darf dem jeweils anderen Modell nicht unter den Fuessen weggezogen werden. */
+  async removeModel(id: BuiltinModelId = this.settings.builtinModel): Promise<boolean> {
     if (this.isBusy()) {
       new Notice(t("notice.busy"));
       return false;
@@ -455,22 +487,46 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const e = this.localEngine;
     this.localEngine = null;
     await e?.dispose();
-    await this.modelStore.deleteAll(allAssets());
+    await this.modelStore.deleteAll(assetsFor(id));
     await this.refreshEngineState();
     return true;
   }
 
   private ensureLocalEngine(): LocalEngineBackend {
     if (this.localEngine) return this.localEngine;
-    const be = new LocalEngineBackend({
-      store: this.modelStore,
-      createSession: createOrtSession,
-      initRuntime: initOrt,
-      checkGpu,
-      encodePng: rgbaToDataUrl,
-    });
+    const be = new LocalEngineBackend(
+      {
+        store: this.modelStore,
+        createSession: createOrtSession,
+        initRuntime: initOrt,
+        checkGpu,
+        encodePng: rgbaToDataUrl,
+      },
+      this.activeModel(),
+    );
     this.localEngine = be;
     return be;
+  }
+
+  /** Modell wechseln (Settings, Task 10): dieselbe Sperre wie setEngine() — ein Wechsel darf
+   *  die GPU-Sessions nicht unter einem laufenden Panel- ODER API-Lauf wegziehen (isBusy()
+   *  deckt beide). Schaltet NICHT automatisch zurueck, wenn das neue Modell fehlt: das
+   *  Panel zeigt dann seinen Download-Aufruf (Spec §4, „ohne Klick fließt kein Byte" gilt
+   *  auch hier — dieser Wechsel selbst laedt nichts). */
+  async setBuiltinModel(id: BuiltinModelId): Promise<void> {
+    if (this.isBusy()) {
+      new Notice(t("notice.busy"));
+      return;
+    }
+    if (id === this.settings.builtinModel) return;
+    this.cancelDownload();
+    const e = this.localEngine;
+    this.localEngine = null;
+    await e?.dispose();
+    this.settings.builtinModel = id;
+    await this.saveSettings();
+    await this.refreshEngineState();
+    this.refreshViews();
   }
 
   async saveSettings(): Promise<void> {

@@ -2,7 +2,7 @@
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
 import { backendCapabilities } from "./generation";
-import { allAssets, BUILTIN_MODEL, totalBytes } from "./model-manifest";
+import { allAssets, BUILTIN_MODEL, totalBytes, type BuiltinModelId } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -74,6 +74,9 @@ export interface PanelState {
    *  Vorschaubild UND den naechsten Lauf — die Bytes werden EINMAL gelesen, damit eine
    *  inzwischen geaenderte Datei das Rezept nicht unterlaeuft). null = txt2img. */
   initImage: { path: string; dataUrl: string } | null;
+  /** Welche eingebauten Modelle vollstaendig im Cache liegen — vom aktiven `mode` unabhaengig,
+   *  bezieht sich immer auf alle Eintraege in BUILTIN_MODELS (Task 10). */
+  downloadedModels: BuiltinModelId[];
   engine: EngineState;
   server: ServerState;
   run: RunState;

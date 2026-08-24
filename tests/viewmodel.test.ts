@@ -25,6 +25,7 @@ const baseParams: GenParams = {
 const base: PanelState = {
   initImage: null,
   denoising: null,
+  downloadedModels: [],
   mode: "server",
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
