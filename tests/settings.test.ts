@@ -75,6 +75,8 @@ describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
       mfluxPath: "/path/to/mflux",
       modelsDir: "/path/to/models",
       sectionsCollapsed: { model: true },
+      builtinModel: "sdxl-turbo",
+      showModelPicker: true,
     };
     expect(validate(healthy)).toEqual(healthy);
   });
@@ -309,5 +311,26 @@ describe("engine-Migration (0.6)", () => {
     expect(validate({}).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
     expect(validate({ assetBaseUrl: "  " }).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
     expect(validate({ assetBaseUrl: "http://127.0.0.1:7862/" }).assetBaseUrl).toBe("http://127.0.0.1:7862/");
+  });
+});
+
+describe("Modellwahl-Settings (Spec 0.9 §6.1)", () => {
+  it("Defaults sind sd-turbo und ausgeschalteter Picker", () => {
+    expect(DEFAULT_SETTINGS.builtinModel).toBe("sd-turbo");
+    expect(DEFAULT_SETTINGS.showModelPicker).toBe(false);
+  });
+
+  it("unbekannte Modell-ID faellt auf den Default zurueck", () => {
+    const s = validate({ ...DEFAULT_SETTINGS, builtinModel: "flux" });
+    expect(s.builtinModel).toBe("sd-turbo");
+  });
+
+  it("ein Bestandsstand ohne die Felder laedt unveraendert", () => {
+    const alt = { ...DEFAULT_SETTINGS } as Record<string, unknown>;
+    delete alt["builtinModel"];
+    delete alt["showModelPicker"];
+    const s = validate(alt);
+    expect(s.builtinModel).toBe("sd-turbo");
+    expect(s.showModelPicker).toBe(false);
   });
 });
