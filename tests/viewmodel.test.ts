@@ -26,6 +26,8 @@ const base: PanelState = {
   initImage: null,
   denoising: null,
   downloadedModels: [],
+  builtinModel: "sd-turbo",
+  showModelPicker: false,
   mode: "server",
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
@@ -40,6 +42,9 @@ const base: PanelState = {
   width: 512,
   height: 512,
 };
+
+/** Basis + Overrides — spart das Ausschreiben aller PanelState-Felder in jedem Test. */
+const stateOf = (overrides: Partial<PanelState>): PanelState => ({ ...base, ...overrides });
 
 describe("buildViewModel — server state", () => {
   it("unconfigured: Fehler-Status, Empty mit Settings-CTA, Generate disabled", () => {
@@ -191,13 +196,15 @@ describe("buildViewModel — builtin engine (0.6)", () => {
 
   it("server-Modus: alle Regler sichtbar, Steps 1–50", () => {
     expect(buildViewModel(base).controls).toEqual({
-      negative: true, cfg: true, size: true, initImage: true, denoising: false, stepsMin: 1, stepsMax: 50,
+      negative: true, cfg: true, size: true, sizes: null, initImage: true, denoising: false,
+      modelPicker: false, stepsMin: 1, stepsMax: 50,
     });
   });
   it("builtin/not-downloaded: Regler reduziert, CTA download, Generate gesperrt — der Server-Zustand ist egal", () => {
     const vm = buildViewModel(builtin);
     expect(vm.controls).toEqual({
-      negative: false, cfg: false, size: false, initImage: false, denoising: false, stepsMin: 1, stepsMax: 4,
+      negative: false, cfg: false, size: false, sizes: [{ width: 512, height: 512 }], initImage: false,
+      denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 4,
     });
     expect(vm.empty?.ctaAction).toBe("download");
     expect(vm.status.cls).toBe("is-error");
@@ -329,5 +336,47 @@ describe("generateEnabled kennt img2img", () => {
     const stand: PanelState = { ...fertig, image: { dataUrl: "data:,", params: gerechnet },
                                 initImage: null, denoising: null };
     expect(buildViewModel(stand).generateEnabled).toBe(true);
+  });
+});
+
+describe("Modell-Picker im Panel (Spec 0.9 §6.2)", () => {
+  const basis = { ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" as const };
+
+  it("unsichtbar, wenn der Toggle aus ist — auch bei zwei geladenen Modellen", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: false, downloadedModels: ["sd-turbo", "sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(false);
+  });
+
+  it("unsichtbar, wenn nur ein Modell geladen ist — auch mit Toggle an", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: true, downloadedModels: ["sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(false);
+  });
+
+  it("sichtbar erst, wenn beide Bedingungen erfuellt sind", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: true, downloadedModels: ["sd-turbo", "sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(true);
+    expect(vm.modelOptions.map((o) => o.id)).toEqual(["sd-turbo", "sdxl-turbo"]);
+  });
+
+  it("listet NUR geladene Modelle — ein Panel-Klick darf nie einen Download ausloesen", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: true, downloadedModels: ["sdxl-turbo"] });
+    expect(vm.modelOptions.every((o) => o.id === "sdxl-turbo")).toBe(true);
+  });
+
+  it("im Server-Modus gibt es keinen Picker", () => {
+    const vm = buildViewModel({ ...stateOf({ mode: "server" }), showModelPicker: true, downloadedModels: ["sd-turbo", "sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(false);
+  });
+});
+
+describe("Groessen-Zeile (Spec 0.9 §6.3)", () => {
+  it("bei sd-turbo weg, bei sdxl-turbo da", () => {
+    expect(buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sd-turbo" }).controls.size).toBe(false);
+    expect(buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" }).controls.size).toBe(true);
+  });
+
+  it("die Sichtbarkeit haengt an sizes.length, nicht am Modellnamen", () => {
+    const vm = buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" });
+    expect(vm.controls.sizes).toHaveLength(2);
   });
 });

@@ -58,10 +58,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   private localEngine: LocalEngineBackend | null = null;
   private downloadAbort: AbortController | null = null;
   onEngineStateChanged: (() => void) | null = null;
-  // `mode` fehlt hier bewusst: es IST settings.engine und wird in getPanelState() abgeleitet
+  // `mode`, `builtinModel`, `showModelPicker` fehlen hier bewusst: sie SIND settings.engine /
+  // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
-  private state: Omit<PanelState, "mode"> = {
+  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> = {
     initImage: null,
     denoising: null,
     downloadedModels: [],
@@ -125,8 +126,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const host: ViewHost = {
       getPanelState: () => {
         this.state.editorActive = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor !== undefined;
-        // Die einzige Stelle, an der `mode` entsteht — abgeleitet, nicht gespiegelt.
-        return { ...this.state, mode: this.settings.engine };
+        // Die einzige Stelle, an der `mode`/`builtinModel`/`showModelPicker` entstehen —
+        // abgeleitet, nicht gespiegelt.
+        return {
+          ...this.state,
+          mode: this.settings.engine,
+          builtinModel: this.settings.builtinModel,
+          showModelPicker: this.settings.showModelPicker,
+        };
       },
       getSettings: () => this.settings,
       setPrompt: (p) => {

@@ -1,8 +1,8 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
-import { backendCapabilities } from "./generation";
-import { allAssets, BUILTIN_MODEL, totalBytes, type BuiltinModelId } from "./model-manifest";
+import { backendCapabilities, type SizeOption } from "./generation";
+import { allAssets, BUILTIN_MODEL, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -77,6 +77,13 @@ export interface PanelState {
   /** Welche eingebauten Modelle vollstaendig im Cache liegen — vom aktiven `mode` unabhaengig,
    *  bezieht sich immer auf alle Eintraege in BUILTIN_MODELS (Task 10). */
   downloadedModels: BuiltinModelId[];
+  /** Das gewaehlte eingebaute Modell (settings.builtinModel) — wie `mode` abgeleitet aus den
+   *  Settings, hier aber Teil des States selbst (kein Omit noetig: es lebt nur in Settings,
+   *  nicht doppelt in main.ts' internem State). */
+  builtinModel: BuiltinModelId;
+  /** Will der Nutzer den Modell-Picker ueberhaupt sehen (settings.showModelPicker)? Nur EINE
+   *  von zwei unabhaengigen Bedingungen — die zweite ist `downloadedModels.length > 1`. */
+  showModelPicker: boolean;
   engine: EngineState;
   server: ServerState;
   run: RunState;
@@ -105,16 +112,27 @@ export interface PanelViewModel {
     negative: boolean;
     cfg: boolean;
     size: boolean;
+    /** Die Groessen, aus denen bei sichtbarer Groessen-Zeile gewaehlt werden darf — null im
+     *  Server-Modus (freie Wahl). `size` haengt an `sizes.length`, nicht am Modellnamen: ein
+     *  drittes Modell mit nur einer Groesse braucht dafuer keine neue Fallunterscheidung. */
+    sizes: readonly SizeOption[] | null;
     /** Kann das BACKEND ein Ausgangsbild? Steuert die ganze Vorlagen-Zeile. */
     initImage: boolean;
     /** Gibt es ueberhaupt etwas zu aendern? Steuert nur den Denoise-Regler — eine zweite,
      *  unabhaengige Frage: ohne Vorlage bewirkt er nichts und waere eine Attrappe. */
     denoising: boolean;
+    /** Zwei unabhaengige Bedingungen wie beim Denoise-Regler: will der Nutzer den Picker
+     *  (showModelPicker), UND gibt es ueberhaupt mehr als ein GELADENES Modell zu wechseln.
+     *  Nur builtin — der Server waehlt sein Modell selbst. */
+    modelPicker: boolean;
     stepsMin: number;
     stepsMax: number;
   };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
+  /** Optionen fuer den Modell-Picker — NUR geladene Modelle (Spec 0.9 §6.2): ein Panel-Klick
+   *  darf nie einen Download ausloesen. Leer/irrelevant, wenn `controls.modelPicker` false ist. */
+  modelOptions: { id: BuiltinModelId; label: string }[];
 }
 
 /** Bytes als "812 MB" / "1.7 GB" — für Download-Fortschritt und Modell-Zeile. */
@@ -226,13 +244,13 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     || s.run.kind === "loading-model" || s.run.kind === "external";
   const builtin = s.mode === "builtin";
   const backendReady = builtin ? s.engine.kind === "ready" : s.server.kind === "ok";
-  const caps = backendCapabilities(s.mode);
+  const caps = backendCapabilities(s.mode, s.builtinModel);
 
   const status = builtin ? engineStatus(s) : serverStatus(s);
   const empty = builtin ? engineEmpty(s, busy) : serverEmpty(s, busy);
 
   const modelLabel = builtin
-    ? t("generate.modelBuiltin", BUILTIN_MODEL.label)
+    ? t("generate.modelBuiltin", modelById(s.builtinModel).label)
     : s.server.kind === "ok" && s.server.modelName !== null
       ? t("generate.modelInfo", s.server.modelName)
       : t("generate.modelInApp");
@@ -246,13 +264,18 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     controls: {
       negative: caps.negativePrompt,
       cfg: caps.cfg,
-      // „Größe wählbar" ist genau die Abwesenheit einer festen Größe.
-      size: caps.fixedSize === null,
+      // Sichtbar, sobald es etwas zu WAEHLEN gibt — nicht „ist es Modell X".
+      size: caps.sizes === null || caps.sizes.length > 1,
+      sizes: caps.sizes,
       initImage: caps.initImage,
       denoising: caps.initImage && s.initImage !== null,
+      // Zwei unabhaengige Bedingungen, wie beim Denoise-Regler: will der Nutzer ihn, UND
+      // gibt es mindestens zwei GELADENE Modelle zu wechseln.
+      modelPicker: builtin && s.showModelPicker && s.downloadedModels.length > 1,
       stepsMin: caps.minSteps,
       stepsMax: caps.maxSteps,
     },
     modelLabel,
+    modelOptions: s.downloadedModels.map((id) => ({ id, label: modelById(id).label })),
   };
 }
