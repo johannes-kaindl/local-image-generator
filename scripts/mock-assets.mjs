@@ -1,18 +1,23 @@
 // Lokaler Asset-Server für den GUI-Smoke der eingebauten Engine (Spec 0.6 §10): serviert
 // dist-assets/ (eigene Konversion + ORT-WASM) mit CORS wie huggingface.co, damit der Download-
-// Pfad des Plugins ohne Netz und ohne das HF-Repo läuft. Zähler je Datei auf stdout.
+// Pfad des Plugins ohne Netz und ohne das HF-Repo läuft. Zähler je Datei auf stdout UND in
+// `.mock-assets-counts.json` — an ihr misst Smoke-Punkt 23, ob ein abgebrochener
+// Bestätigungsdialog wirklich KEIN Byte einer Modelldatei lädt (Spec §4, "ohne Klick fließt
+// kein Byte"). Dasselbe Muster wie `.mock-a1111-counts.json` in mock-a1111.mjs.
 //
 //   node scripts/mock-assets.mjs            # http://127.0.0.1:7862
 //   MOCK_ASSETS_PORT=7863 node scripts/mock-assets.mjs
 // Danach im Plugin die Download-Quelle auf http://127.0.0.1:7862 stellen (Settings › Erweitert).
 import http from "node:http";
-import { createReadStream, statSync } from "node:fs";
+import { createReadStream, statSync, writeFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(fileURLToPath(new URL("..", import.meta.url)), "dist-assets");
 const PORT = Number(process.env.MOCK_ASSETS_PORT ?? 7862);
+const COUNTS_FILE = new URL("../.mock-assets-counts.json", import.meta.url);
 const counts = new Map();
+const persist = () => writeFileSync(COUNTS_FILE, JSON.stringify(Object.fromEntries(counts)));
 
 http.createServer((req, res) => {
   const origin = req.headers.origin;
@@ -30,8 +35,12 @@ http.createServer((req, res) => {
   if (!stat.isFile()) { res.writeHead(404, cors); return res.end("not a file"); }
   const size = stat.size;
   counts.set(rel, (counts.get(rel) ?? 0) + 1);
+  persist();
   console.log(`${req.method} ${rel} (${(size / 1e6).toFixed(1)} MB) #${counts.get(rel)}`);
   res.writeHead(200, { ...cors, "Content-Type": "application/octet-stream", "Content-Length": String(size) });
   if (req.method === "HEAD") return res.end();
   createReadStream(path).pipe(res);
-}).listen(PORT, "127.0.0.1", () => console.log(`mock-assets: ${ROOT} auf http://127.0.0.1:${PORT}`));
+}).listen(PORT, "127.0.0.1", () => {
+  persist(); // frische Zaehlerdatei je Server-Start — sonst liest Punkt 23 den Stand eines frueheren Laufs
+  console.log(`mock-assets: ${ROOT} auf http://127.0.0.1:${PORT}`);
+});

@@ -62,7 +62,9 @@ import { join } from "node:path";
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
 import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 import { SIZES, STEPS } from "../src/core/generation";
+import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
 import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
+import { formatBytes } from "../src/core/viewmodel";
 import { registerI18n } from "../src/i18n/strings";
 import { pickLang, setLang, t } from "../src/vendor/kit/i18n";
 
@@ -399,6 +401,11 @@ const MODUS_REGLER = [
   // hiesse, die zweite Sichtbarkeitsstufe als Defekt zu melden.
   ".lig-init-row",
   ".lig-init-from-result",
+  // Zweite Modellstufe (0.9): `.lig-model-pick` steht aus demselben Grund NICHT hier wie
+  // `.lig-denoise` — es haengt an ZWEI unabhaengigen Bedingungen (showModelPicker UND
+  // downloadedModels.length > 1), nicht am Modus allein. Im Server-Modus waere es korrekt
+  // unsichtbar (kein builtin), im builtin-Modus mit nur einem geladenen Modell ebenso — hier
+  // gefuehrt, meldete Punkt 17 diese zweite Stufe als Defekt. Eigener Prüfpunkt: 21.
 ] as const;
 
 /** Gerenderte Sichtbarkeit + Zustand jedes modusabhängigen Reglers, aus dem Renderer geholt.
@@ -636,6 +643,370 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number): Promise<voi
   record(NAME, teile.length === 0, teile.length === 0 ? `img2img +${img2img}, txt2img +${txt2img}, denoising ${String(lauf.denoising)}` : teile.join(" · "));
 }
 
+// --- Zweite Modellstufe (SDXL-Turbo, Spec 0.9): Punkte 20–23 --------------------------------
+
+/** Zähler des lokalen Asset-Mocks (`.mock-assets-counts.json`, Schlüssel = Pfad relativ zu
+ *  `dist-assets/`, z. B. `sdxl-turbo/unet/model.onnx`). Dasselbe Muster wie `mockCounts()`
+ *  oben, eigene Datei: der Bild-Mock und der Asset-Mock laufen unabhängig voneinander. */
+function mockAssetCounts(): Record<string, number> | null {
+  const file = join(process.cwd(), ".mock-assets-counts.json");
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as Record<string, number>;
+  } catch {
+    return null;
+  }
+}
+
+/** Formatierter Name der Modell-Zeile im Settings-Tab, wie `settings-tab.ts` ihn baut
+ *  (`t("settings.model.name", label, formatBytes(totalBytes(modelFiles(id))))`) — dieselbe
+ *  Quelle wie das Plugin selbst, kein zweiter, driftender Erwartungswert im Treiber. */
+function modelRowName(id: BuiltinModelId): string {
+  const bytes = totalBytes([...assetsFor(id), RUNTIME_WASM]);
+  return t("settings.model.name", BUILTIN_MODELS[id].label, formatBytes(bytes));
+}
+
+/** Lädt EIN Modell über den echten Weg (`startDownload()`), bestätigt einen eventuellen
+ *  Dialog (nur bei einem Nicht-Default-Modell, Spec 0.9 §4). Wird von Punkt 21 gebraucht, um
+ *  den Cache-Zustand „zwei geladene Modelle" ohne echten 6,4-GB-Netzabruf herzustellen — die
+ *  Bytes kommen vom lokalen `mock-assets.mjs` (Ruling 2 des Controllers). */
+async function downloadModelViaMock(cdp: Cdp, id: BuiltinModelId, timeoutMs: number): Promise<{ ok: boolean; detail: string }> {
+  await cdp.evaluate(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    if (p.settings.builtinModel !== ${JSON.stringify(id)}) await p.setBuiltinModel(${JSON.stringify(id)});
+    window.__ligSmokeDl = { done: false };
+    p.startDownload()
+      .then(() => { window.__ligSmokeDl.done = true; })
+      .catch((e) => { window.__ligSmokeDl = { done: true, error: String(e) }; });
+    return true;
+  `);
+  if (id !== DEFAULT_BUILTIN_MODEL_ID) {
+    const confirmLabel = t("confirm.bigModel.cta");
+    const clicked = await pollUntil(
+      () =>
+        cdp.evaluate<boolean>(`
+          const btn = [...document.querySelectorAll(".modal-button-container button")]
+            .find((b) => b.textContent.trim() === ${JSON.stringify(confirmLabel)});
+          if (btn) { btn.click(); return true; }
+          return false;
+        `),
+      (v) => v === true,
+      10_000,
+      `warte auf den Bestätigungs-Dialog (${id})`,
+      300,
+    );
+    if (clicked !== true) return { ok: false, detail: "Bestätigungs-Dialog nicht gefunden" };
+  }
+  const done = await pollUntil(
+    () => cdp.evaluate<{ done: boolean; error?: string }>(`return window.__ligSmokeDl ?? { done: false };`),
+    (v) => v.done,
+    timeoutMs,
+    `warte auf den Download von ${id}`,
+    1500,
+  );
+  await cdp.evaluate(`delete window.__ligSmokeDl; return true;`).catch(() => undefined);
+  if (done === null) return { ok: false, detail: "Zeitlimit" };
+  if (done.error) return { ok: false, detail: done.error };
+  return { ok: true, detail: "" };
+}
+
+/**
+ * Punkt 20: ändert ein Modellwechsel im Settings-Tab wirklich die Download-Zeile darunter?
+ *
+ * Über das echte DROPDOWN geschaltet, nicht über einen direkten Settings-Write (Ruling des
+ * Controllers, zweimal an einem Screenshot gemessen): nur `onChange` des Dropdowns ruft
+ * `setBuiltinModel()` UND `refreshUi()`. Ein Test, der `settings.builtinModel` selbst setzt,
+ * würde den Anlass des Wechsels wegnehmen und die Zeile bliebe unverändert stehen — ohne dass
+ * das etwas über einen Bug im Plugin aussagt.
+ */
+async function runModelSwitchCheck(cdp: Cdp): Promise<void> {
+  const NAME = "20. Modellwechsel im Settings-Tab ändert die Download-Zeile";
+  const current = await cdp.evaluate<BuiltinModelId>(
+    `return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.builtinModel;`,
+  );
+  const other: BuiltinModelId = current === "sd-turbo" ? "sdxl-turbo" : "sd-turbo";
+  const erwartetVorher = modelRowName(current);
+  const erwartetNachher = modelRowName(other);
+
+  const result = await cdp.evaluate<{ vorher: string | null; nachher: string | null; select: boolean }>(`
+    app.setting.open();
+    app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
+    await new Promise((r) => setTimeout(r, 300));
+    // Obsidian 1.13 cacht getSettingDefinitions() und wertet sie nicht bei jedem Oeffnen neu
+    // aus (AGENTS.md-Gotcha) — nur der eigene Dropdown-onChange ruft refreshUi(). Der Engine-
+    // Wechsel VOR diesem Punkt lief ueber plugin.setEngine() direkt (Punkt 20 selbst braucht
+    // das nicht — nur die anderen drei Punkte in diesem Block), der Settings-Tab weiss davon
+    // also noch nichts. Erzwungenes update() gleicht das aus, bevor "vorher" gelesen wird; der
+    // Wechsel UNTEN geht ueber das echte Dropdown und loest refreshUi() dann selbst aus.
+    if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
+    const doc = app.setting?.activeTab?.containerEl?.ownerDocument ?? document;
+    const namen = () => [...doc.querySelectorAll(".setting-item-name")].map((el) => el.textContent.trim());
+    const vorher = namen().find((n) => n === ${JSON.stringify(erwartetVorher)}) ?? null;
+    const select = [...doc.querySelectorAll("select")]
+      .find((s) => [...s.options].some((o) => o.value === ${JSON.stringify(other)}));
+    if (!select) { app.setting.close(); return { vorher, nachher: null, select: false }; }
+    const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype, "value").set;
+    setter.call(select, ${JSON.stringify(other)});
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    let nachher = null;
+    const grenze = Date.now() + 8000;
+    while (Date.now() < grenze) {
+      nachher = namen().find((n) => n === ${JSON.stringify(erwartetNachher)}) ?? null;
+      if (nachher) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    app.setting.close();
+    return { vorher, nachher, select: true };
+  `);
+
+  const teile: string[] = [];
+  if (!result.select) teile.push("Modell-Dropdown im Settings-Tab nicht gefunden");
+  if (result.vorher === null) teile.push(`Zeile vor dem Wechsel nicht gefunden (erwartet „${erwartetVorher}")`);
+  if (result.nachher === null) teile.push(`Zeile nach dem Wechsel nicht gefunden (erwartet „${erwartetNachher}")`);
+  record(
+    NAME,
+    teile.length === 0,
+    teile.length === 0 ? `„${result.vorher}" → „${result.nachher}"` : teile.join(" · "),
+  );
+}
+
+/**
+ * Punkt 22: folgt die Größen-Zeile im Panel dem gewählten Modell — GERENDERT gemessen, nicht
+ * über den State (dieselbe Lehre wie Punkt 17: die Klasse kann korrekt gesetzt sein, während
+ * eine spätere CSS-Regel sie trotzdem zeigt).
+ */
+async function runSizeRowCheck(cdp: Cdp): Promise<void> {
+  const NAME = "22. Die Größen-Zeile folgt dem gewählten Modell";
+  const measure = async (id: BuiltinModelId) => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.builtinModel !== ${JSON.stringify(id)}) await p.setBuiltinModel(${JSON.stringify(id)});
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 300));
+    return cdp.evaluate<{ display: string | null; options: number }>(`
+      const el = document.querySelector(".lig-size-slot");
+      const select = document.querySelector(".lig-size");
+      return { display: el ? getComputedStyle(el).display : null, options: select ? select.options.length : 0 };
+    `);
+  };
+  const sd = await measure("sd-turbo");
+  const sdxl = await measure("sdxl-turbo");
+
+  const teile: string[] = [];
+  if (sd.display !== "none") teile.push(`sd-turbo: Größen-Zeile sichtbar (display:${sd.display}) — erwartet none`);
+  if (sdxl.display === "none" || sdxl.display === null) teile.push(`sdxl-turbo: Größen-Zeile weg (display:${sdxl.display}) — erwartet sichtbar`);
+  if (sdxl.options !== BUILTIN_MODELS["sdxl-turbo"].sizes.length) teile.push(`sdxl-turbo: ${sdxl.options} Größen-Optionen (erwartet ${BUILTIN_MODELS["sdxl-turbo"].sizes.length})`);
+  record(
+    NAME,
+    teile.length === 0,
+    teile.length === 0 ? `sd-turbo:${sd.display} · sdxl-turbo:${sdxl.display} (${sdxl.options} Optionen)` : teile.join(" · "),
+  );
+}
+
+/**
+ * Punkt 21: zeigt sich `.lig-model-pick` erst, wenn BEIDE Bedingungen gelten (showModelPicker
+ * UND mehr als ein geladenes Modell) — drei Messungen über `getComputedStyle`, nicht über die
+ * Klasse (dieselbe Begründung wie Punkt 17).
+ *
+ * Die dritte Stufe (zwei geladene Modelle) braucht einen echten Cache-Zustand — dafür lädt
+ * dieser Punkt bei Bedarf über `downloadModelViaMock()` (lokaler Server, kein HF-Traffic,
+ * Ruling 2 des Controllers). Fehlt der Asset-Mock, überspringt sich der GANZE Punkt LAUT
+ * (nicht nur die dritte Stufe) — die Gegenprobe auf den Skip-Pfad ist der State-Check davor:
+ * es wird NUR übersprungen, wenn der Cache-Zustand „zwei Modelle" weder schon vorliegt noch
+ * ohne Mock herstellbar ist. Liegt er zufällig schon vor (ein früherer --builtin-Lauf hat
+ * beide Modelle dagelassen), misst der Punkt trotzdem — ohne jeden neuen Download.
+ */
+async function runModelPickerCheck(cdp: Cdp, assetsBase: string, generateTimeoutMs: number): Promise<void> {
+  const NAME = "21. Panel-Modell-Picker zeigt sich erst ab zwei geladenen Modellen";
+  const assetsUp = await fetch(`${assetsBase.replace(/\/+$/, "")}/sd-turbo/tokenizer/vocab.json`, { method: "HEAD", signal: AbortSignal.timeout(3000) })
+    .then((r) => r.status === 200)
+    .catch(() => false);
+
+  const displayOf = (sel: string) =>
+    cdp.evaluate<string | null>(`
+      const el = document.querySelector(${JSON.stringify(sel)});
+      return el ? getComputedStyle(el).display : null;
+    `);
+  const setPicker = async (on: boolean): Promise<void> => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.settings.showModelPicker = ${JSON.stringify(on)};
+      await p.saveSettings();
+      p.refreshViews();
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 300));
+  };
+  const geladeneModelle = () =>
+    cdp.evaluate<BuiltinModelId[]>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].downloadedModels;`);
+
+  // a) Toggle aus — unabhängig vom Cache-Zustand immer prüfbar.
+  await setPicker(false);
+  const aus = await displayOf(".lig-model-pick");
+
+  await setPicker(true);
+  let geladen = await geladeneModelle();
+
+  // Gegenprobe auf den Skip-Pfad: NUR überspringen, wenn der Zustand "zwei Modelle" weder
+  // schon da ist noch ohne Mock herstellbar wäre.
+  if (geladen.length < 2 && !assetsUp) {
+    if (aus !== "none") record(NAME, false, `Toggle aus: display ${aus} (erwartet none) — Rest übersprungen`);
+    skip(
+      NAME,
+      `weniger als zwei geladene Modelle (${geladen.length}) UND Asset-Mock unter ${assetsBase} nicht erreichbar (npm run smoke:assets) — die dritte Stufe ist ohne echten 6,4-GB-Download nicht herstellbar`,
+    );
+    return;
+  }
+
+  let an1: string | null = null;
+  let an2: string | null = null;
+  const teile: string[] = [];
+
+  if (geladen.length >= 2) {
+    // Zustand liegt schon vor (z. B. ein früherer Lauf) — dritte Stufe zuerst, kostenlos.
+    an2 = await displayOf(".lig-model-pick");
+    const entfernt = await cdp.evaluate<boolean>(
+      `return await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});`,
+    );
+    if (!entfernt) teile.push("removeModel(sdxl-turbo) für die Ein-Modell-Stufe fehlgeschlagen");
+    await new Promise((r) => setTimeout(r, 300));
+    an1 = await displayOf(".lig-model-pick");
+    const wiederhergestellt = await downloadModelViaMock(cdp, "sdxl-turbo", generateTimeoutMs);
+    if (!wiederhergestellt.ok) teile.push(`Wiederherstellung von sdxl-turbo fehlgeschlagen: ${wiederhergestellt.detail}`);
+  } else {
+    if (geladen.length === 0) {
+      const dl0 = await downloadModelViaMock(cdp, DEFAULT_BUILTIN_MODEL_ID, generateTimeoutMs);
+      if (!dl0.ok) teile.push(`Download von ${DEFAULT_BUILTIN_MODEL_ID} fehlgeschlagen: ${dl0.detail}`);
+      geladen = await geladeneModelle();
+    }
+    if (geladen.length >= 1) {
+      an1 = await displayOf(".lig-model-pick");
+      const fehlend: BuiltinModelId = geladen.includes("sd-turbo") ? "sdxl-turbo" : "sd-turbo";
+      const dl1 = await downloadModelViaMock(cdp, fehlend, generateTimeoutMs);
+      if (!dl1.ok) teile.push(`Download von ${fehlend} fehlgeschlagen: ${dl1.detail}`);
+      else an2 = await displayOf(".lig-model-pick");
+    }
+  }
+
+  if (aus !== "none") teile.push(`Toggle aus: display ${aus} (erwartet none)`);
+  if (an1 !== "none") teile.push(`ein geladenes Modell: display ${an1} (erwartet none)`);
+  if (an2 === "none" || an2 === null) teile.push(`zwei geladene Modelle: display ${an2} (erwartet sichtbar)`);
+
+  record(
+    NAME,
+    teile.length === 0,
+    teile.length === 0 ? `aus:${aus} · 1 Modell:${an1} · 2 Modelle:${an2}` : teile.join(" · "),
+  );
+}
+
+/**
+ * Punkt 23: lädt der Bestätigungsdialog vor einem großen Modell wirklich KEIN Byte, wenn man
+ * ihn abbricht (Spec §4, „ohne Klick fließt kein Byte" — hier konkret: ein Klick auf den
+ * FALSCHEN Knopf darf ebenfalls keinen fließen lassen). Gemessen am ZÄHLER DES SERVERS
+ * (`.mock-assets-counts.json`), nicht am Panel-Zustand — dieselbe Begründung wie Punkt 19:
+ * der Zustand kann korrekt aussehen, während die Anfrage trotzdem rausgeht.
+ */
+async function runConfirmNoBytesCheck(cdp: Cdp): Promise<void> {
+  const NAME = "23. Abbruch am Bestätigungsdialog lädt kein Byte";
+  const vorher = mockAssetCounts();
+  if (vorher === null) {
+    skip(NAME, "kein Asset-Mock (Zählerdatei fehlt) — am HF-Repo nicht messbar, ohne echten Download zu riskieren");
+    return;
+  }
+
+  const cancelLabel = t("modal.cancel");
+  await cdp.evaluate(`
+    app.setting.close?.();
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    if (p.settings.builtinModel !== ${JSON.stringify("sdxl-turbo" as BuiltinModelId)}) await p.setBuiltinModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});
+    window.__ligSmokeCancel = { done: false };
+    p.startDownload()
+      .then(() => { window.__ligSmokeCancel.done = true; })
+      .catch((e) => { window.__ligSmokeCancel = { done: true, error: String(e) }; });
+    return true;
+  `);
+  const geklickt = await pollUntil(
+    () =>
+      cdp.evaluate<boolean>(`
+        const btn = [...document.querySelectorAll(".modal-button-container button")]
+          .find((b) => b.textContent.trim() === ${JSON.stringify(cancelLabel)});
+        if (btn) { btn.click(); return true; }
+        return false;
+      `),
+    (v) => v === true,
+    10_000,
+    "warte auf den Bestätigungs-Dialog",
+    300,
+  );
+  const fertig = await pollUntil(
+    () => cdp.evaluate<{ done: boolean }>(`return window.__ligSmokeCancel ?? { done: false };`),
+    (v) => v.done,
+    15_000,
+    "warte auf den Abbruch von startDownload()",
+    500,
+  );
+  await cdp.evaluate(`delete window.__ligSmokeCancel; return true;`).catch(() => undefined);
+
+  const nachher = mockAssetCounts() ?? vorher;
+  const diff = (prefix: string): number =>
+    Object.entries(nachher)
+      .filter(([k]) => k.startsWith(prefix))
+      .reduce((sum, [k, v]) => sum + (v - (vorher[k] ?? 0)), 0);
+  // Schluessel im Zaehler tragen den fuehrenden Slash aus der URL-Pathname (mock-assets.mjs:
+  // `normalize(new URL(...).pathname)`), z. B. "/sdxl-turbo/unet/model.onnx" — NICHT
+  // "sdxl-turbo/...". Ohne den Slash matcht `startsWith` nie und der Punkt waere immer
+  // (falsch) gruen, ganz gleich ob Bytes flossen.
+  const sdxlAnfragen = diff("/sdxl-turbo/");
+
+  const teile: string[] = [];
+  if (geklickt !== true) teile.push("Bestätigungsdialog nicht gefunden/angeklickt");
+  if (fertig === null) teile.push("startDownload() endete nicht nach dem Abbrechen");
+  if (sdxlAnfragen !== 0) teile.push(`${sdxlAnfragen} Anfragen für sdxl-turbo-Dateien nach dem Abbrechen — es floss Byte`);
+  record(NAME, teile.length === 0, teile.length === 0 ? "Dialog abgebrochen, 0 SDXL-Anfragen" : teile.join(" · "));
+}
+
+/** Wrapper für 20–23: schaltet einmalig auf "builtin" (nur dort unterscheiden sich Modelle),
+ *  läuft die vier Punkte, schaltet danach zurück auf "server" — Punkt 19 (img2img) und alles
+ *  Spätere braucht den Server-Modus. Bei fehlender GPU/WebGPU bleibt `downloadedModels` für
+ *  immer leer (`refreshEngineState()` bricht vor der Cache-Prüfung ab) — 20 und 22 hängen
+ *  NICHT daran (sie lesen nur `settings.builtinModel` bzw. den Modell-Katalog) und laufen
+ *  trotzdem; 21 überspringt sich in diesem Fall selbst (s. dort). */
+async function runModelStageChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs: number): Promise<void> {
+  // Alle vier Punkte wechseln settings.builtinModel mehrfach hin und her (20 ueber das
+  // Dropdown, 21/22/23 direkt) und lassen es am Ende auf irgendeinem der beiden Modelle
+  // stehen. Ungemerkt bliebe das ein STILLER Seiteneffekt fuer alles, was NACH diesem Block
+  // laeuft: Punkt 17 (modusabhaengige Regler) misst `.lig-size-slot` im builtin-Modus — mit
+  // "sdxl-turbo" aktiv ist die Groessen-Zeile dort ZU RECHT sichtbar (zwei Groessen), und der
+  // Punkt meldete genau das als Defekt, als dieser Restore hier noch fehlte (gemessen bei der
+  // ersten Live-Messung dieses Tasks). Der Fehler lag im Treiber, nicht im Plugin.
+  const originalModel = await cdp.evaluate<BuiltinModelId>(
+    `return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.builtinModel;`,
+  );
+  try {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== "builtin") await p.setEngine("builtin");
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 500));
+
+    await runModelSwitchCheck(cdp);
+    await runSizeRowCheck(cdp);
+    await runModelPickerCheck(cdp, assetsBase, generateTimeoutMs);
+    await runConfirmNoBytesCheck(cdp);
+  } finally {
+    await cdp
+      .evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        if (p.settings.builtinModel !== ${JSON.stringify(originalModel)}) await p.setBuiltinModel(${JSON.stringify(originalModel)});
+        if (p.settings.engine !== "server") await p.setEngine("server");
+        return true;
+      `)
+      .catch(() => undefined);
+  }
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const flag = (name: string): string | undefined => {
@@ -669,7 +1040,7 @@ async function main(): Promise<void> {
 
   // Alle Vorwerte AUSSERHALB des try: das finally muss sie auch nach einem Abbruch mitten
   // im Lauf zurückschreiben können — sonst bliebe der Vault im Smoke-Zustand stehen.
-  let previous: { createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string } | null = null;
+  let previous: { createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string; builtinModel: string; showModelPicker: boolean } | null = null;
   let createdFolder = false;
 
   try {
@@ -759,7 +1130,7 @@ async function main(): Promise<void> {
     // Punkte 1–11 messen den Server-Pfad; die eingebaute Engine kommt in 13–16 dran. Der Modus
     // wird deshalb hier auf „server" gestellt und im finally zurückgeschrieben (setEngine räumt
     // GPU-Sessions ab und prüft den Server neu — genau wie ein Klick im Dropdown).
-    previous = await cdp.evaluate<{ createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string }>(`
+    previous = await cdp.evaluate<{ createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string; builtinModel: string; showModelPicker: boolean }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
       const before = {
         createMode: p.settings.createMode,
@@ -768,6 +1139,8 @@ async function main(): Promise<void> {
         history: JSON.parse(JSON.stringify(p.settings.history)),
         engine: p.settings.engine,
         assetBaseUrl: p.settings.assetBaseUrl,
+        builtinModel: p.settings.builtinModel,
+        showModelPicker: p.settings.showModelPicker,
       };
       p.settings.createMode = "note";
       p.settings.outputFolder = ${JSON.stringify(SMOKE_FOLDER)};
@@ -1284,23 +1657,37 @@ async function main(): Promise<void> {
       }
     }
 
-    // --- 13–16. Die eingebaute Engine (Spec 0.6) ------------------------------
+    // --- 13–16, 20–23. Die eingebaute Engine + die zweite Modellstufe (Spec 0.6/0.9) ---------
     // Nur mit --builtin und nur gegen einen erreichbaren lokalen Asset-Server: der Block löscht
-    // die Modell-Dateien aus dem Plugin-Cache und lädt sie neu (2,5 GB) — gegen das HF-Repo
-    // wäre das ein Missbrauch der Leitung, gegen den lokalen Server dauert es rund eine Minute.
+    // die Modell-Dateien aus dem Plugin-Cache und lädt sie neu (2,5 GB, Punkt 21 im ungünstigen
+    // Fall zusätzlich 6,4 GB SDXL-Turbo) — gegen das HF-Repo wäre das ein Missbrauch der
+    // Leitung, gegen den lokalen Server dauert es Sekunden bis wenige Minuten.
+    const ZWEITE_STUFE = [
+      "20. Modellwechsel im Settings-Tab ändert die Download-Zeile",
+      "21. Panel-Modell-Picker zeigt sich erst ab zwei geladenen Modellen",
+      "22. Die Größen-Zeile folgt dem gewählten Modell",
+      "23. Abbruch am Bestätigungsdialog lädt kein Byte",
+    ];
     if (!builtin) {
-      console.log("\n(ohne --builtin: Punkte 13–16 übersprungen — sie brauchen den lokalen Asset-Server)");
+      console.log("\n(ohne --builtin: Punkte 13–16, 20–23 übersprungen — sie brauchen den lokalen Asset-Server)");
     } else if (quick) {
-      console.log("\n(--quick: Punkte 13–16 übersprungen — sie brauchen Download und Generierung)");
+      console.log("\n(--quick: Punkte 13–16, 20–23 übersprungen — sie brauchen Download und/oder Generierung)");
     } else {
       const assetsUp = await fetch(`${assetsBase.replace(/\/+$/, "")}/sd-turbo/tokenizer/vocab.json`, { method: "HEAD", signal: AbortSignal.timeout(3000) })
         .then((r) => r.status === 200)
         .catch(() => false);
       if (!assetsUp) {
-        for (const n of ["13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", "14. Download über den Panel-Knopf endet auf „bereit“", "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "16. Zurück auf „Server“ bringt die Regler zurück"])
+        for (const n of [
+          "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
+          "14. Download über den Panel-Knopf endet auf „bereit“",
+          "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
+          "16. Zurück auf „Server“ bringt die Regler zurück",
+          ...ZWEITE_STUFE,
+        ])
           skip(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);
       } else {
         await runBuiltinChecks(cdp, assetsBase, generateTimeoutMs);
+        await runModelStageChecks(cdp, assetsBase, generateTimeoutMs);
       }
     }
 
@@ -1332,6 +1719,8 @@ async function main(): Promise<void> {
           p.settings.noteFolder = before.noteFolder;
           p.settings.history = before.history;
           p.settings.assetBaseUrl = before.assetBaseUrl;
+          p.settings.builtinModel = before.builtinModel;
+          p.settings.showModelPicker = before.showModelPicker;
           await p.saveSettings();
           if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
           p.refreshViews();

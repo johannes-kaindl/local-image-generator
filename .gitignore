@@ -11,6 +11,9 @@ main.js
 # Zaehler des A1111-Mocks (scripts/mock-a1111.mjs)
 .mock-a1111-counts.json
 
+# Zaehler des Asset-Mocks (scripts/mock-assets.mjs) — Punkt 23
+.mock-assets-counts.json
+
 # Konvertierte Modell-Assets (npm run assets) — nie ins Repo, gehen ins HF-Repo
 dist-assets/
 tools/convert/.venv/

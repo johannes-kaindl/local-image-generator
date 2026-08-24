@@ -78,6 +78,10 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 17 | Die modusabhängigen Regler sind auch **gerendert** weg — und kommen zurück | `getComputedStyle`, nicht `classList`: die Klasse war beim Bug vom 2026-08-21 gesetzt, das CSS zog nicht |
 | 18 | Die Provider-API ist am laufenden Obsidian registriert und formtreu | `this.api` im onload und die Erreichbarkeit über `app.plugins.plugins` sieht man nur am Wirt |
 | 19 | Ein Lauf **mit Vorlage** geht an `/sdapi/v1/img2img` | am **Zähler des Servers** gemessen, nicht am Panel-Zustand — der kann korrekt sein, während die Anfrage am falschen Endpunkt landet |
+| 20 | Modellwechsel im Settings-Tab ändert die Download-Zeile (Name + Größe) | über das echte **Dropdown**, nicht über einen Settings-Write — nur `onChange` löst `setBuiltinModel()` + Re-Render aus |
+| 21 | `.lig-model-pick` zeigt sich erst ab **zwei geladenen** Modellen, nicht schon beim Toggle allein | zweite, unabhängige Sichtbarkeitsbedingung wie `.lig-denoise` — braucht einen echten Zwei-Modell-Cache-Zustand |
+| 22 | Die Größen-Zeile folgt dem gewählten Modell (SD-Turbo weg, SDXL-Turbo sichtbar mit 2 Optionen) | `getComputedStyle`, nicht der State — dieselbe Lehre wie 17 |
+| 23 | Abbruch am Bestätigungsdialog vor SDXL-Turbo lädt **kein** Byte | am **Zähler des Asset-Mocks** gemessen (Spec §4: „ohne Klick fließt kein Byte" gilt auch für den falschen Knopf) |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -151,6 +155,40 @@ Browser den Wert beim Sinken von `max` überhaupt klemmt. Mit dem Standardwert 4
 in der Gegenprobe **grün, obwohl der Defekt wieder eingebaut war** — er schiebt den Regler
 seitdem selbst über das builtin-Maximum und meldet es als Befund, wenn kein Klemmen stattfand.
 
+### § 2026-08-2x — Punkte 20–23 (zweite Modellstufe, SDXL-Turbo)
+
+Vier neue Prüfpunkte für Spec 0.9 (SDXL-Turbo neben SD-Turbo). Alle vier hängen an
+`--builtin` **und** einem erreichbaren `npm run smoke:assets` (lokaler Asset-Server auf
+Port 7862) — ohne den überspringen sie sich **laut**, mit Begründung in derselben Zeile wie
+jeder andere `skip`, nach der Lehre von `c984f47` (dort hatte sich ein Punkt lautlos
+übersprungen, weil sein Pfad relativ zu `import.meta.url` statt `process.cwd()` auflöste).
+
+**`.lig-model-pick` steht bewusst NICHT in `MODUS_REGLER`** (derselbe Grund wie
+`.lig-denoise`, s. Kommentar dort): es hängt an ZWEI unabhängigen Bedingungen
+(`showModelPicker` UND `downloadedModels.length > 1`), nicht am Modus allein. In
+`MODUS_REGLER` geführt, würde Punkt 17 die zweite Sichtbarkeitsstufe als Defekt melden.
+
+**Punkt 21 ist der einzige der vier, der einen echten Cache-Zustand braucht** (zwei
+vollständig geladene Modelle) — und der einzige, der sich selbst überspringen kann, wenn
+dieser Zustand nicht herstellbar ist. Die Gegenprobe auf diesen Skip-Pfad: übersprungen wird
+NUR, wenn `downloadedModels.length < 2` **und** der Asset-Mock nicht erreichbar ist — liegt
+der Zustand schon vor (ein früherer `--builtin`-Lauf hat beide Modelle dagelassen), misst der
+Punkt trotzdem, ohne einen einzigen neuen Download. Ohne diese Unterscheidung würde ein
+zufällig schon vollständiger Cache den Skip-Zweig nie zeigen und die Gegenprobe selbst wäre
+ungeprüft.
+
+Der Zwei-Modell-Zustand kommt bewusst über `npm run smoke:assets` (lokaler Spiegel von
+`dist-assets/`), nicht über das HF-Repo — SDXL-Turbo ist 6,4 GB, und das wäre ein Missbrauch
+der Leitung für einen Test. Es sind trotzdem echte Bytes, real durch `ModelStore.download()`
+und die SHA-256-Prüfung gestreamt: kein Attrappen-Cache-Eintrag, sondern derselbe Weg wie ein
+Nutzer-Download, nur von localhost statt huggingface.co.
+
+Punkt 23 braucht eine eigene Zählerdatei: `.mock-assets-counts.json`
+(`scripts/mock-assets.mjs`, seit diesem Task, Muster wie `.mock-a1111-counts.json`) — ohne
+sie könnte ein abgebrochener Download nur am PANEL-Zustand gemessen werden, und genau das ist
+die Fehlerklasse, die Punkt 19 schon einmal am Bild-Server gezeigt hat: der Zustand kann
+korrekt aussehen, während Bytes trotzdem geflossen sind.
+
 ## Was der Treiber am Wirt verändert (und zurücksetzt)
 
 Alles davon wird vorher gemerkt und im `finally` zurückgeschrieben — auch nach einem Abbruch:
@@ -165,6 +203,11 @@ Alles davon wird vorher gemerkt und im `finally` zurückgeschrieben — auch nac
   lokale Asset-Server; **der Modell-Cache** der eingebauten Engine wird in Punkt 13 geleert und
   in 14 neu gefüllt — er wird NICHT zurückgesetzt (ein Wiederholungslauf überspringt den Download
   nicht, weil 13 ihn wieder leert; das ist Absicht: 14 misst den echten Weg)
+- `builtinModel` / `showModelPicker` — Punkte 20–23 schalten beide mehrfach um, `engine` geht
+  für ihre Dauer zusätzlich auf `"builtin"` (Punkt 19 direkt danach braucht wieder `"server"`).
+  Beides wird wie oben gemerkt und im `finally` zurückgeschrieben; **der SDXL-Turbo-Cache-
+  Eintrag bleibt NACH dem Lauf bestehen**, aus demselben Grund wie beim SD-Turbo-Cache oben —
+  ein Wiederholungslauf von Punkt 21 soll den 6,4-GB-Download nicht jedes Mal neu erzwingen.
 
 Der Ordner `_lig-gui-smoke` wird angelegt und gelöscht. **Existiert er bereits, bricht der
 Treiber ab** statt zu löschen: ein vorgefundener Ordner könnte fremde Dateien tragen.
@@ -176,6 +219,70 @@ aufräumen wollte.
 ## Durchläufe
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
+
+### 2026-08-24 · 0.9-dev (zweite Modellstufe) · Obsidian 1.13.7 (Vault `10_Pallas`) · A1111-Mock (Port 7860) + lokaler Asset-Mock (Port 7862) · **24/24 grün**
+
+**Baseline zuerst gefahren, unveränderter Treiber (Ruling des Controllers):** vor jeder
+Code-Änderung an `scripts/gui-smoke.ts`, gegen den zu diesem Zeitpunkt deployten Repo-Stand
+(0.8.0, frisch gebaut) — `--builtin --steps 2 --timeout 300`. Ergebnis: **20/20 grün**, keine
+Übersprungenen. Dabei wurde der Modell-Cache mit `sd-turbo` befüllt (Punkt 14).
+
+**Nach dem Bau der vier neuen Punkte, erster Lauf: 21/23 grün, 1 rot, 1 übersprungen.**
+Punkt 23 übersprang sich korrekt und laut („kein Asset-Mock (Zählerdatei fehlt)") — der
+lokale Mock lief zu dem Zeitpunkt noch mit dem VORHER gestarteten Prozess, der die
+Zähler-Persistenz (Teil dieses Tasks) noch nicht kannte; nach dem Neustart des Mocks lief der
+zweite Versuch (s.u.) durch. **Zwei echte Treiber-Defekte, beide vor dem grünen Lauf
+behoben:**
+
+1. **Punkt 20 fand weder Dropdown noch Zeile.** Ursache: Obsidian 1.13 cacht
+   `getSettingDefinitions()` und wertet sie nicht bei jedem `openTabById()` neu aus (der
+   AGENTS.md-Gotcha, hier zum ersten Mal am eigenen Treiber getroffen statt nur gelesen) — der
+   Engine-Wechsel auf „builtin" davor lief über `plugin.setEngine()` direkt (richtig für die
+   Panel-Punkte 13–19, aber der SETTINGS-Tab wusste nichts davon, weil dessen `refreshUi()`
+   nie aufgerufen wurde). Fix: `app.setting.activeTab.update?.()` erzwingt den Re-Render vor
+   dem ersten Lesen; der Wechsel selbst geht weiterhin über das echte Dropdown und löst
+   `refreshUi()` danach selbst aus.
+2. **Punkt 17 wurde rot, obwohl das Plugin korrekt war.** `runModelStageChecks` (20–23) ließ
+   `settings.builtinModel` auf `sdxl-turbo` stehen; Punkt 17 danach maß `.lig-size-slot` im
+   builtin-Modus und fand sie sichtbar — mit SDXL-Turbo aktiv **zu Recht** (zwei Größen). Der
+   Fehler war ein fehlender Restore im TREIBER (`builtinModel` wurde vorher nicht Teil des
+   `previous`-Zustands, den `runModelStageChecks` selbst zurückschreibt), keine
+   Produktregression. Fix: `runModelStageChecks` merkt sich das Modell vor dem Block und
+   stellt es im eigenen `finally` wieder her — parallel zum bestehenden Restore von `engine`.
+
+**Dritter Defekt, erst bei der Zählerdatei selbst aufgefallen (Selbstprüfung, nicht der
+Lauf):** die Schlüssel in `.mock-assets-counts.json` tragen den führenden Slash aus der
+URL-Pathname (`/sdxl-turbo/…`, nicht `sdxl-turbo/…`). Punkt 23s ursprünglicher
+`startsWith("sdxl-turbo/")`-Filter hätte **nie** getroffen — der Punkt wäre immer grün
+gewesen, unabhängig davon, ob Bytes geflossen sind. Genau die Art Prüfpunkt, die wie Deckung
+aussieht und keine ist. Vor dem finalen Lauf auf `startsWith("/sdxl-turbo/")` korrigiert und
+am tatsächlichen Zähler-Dump verifiziert.
+
+**Zweiter Lauf nach allen drei Fixes: 24/24 grün**, u. a.:
+
+```
+✓ 20. Modellwechsel im Settings-Tab ändert die Download-Zeile — „SD-Turbo-Modell (2.5 GB)" → „SDXL-Turbo-Modell (6.9 GB)"
+✓ 21. Panel-Modell-Picker zeigt sich erst ab zwei geladenen Modellen — aus:none · 1 Modell:none · 2 Modelle:block
+✓ 22. Die Größen-Zeile folgt dem gewählten Modell — sd-turbo:none · sdxl-turbo:block (2 Optionen)
+✓ 23. Abbruch am Bestätigungsdialog lädt kein Byte — Dialog abgebrochen, 0 SDXL-Anfragen
+```
+
+Punkt 21 durchlief dabei den **teureren** der beiden Zweige (schon zwei Modelle vorhanden,
+weil Punkt 13 nur `sd-turbo` entfernt und `sdxl-turbo` aus dem ersten Lauf liegen geblieben
+war): dritte Stufe zuerst kostenlos gemessen, `sdxl-turbo` mit `removeModel()` für die
+Ein-Modell-Stufe entfernt, danach über `npm run smoke:assets` wiederhergestellt — damit ist
+bei dieser Gelegenheit auch der Task-10-Befund „`removeModel(id)` löscht nur das eine Modell"
+(gap 5 dort) am echten Wirt mitbelegt: `sd-turbo` blieb während des Entfernens von
+`sdxl-turbo` unangetastet nutzbar.
+
+Alle Downloads liefen ausschließlich gegen `npm run smoke:assets` (lokaler Spiegel von
+`dist-assets/`) — kein einziges Byte gegen das HF-Repo, trotz insgesamt weit über 10 GB
+gestreamter (echter) Modell-Dateien über den Lauf hinweg.
+
+Vault-Zustand nachher geprüft: kein `_lig-gui-smoke`, `engine`/`assetBaseUrl`/`builtinModel`/
+`showModelPicker`/`outputFolder`/`noteFolder`/`createMode` auf den Ausgangswerten
+(`builtin` · das alte `v6t2b9`-HF-Repo · `sd-turbo` · `false` · unverändert), Historie
+unverändert bei 20 Einträgen.
 
 ### 2026-08-23 · 0.8-dev (img2img) · Obsidian 1.13.7 · A1111-Mock (Port 7861) · **16/16 grün, Punkt 19 mit Gegenprobe**
 
