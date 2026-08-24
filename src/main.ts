@@ -9,6 +9,7 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
+import { isOutOfMemoryError } from "./core/engine-errors";
 import {
   assetsFor,
   BUILTIN_MODELS,
@@ -718,7 +719,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // Fehler ohnehin als Rueckgabewert und meldet ihn seinem Nutzer selbst; unsere
       // Statuszeile gehoert dem eigenen Klick. (Ruling 2026-08-23, Task „Folgearbeit aus dem
       // Provider-API-Abschlussreview" — Alternative war ein dritter i18n-Key.)
-      this.state.run = external ? { kind: "idle" } : { kind: "error", message: msg };
+      // Spec §8 Punkt 1: ein Session-Aufbau, der an knappem Speicher scheitert, bekommt einen
+      // lesbaren Satz statt der rohen ORT-Fehlermeldung — nur im eingebauten Modus, nur bei
+      // erkanntem Signal (`isOutOfMemoryError`, src/core/engine-errors.ts). Erkennt sie nichts,
+      // bleibt die rohe Meldung stehen — lesbar, nur nicht freundlich; nie ein Ewig-Spinner,
+      // weil dieser catch-Zweig ohnehin greift, sobald `createOrtSession` wirft/verwirft.
+      const displayMsg = builtin && isOutOfMemoryError(e) ? t("status.outOfMemory") : msg;
+      this.state.run = external ? { kind: "idle" } : { kind: "error", message: displayMsg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
       if (!builtin) void this.checkServer();
       return { ok: false, message: msg };
