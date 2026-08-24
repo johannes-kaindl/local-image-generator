@@ -21,7 +21,7 @@
 // FolderSuggest ein.
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { STEPS } from "../core/generation";
-import { assetsFor, BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, modelById, RUNTIME_WASM, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
+import { assetsFor, BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, isBuiltinModelId, modelById, RUNTIME_WASM, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type LigSettings } from "../core/settings";
 import { formatBytes, type EngineState } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
@@ -216,7 +216,15 @@ export class LigSettingTab extends PluginSettingTab {
       // Muss ueber onChange laufen (Brief-Warnung): Obsidian 1.13 cacht getSettingDefinitions()
       // und wertet Praedikate nicht neu aus — ohne den Wechsel HIER zu setzen bliebe die
       // Download-/Loeschen-Zeile darunter beim alten Modell stehen.
-      await this.plugin.setBuiltinModel(clean as BuiltinModelId);
+      // isBuiltinModelId statt `as BuiltinModelId` (Block-5-Fix, Final-Review 2026-08-24): der
+      // "engine"-Zweig zwei Zeilen darueber engt echt ein (`=== "server" ? "server" : "builtin"`)
+      // — dieser Zweig tat es nicht. Das Dropdown-Options-Objekt lieferte bisher immer einen
+      // gueltigen Wert, aber `setControlValue` ist ueber `getControlValue`/den deklarativen Host
+      // generisch erreichbar; ein ungeprueftes `as` haette einen Muellwert klaglos in
+      // settings.builtinModel und damit in data.json geschrieben — `modelById()` liefert dafuer
+      // beim naechsten Laden `undefined` statt eines Modells.
+      if (!isBuiltinModelId(clean)) return;
+      await this.plugin.setBuiltinModel(clean);
       this.refreshUi(); // Download-/Loeschen-Zeile zeigt jetzt ein anderes Modell
       return;
     }
