@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { createImageGenerationApi, IMAGE_GENERATION_API_VERSION, type ApiDeps } from "../src/core/plugin-api";
-import { BUILTIN_MODEL } from "../src/core/model-manifest";
+import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { STEPS } from "../src/core/generation";
 
 const params = {
   prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
   initImage: null, denoising: null,
-  model: BUILTIN_MODEL.id, width: 512, height: 512, date: "2026-08-22T22:15:00",
+  model: BUILTIN_MODELS["sd-turbo"].id, width: 512, height: 512, date: "2026-08-22T22:15:00",
 };
 
 function deps(over: Partial<ApiDeps> = {}): ApiDeps {
@@ -32,9 +32,9 @@ describe("status()", () => {
     expect(s.reason).toBeNull();
     expect(s.capabilities).toEqual({
       negativePrompt: false, cfg: false, initImage: false,
-      maxSteps: BUILTIN_MODEL.steps.max,
-      fixedSize: BUILTIN_MODEL.sizes[0],
-      sizes: BUILTIN_MODEL.sizes,
+      maxSteps: BUILTIN_MODELS["sd-turbo"].steps.max,
+      fixedSize: BUILTIN_MODELS["sd-turbo"].sizes[0],
+      sizes: BUILTIN_MODELS["sd-turbo"].sizes,
     });
   });
 
@@ -69,7 +69,7 @@ describe("generate()", () => {
         base64: "PNGDATA",
         params: {
           prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
-          model: BUILTIN_MODEL.id, width: 512, height: 512,
+          model: BUILTIN_MODELS["sd-turbo"].id, width: 512, height: 512,
           created: "2026-08-22T22:15:00",
           // `denoising` gehoert zum Vertrag (null = es war kein img2img); der interne
           // Vault-PFAD `initImage` gehoert NICHT hinein — er heisst im Vertrag etwas anderes.

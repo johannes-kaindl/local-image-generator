@@ -4,7 +4,7 @@
 // PNG-Encoder), damit die Ladeschritte in Node testbar sind. Kein obsidian-Import nötig.
 import { SdTurboEngine, type BuiltinEngine, type Session } from "../core/engine";
 import { SdxlTurboEngine } from "../core/engine-sdxl";
-import { BUILTIN_MODEL, RUNTIME_WASM, type BuiltinModel, type ModelPart } from "../core/model-manifest";
+import { RUNTIME_WASM, type BuiltinModel, type ModelPart } from "../core/model-manifest";
 import type { TokenizerData } from "../core/pipeline/tokenizer";
 import type { ImageBackend, ImageRequest } from "../core/txt2img";
 import type { ModelStore } from "./model-store";
@@ -34,7 +34,7 @@ export class LocalEngineBackend implements ImageBackend {
 
   constructor(
     private readonly deps: LocalEngineDeps,
-    private readonly model: BuiltinModel = BUILTIN_MODEL,
+    private readonly model: BuiltinModel,
   ) {}
 
   get loaded(): boolean {

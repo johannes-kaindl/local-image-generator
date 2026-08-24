@@ -265,6 +265,16 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     expect(buildViewModel({ ...builtin, engine: { kind: "ready" }, image: img }).generateEnabled).toBe(false);
     expect(buildViewModel({ ...builtin, engine: { kind: "ready" }, image: img, seed: 2 }).generateEnabled).toBe(true);
   });
+  // Regression: recipeUnchanged verglich frueher IMMER gegen das feste Default-Modell
+  // (BUILTIN_MODEL.id === "sd-turbo") statt gegen das GEWAEHLTE (state.builtinModel) — mit
+  // sdxl-turbo aktiv waere Generate nach einem unveraenderten Rezept nie gesperrt gewesen.
+  it("recipeUnchanged sperrt auch mit sdxl-turbo als gewaehltem Modell, nicht nur mit dem Default", () => {
+    const sdxlState = { ...builtin, builtinModel: "sdxl-turbo" as const, engine: { kind: "ready" as const } };
+    const matchingImg = { dataUrl: "d", params: { ...baseParams, cfg: 1, model: "sdxl-turbo" } };
+    const staleImg = { dataUrl: "d", params: { ...baseParams, cfg: 1, model: "sd-turbo" } };
+    expect(buildViewModel({ ...sdxlState, image: matchingImg }).generateEnabled).toBe(false);
+    expect(buildViewModel({ ...sdxlState, image: staleImg }).generateEnabled).toBe(true);
+  });
   it("formatBytes", () => {
     expect(formatBytes(812e6)).toBe("812 MB");
     expect(formatBytes(1733e6)).toBe("1.7 GB");

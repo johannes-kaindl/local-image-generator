@@ -133,6 +133,11 @@
 .lig-hist-chevron { display: inline-flex; color: var(--text-muted); }
 .lig-hist-empty { padding: 16px 9px; color: var(--text-muted); }
 
+/* Modell-Dropdown im Panel (Task 12, Spec 0.9 §6.2) — nur sichtbar mit showModelPicker UND
+   mehr als einem geladenen Modell (vm.controls.modelPicker). Muss ÜBER `.is-hidden` stehen,
+   sonst gewinnt diese Regel gegen die Aus-Schaltung (s. u.). */
+.lig-model-pick { flex: 0 0 auto; }
+
 /* ── Zuletzt, und das ist der Punkt ──────────────────────────────────────────
    `.is-hidden` ist die Aus-Schaltung fuer jede Zeile, die ein Backend nicht kann
    (Negativ-Prompt, CFG, Groesse — die Keine-Attrappen-Linie). Sie traegt nur eine

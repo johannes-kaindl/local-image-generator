@@ -21,7 +21,7 @@
 // FolderSuggest ein.
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { STEPS } from "../core/generation";
-import { allAssets, BUILTIN_MODEL, DEFAULT_ASSET_BASE_URL, totalBytes } from "../core/model-manifest";
+import { allAssets, assetsFor, BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, modelById, RUNTIME_WASM, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type LigSettings } from "../core/settings";
 import { formatBytes, type EngineState } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
@@ -68,12 +68,32 @@ export class LigSettingTab extends PluginSettingTab {
     // Bedingte Zeilen WEGLASSEN statt `visible: false`: Obsidian 1.13 cacht die Definitionen und
     // wertet Prädikate nicht neu aus — nach einem Moduswechsel zeichnet refreshUi() (update())
     // den Tab mit den dann passenden Zeilen neu.
+    const activeModel = modelById(this.plugin.settings.builtinModel);
     const modelRow: SettingDefinitionItem<keyof LigSettings> = {
       // Modell-Zeile der eingebauten Engine (Spec 0.6 §6): Status + Herunterladen/Abbrechen/
-      // Entfernen je nach Zustand — mehrere Controls, deshalb ein render-Hatch.
-      name: t("settings.model.name", BUILTIN_MODEL.label, formatBytes(totalBytes(allAssets()))),
-      desc: t("settings.model.desc", BUILTIN_MODEL.attribution, BUILTIN_MODEL.license.name),
+      // Entfernen je nach Zustand — mehrere Controls, deshalb ein render-Hatch. Bezieht sich
+      // immer auf das GEWAEHLTE Modell (settings.builtinModel), nicht auf den Default.
+      name: t("settings.model.name", activeModel.label, formatBytes(totalBytes(this.modelFiles(activeModel.id)))),
+      desc: t("settings.model.desc", activeModel.attribution, activeModel.license.name),
       render: (setting) => this.renderModel(setting),
+    };
+    // Modell-Dropdown steht VOR modelRow (Brief Step 3): der Wechsel darunter zeigt sofort
+    // die Download-/Loeschen-Zeile des NEU gewaehlten Modells.
+    const builtinModelRow: SettingDefinitionItem<keyof LigSettings> = {
+      name: t("settings.builtinModel.name"),
+      desc: t("settings.builtinModel.desc"),
+      control: {
+        type: "dropdown",
+        key: "builtinModel",
+        options: Object.fromEntries(
+          (Object.keys(BUILTIN_MODELS) as BuiltinModelId[]).map((id) => [id, BUILTIN_MODELS[id].label]),
+        ),
+      },
+    };
+    const showModelPickerRow: SettingDefinitionItem<keyof LigSettings> = {
+      name: t("settings.showModelPicker.name"),
+      desc: t("settings.showModelPicker.desc"),
+      control: { type: "toggle", key: "showModelPicker" },
     };
     const serverRow: SettingDefinitionItem<keyof LigSettings> = {
       name: t("settings.server.name"),
@@ -94,7 +114,7 @@ export class LigSettingTab extends PluginSettingTab {
               options: { builtin: t("settings.engine.builtin"), server: t("settings.engine.server") },
             },
           },
-          builtin ? modelRow : serverRow,
+          ...(builtin ? [builtinModelRow, showModelPickerRow, modelRow] : [serverRow]),
         ],
       },
       {
@@ -187,6 +207,14 @@ export class LigSettingTab extends PluginSettingTab {
       this.refreshUi();
       return;
     }
+    if (key === "builtinModel") {
+      // Muss ueber onChange laufen (Brief-Warnung): Obsidian 1.13 cacht getSettingDefinitions()
+      // und wertet Praedikate nicht neu aus — ohne den Wechsel HIER zu setzen bliebe die
+      // Download-/Loeschen-Zeile darunter beim alten Modell stehen.
+      await this.plugin.setBuiltinModel(clean as BuiltinModelId);
+      this.refreshUi(); // Download-/Loeschen-Zeile zeigt jetzt ein anderes Modell
+      return;
+    }
     this.plugin.settings = validateSettings(DEFAULT_SETTINGS, { ...this.plugin.settings, [key]: clean }, SETTINGS_SCHEMA);
     await this.plugin.saveSettings();
   }
@@ -197,9 +225,10 @@ export class LigSettingTab extends PluginSettingTab {
   private renderModel(setting: Setting): void {
     this.ensureLegacyChecked();
     const st = this.plugin.getEngineState();
+    const activeModel = modelById(this.plugin.settings.builtinModel);
     this.renderedEngineKind = st.kind;
     setting.descEl.createEl("br");
-    setting.descEl.createEl("a", { text: BUILTIN_MODEL.license.name, href: BUILTIN_MODEL.license.url });
+    setting.descEl.createEl("a", { text: activeModel.license.name, href: activeModel.license.url });
     this.modelStatusEl = setting.controlEl.createSpan({ text: engineStatusText(st), cls: "lig-model-status" });
     const busy = st.kind === "downloading" || st.kind === "verifying";
     if (busy) {
@@ -222,12 +251,12 @@ export class LigSettingTab extends PluginSettingTab {
         }
         b.onClick(async () => {
           const ok = await confirmAction(this.app, {
-            message: t("settings.model.removeConfirm", formatBytes(totalBytes(allAssets()))),
+            message: t("settings.model.removeConfirm", formatBytes(totalBytes(this.modelFiles(activeModel.id)))),
             confirmLabel: t("settings.model.remove"),
             cancelLabel: t("modal.cancel"),
           });
           if (!ok) return;
-          if (await this.plugin.removeModel()) new Notice(t("settings.model.removed"));
+          if (await this.plugin.removeModel(this.plugin.settings.builtinModel)) new Notice(t("settings.model.removed"));
         });
       });
     }
@@ -289,6 +318,13 @@ export class LigSettingTab extends PluginSettingTab {
         this.refreshUi();
       });
     });
+  }
+
+  /** Alle Dateien EINES Modells inkl. Runtime-WASM — dieselbe Zusammensetzung wie main.ts'
+   *  private activeFiles(), hier fuer ein beliebiges (nicht nur das aktive) Modell, weil der
+   *  Settings-Tab die Groesse in Name/Beschreibung UND im Loesch-Bestaetigungstext braucht. */
+  private modelFiles(id: BuiltinModelId): AssetFile[] {
+    return [...assetsFor(id), RUNTIME_WASM];
   }
 
   /** Einmal pro Tab-Öffnen prüfen, ob alte Gewichte im Cache-API-Speicher liegen. hide()

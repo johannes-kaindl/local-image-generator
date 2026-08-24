@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/core/engine";
-import { BUILTIN_MODEL, BUILTIN_MODELS, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
+import { BUILTIN_MODELS, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
 import { LocalEngineBackend, type LocalEngineDeps } from "../src/obsidian/local-engine";
 import type { ModelStore } from "../src/obsidian/model-store";
 
@@ -50,7 +50,7 @@ function reqOf(prompt: string): typeof req {
 describe("LocalEngineBackend", () => {
   it("erster generate lädt WASM, drei Sessions und den Tokenizer genau einmal — der zweite nicht mehr", async () => {
     const log: string[] = [];
-    const be = new LocalEngineBackend(makeDeps(log));
+    const be = new LocalEngineBackend(makeDeps(log), BUILTIN_MODELS["sd-turbo"]);
     const phases: string[] = [];
     be.onPhase = (p, s, t) => phases.push(`${p}${s !== undefined ? `:${s}/${t}` : ""}`);
     await be.generate(req);
@@ -67,7 +67,7 @@ describe("LocalEngineBackend", () => {
   });
 
   it("liefert Base64 ohne data:-Präfix und meldet generating-Schritte 1..steps", async () => {
-    const be = new LocalEngineBackend(makeDeps([]));
+    const be = new LocalEngineBackend(makeDeps([]), BUILTIN_MODELS["sd-turbo"]);
     const steps: string[] = [];
     be.onPhase = (p, s, t) => { if (p === "generating") steps.push(`${s}/${t}`); };
     const png = await be.generate(req);
@@ -77,18 +77,18 @@ describe("LocalEngineBackend", () => {
   });
 
   it("Steps werden auf den Modellbereich geklemmt, Größe ist immer 512 (Rezept-Ehrlichkeit)", async () => {
-    const be = new LocalEngineBackend(makeDeps([]));
+    const be = new LocalEngineBackend(makeDeps([]), BUILTIN_MODELS["sd-turbo"]);
     const steps: string[] = [];
     be.onPhase = (p, s, t) => { if (p === "generating") steps.push(`${s}/${t}`); };
     await be.generate({ ...req, steps: 20, width: 1024, height: 768 });
-    expect(steps).toHaveLength(BUILTIN_MODEL.steps.max);
-    expect(steps[steps.length - 1]).toBe(`${BUILTIN_MODEL.steps.max}/${BUILTIN_MODEL.steps.max}`);
+    expect(steps).toHaveLength(BUILTIN_MODELS["sd-turbo"].steps.max);
+    expect(steps[steps.length - 1]).toBe(`${BUILTIN_MODELS["sd-turbo"].steps.max}/${BUILTIN_MODELS["sd-turbo"].steps.max}`);
   });
 
   it("dispose gibt die Sessions frei; danach lädt generate neu", async () => {
     const log: string[] = [];
     const deps = makeDeps(log);
-    const be = new LocalEngineBackend(deps);
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
     await be.generate(req);
     await be.dispose();
     expect(deps.released).toBe(3);
@@ -113,7 +113,7 @@ describe("LocalEngineBackend", () => {
         release: async () => { log.push(`release:${tag}`); await s.release(); },
       };
     };
-    const be = new LocalEngineBackend(deps);
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
     const gen = be.generate(req);
     await new Promise((r) => setTimeout(r, 15)); // mitten im Lauf
     const disposeDone = be.dispose();
@@ -129,7 +129,7 @@ describe("LocalEngineBackend", () => {
 
   it("zwei parallele generate-Aufrufe teilen sich das Laden (kein doppelter Session-Aufbau)", async () => {
     const log: string[] = [];
-    const be = new LocalEngineBackend(makeDeps(log));
+    const be = new LocalEngineBackend(makeDeps(log), BUILTIN_MODELS["sd-turbo"]);
     const p1 = be.generate(req);
     const p2 = be.generate({ ...req, seed: 8 }).catch((e: Error) => e.message);
     await p1;

@@ -2,7 +2,7 @@
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
 import { backendCapabilities, type SizeOption } from "./generation";
-import { allAssets, BUILTIN_MODEL, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
+import { allAssets, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -160,7 +160,7 @@ function recipeUnchanged(s: PanelState): boolean {
   const p = s.image?.params;
   const modelUnchanged =
     s.mode === "builtin"
-      ? p?.model === BUILTIN_MODEL.id
+      ? p?.model === s.builtinModel
       : s.server.kind === "ok" && s.server.modelName !== null && s.server.modelName === p?.model;
   return (
     p !== undefined &&

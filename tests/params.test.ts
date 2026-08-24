@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { hardenParams } from "../src/core/params";
-import { BUILTIN_MODEL } from "../src/core/model-manifest";
+import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { CFG, DEFAULT_SIZE, DENOISING, STEPS } from "../src/core/generation";
 
 const ctx = (mode: "builtin" | "server") => ({
   mode,
   defaultSteps: 20,
-  model: mode === "builtin" ? BUILTIN_MODEL.id : "someModel.safetensors",
+  model: mode === "builtin" ? BUILTIN_MODELS["sd-turbo"].id : "someModel.safetensors",
   now: new Date("2026-08-22T22:15:00"),
   randomSeed: () => 4242,
 });
@@ -31,11 +31,11 @@ describe("hardenParams", () => {
     );
     expect(p.negativePrompt).toBe("");
     expect(p.cfg).toBe(1);
-    expect(p.width).toBe(BUILTIN_MODEL.sizes[0]?.width);
-    expect(p.height).toBe(BUILTIN_MODEL.sizes[0]?.height);
+    expect(p.width).toBe(BUILTIN_MODELS["sd-turbo"].sizes[0]?.width);
+    expect(p.height).toBe(BUILTIN_MODELS["sd-turbo"].sizes[0]?.height);
     // Steps werden auf das Backend-Maximum geklemmt, nicht abgelehnt: ein Konsument, der 30
     // schickt, bekommt ein Bild mit 4 Schritten und erfaehrt das im Rueckgabewert.
-    expect(p.steps).toBe(BUILTIN_MODEL.steps.max);
+    expect(p.steps).toBe(BUILTIN_MODELS["sd-turbo"].steps.max);
   });
 
   it("wuerfelt den Seed, wenn keiner mitkommt", () => {
@@ -73,7 +73,7 @@ describe("hardenParams", () => {
     // builtin-Maximums (4) — ein ungeklemmter Fallback wuerde hier 20 zurueckgeben
     // (clampInt gibt seinen Fallback ungeprueft zurueck).
     const s = hardenParams({ prompt: "x", steps: Number.NaN }, ctx("builtin")).steps;
-    expect(s).toBe(BUILTIN_MODEL.steps.max);
+    expect(s).toBe(BUILTIN_MODELS["sd-turbo"].steps.max);
   });
 
   it("faengt NaN/Infinity in cfg, width, height und seed ab, statt sie durchzureichen", () => {
@@ -163,7 +163,7 @@ describe("eine Haertung, zwei Aufrufer", () => {
   // Das Panel uebergibt alle Reglerwerte, ein Fremdplugin oft nur den Prompt. Beide gehen
   // durch dieselbe Haertung — dieser Test haelt fest, dass der schmale Auftrag dieselben
   // Backend-Wahrheiten bekommt wie der volle, statt eigener Defaults.
-  const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODEL.id,
+  const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODELS["sd-turbo"].id,
               now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
 
   it("der schmale Auftrag erbt dieselben Backend-Wahrheiten wie der volle", () => {

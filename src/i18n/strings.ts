@@ -5,7 +5,8 @@
 // Key-Namespaces: cmd.* (Commands) · view.* (View-Titel/Tabs) · generate.* (Generate-Panel) ·
 // status.* (Statuszeile) · empty.* (Leerzustände) · notice.* (new Notice(...)) ·
 // settings.<gruppe>.* (Settings-Tab) · history.* (History-Panel) · modal.* (confirmAction) ·
-// picker.* (Vorlagenbild-Auswahl).
+// picker.* (Vorlagenbild-Auswahl) · confirm.* (Bestaetigungsdialoge ausserhalb von modal.*,
+// z. B. vor einem grossen Modell-Download).
 import { defineStrings } from "../vendor/kit/i18n";
 
 export const EN: Record<string, string> = {
@@ -109,6 +110,13 @@ export const EN: Record<string, string> = {
   "settings.model.removeConfirm": "Remove the downloaded model ({0}) from this device? You can download it again any time.",
   "settings.model.removed": "Model removed.",
   "settings.model.ready": "Ready",
+  "settings.builtinModel.name": "Model",
+  "settings.builtinModel.desc": "Which built-in model this engine uses. Switching downloads nothing by itself — the download/remove row below follows the choice.",
+  "settings.showModelPicker.name": "Show model picker in the panel",
+  "settings.showModelPicker.desc": "Let the model also be switched from the Generate panel. Only shown once more than one built-in model is downloaded.",
+  "confirm.bigModel.title": "Download {0}?",
+  "confirm.bigModel.body": "Download {0}. Loading it onto the GPU for the first image briefly needs roughly double that — about 13 GB. On devices with 16 GB of memory that can get tight. Cancel downloads nothing.",
+  "confirm.bigModel.cta": "Download",
   "settings.advanced.heading": "Advanced",
   "settings.assetBaseUrl.name": "Download source",
   "settings.assetBaseUrl.desc": "Base URL of the model files. Default is the plugin's model repository; change it for a mirror or a local server. Downloaded files stay valid regardless of the URL.",
@@ -245,6 +253,13 @@ export const DE: Record<string, string> = {
   "settings.model.removeConfirm": "Das heruntergeladene Modell ({0}) von diesem Gerät entfernen? Du kannst es jederzeit erneut laden.",
   "settings.model.removed": "Modell entfernt.",
   "settings.model.ready": "Bereit",
+  "settings.builtinModel.name": "Modell",
+  "settings.builtinModel.desc": "Welches eingebaute Modell diese Engine nutzt. Der Wechsel selbst lädt nichts — die Download-/Entfernen-Zeile darunter folgt der Wahl.",
+  "settings.showModelPicker.name": "Modellwahl im Panel anzeigen",
+  "settings.showModelPicker.desc": "Erlaubt den Modellwechsel auch aus dem Generate-Panel. Erscheint erst, wenn mehr als ein eingebautes Modell heruntergeladen ist.",
+  "confirm.bigModel.title": "{0} herunterladen?",
+  "confirm.bigModel.body": "{0} herunterladen. Beim ersten Bild braucht das Laden ins GPU-Gedächtnis kurzzeitig etwa das Doppelte — rund 13 GB. Auf Geräten mit 16 GB Arbeitsspeicher kann das knapp werden. Abbrechen lädt nichts.",
+  "confirm.bigModel.cta": "Herunterladen",
   "settings.advanced.heading": "Erweitert",
   "settings.assetBaseUrl.name": "Download-Quelle",
   "settings.assetBaseUrl.desc": "Basis-URL der Modell-Dateien. Standard ist das Modell-Repository des Plugins; für einen Spiegel oder lokalen Server änderbar. Geladene Dateien bleiben unabhängig von der URL gültig.",

@@ -3,7 +3,6 @@ import {
   allAssets,
   assetsFor,
   assetUrl,
-  BUILTIN_MODEL,
   BUILTIN_MODELS,
   cacheKey,
   DEFAULT_ASSET_BASE_URL,
@@ -16,7 +15,7 @@ import {
 
 describe("model-manifest", () => {
   it("Katalog trägt sd-turbo mit fünf Dateien, jede mit 64-stelligem Hash und Größe > 0", () => {
-    expect(BUILTIN_MODEL.id).toBe("sd-turbo");
+    expect(BUILTIN_MODELS["sd-turbo"].id).toBe("sd-turbo");
     const files = assetsFor("sd-turbo");
     expect(files.map((f) => f.key).sort()).toEqual(
       ["sd-turbo/merges", "sd-turbo/text_encoder", "sd-turbo/unet", "sd-turbo/vae_decoder", "sd-turbo/vocab"],
@@ -25,8 +24,8 @@ describe("model-manifest", () => {
       expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(f.bytes).toBeGreaterThan(0);
     }
-    expect(BUILTIN_MODEL.steps).toEqual({ min: 1, max: 4, default: 4 });
-    expect(BUILTIN_MODEL.sizes).toEqual([{ width: 512, height: 512 }]);
+    expect(BUILTIN_MODELS["sd-turbo"].steps).toEqual({ min: 1, max: 4, default: 4 });
+    expect(BUILTIN_MODELS["sd-turbo"].sizes).toEqual([{ width: 512, height: 512 }]);
   });
   it("assetUrl fügt Basis und Pfad ohne doppelte Slashes zusammen", () => {
     const f = assetsFor("sd-turbo").find((x) => x.key === "sd-turbo/unet")!;

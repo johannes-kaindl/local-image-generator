@@ -158,10 +158,6 @@ export const BUILTIN_MODELS: Record<BuiltinModelId, BuiltinModel> = {
 
 export const DEFAULT_BUILTIN_MODEL_ID: BuiltinModelId = "sd-turbo";
 
-/** Kompatibilitäts-Alias auf das Default-Modell — Aufrufer, die noch nicht auf ein gewähltes
- *  Modell umgestellt sind (Task 10–12), lesen weiter dieses eine Modell. Verschwindet in Task 12. */
-export const BUILTIN_MODEL: BuiltinModel = BUILTIN_MODELS[DEFAULT_BUILTIN_MODEL_ID];
-
 export function modelById(id: BuiltinModelId): BuiltinModel {
   return BUILTIN_MODELS[id];
 }

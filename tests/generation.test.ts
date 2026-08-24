@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
-import { BUILTIN_MODEL } from "../src/core/model-manifest";
+import { BUILTIN_MODELS } from "../src/core/model-manifest";
 
 describe("generation constants (Spec §4)", () => {
   it("SIZES enthält 7 Einträge", () => {
@@ -38,10 +38,10 @@ describe("backendCapabilities", () => {
       negativePrompt: false,
       cfg: false,
       initImage: false,
-      minSteps: BUILTIN_MODEL.steps.min,
-      maxSteps: BUILTIN_MODEL.steps.max,
-      fixedSize: BUILTIN_MODEL.sizes[0],
-      sizes: BUILTIN_MODEL.sizes,
+      minSteps: BUILTIN_MODELS["sd-turbo"].steps.min,
+      maxSteps: BUILTIN_MODELS["sd-turbo"].steps.max,
+      fixedSize: BUILTIN_MODELS["sd-turbo"].sizes[0],
+      sizes: BUILTIN_MODELS["sd-turbo"].sizes,
     });
   });
   it("server kann alles, was das Panel anbietet", () => {

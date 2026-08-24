@@ -9,7 +9,17 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
-import { assetsFor, BUILTIN_MODELS, modelById, RUNTIME_WASM, type AssetFile, type BuiltinModel, type BuiltinModelId } from "./core/model-manifest";
+import {
+  assetsFor,
+  BUILTIN_MODELS,
+  DEFAULT_BUILTIN_MODEL_ID,
+  modelById,
+  RUNTIME_WASM,
+  totalBytes,
+  type AssetFile,
+  type BuiltinModel,
+  type BuiltinModelId,
+} from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
@@ -21,7 +31,7 @@ import {
   type ImageGenerationApi,
 } from "./core/plugin-api";
 import { parseOptionsModel, ProgressPoller, A1111Client, type ImageBackend } from "./core/txt2img";
-import type { EngineState, GenParams, PanelState, ServerState } from "./core/viewmodel";
+import { formatBytes, type EngineState, type GenParams, type PanelState, type ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
@@ -162,6 +172,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       recheckServer: () => void this.checkServer(),
       downloadModel: () => void this.startDownload(),
       cancelDownload: () => this.cancelDownload(),
+      setBuiltinModel: (id) => void this.setBuiltinModel(id),
       saveImage: (mode) => void this.saveImage(mode),
       openSettings: () => {
         const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
@@ -437,9 +448,24 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   /** Opt-in-Download aller fehlenden Assets des GEWAEHLTEN Modells (Spec 0.6 §4: ohne Klick
-   *  fließt kein Byte). */
+   *  fließt kein Byte). Vor dem grossen SDXL-Turbo-Download fragt zusaetzlich ein
+   *  Bestaetigungsdialog (Task 12) — SD-Turbo (Default) bleibt ohne Rueckfrage, wie bisher.
+   *  Abbrechen (Knopf, Escape, Klick daneben) laedt kein Byte: confirmAction() loest bei
+   *  jedem dieser drei Wege mit `false` auf. */
   async startDownload(): Promise<void> {
     if (this.downloadAbort) return;
+    const m = this.activeModel();
+    if (m.id !== DEFAULT_BUILTIN_MODEL_ID) {
+      const bytes = totalBytes(this.activeFiles());
+      const ok = await confirmAction(this.app, {
+        title: t("confirm.bigModel.title", m.label),
+        message: t("confirm.bigModel.body", formatBytes(bytes)),
+        confirmLabel: t("confirm.bigModel.cta"),
+        cancelLabel: t("modal.cancel"),
+        warning: false,
+      });
+      if (!ok) return; // kein Byte
+    }
     const ac = new AbortController();
     this.downloadAbort = ac;
     const files = this.activeFiles();
