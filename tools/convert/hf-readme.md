@@ -24,7 +24,7 @@ downloads these files **only after the user clicks "Download"**, verifies each f
 SHA-256 pinned in the plugin release, and stores them outside the vault.
 
 Two models are hosted here, chosen from a dropdown in the plugin: **SD-Turbo** (≈ 2.5 GB,
-512×512 only) and **SDXL-Turbo** (≈ 6.9 GB, up to 1024×1024). Both are the plugin's own ONNX
+512×512 only) and **SDXL-Turbo** (≈ 7.0 GB, up to 1024×1024). Both are the plugin's own ONNX
 conversion of the respective official Stability AI weights — no third-party conversion is used.
 
 ## Contents

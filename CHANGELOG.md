@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format follows
 
 - **SDXL-Turbo as a second built-in model**, alongside SD-Turbo, chosen from a dropdown in
   the settings and in the generator panel — sharper output, up to 1024×1024, at the cost of
-  a larger download (≈ 6.9 GB) and a higher GPU-memory peak during loading (≈ 13 GB). The
+  a larger download (≈ 7.0 GB) and a higher GPU-memory peak during loading (≈ 13 GB). The
   panel's size picker now offers whichever sizes the active model actually supports; the
   four-session pipeline (two text encoders, UNet, VAE decoder) and its own tokenizer pair
   are this plugin's own ONNX conversion of the official `stabilityai/sdxl-turbo` weights.
@@ -22,10 +22,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- **The panel understated an SDXL-Turbo download by 3.9 GB.** The "not downloaded" empty
+- **SDXL-Turbo produced a pure black image, with no error.** Its VAE decoder's activations
+  exceed fp16's range under the WebGPU execution provider (max 65504 → Inf → NaN in the
+  entire output), which renders as solid black — a valid PNG at the right size, so nothing
+  else in the pipeline noticed. The CPU execution provider doesn't show this at all, which
+  is why it stayed hidden through Node-side testing. The VAE decoder now ships in fp32 while
+  everything else in the model stays fp16 (+99 MB, 198 MB vs. 99 MB; a few hundred
+  milliseconds slower per image). A new, deliberately expensive smoke check now generates a
+  real image with SDXL-Turbo and asserts it isn't a uniform color, so a similar precision
+  regression fails loudly instead of shipping silently.
+- **The panel understated an SDXL-Turbo download by 4.5 GB.** The "not downloaded" empty
   state and its download button always sized and named themselves after the *default*
   model (SD-Turbo, 2.5 GB), never the one actually selected — with SDXL-Turbo chosen and
-  not yet cached, the button read "Download model (2.5 GB)" and fetched 6.9 GB. Both now
+  not yet cached, the button read "Download model (2.5 GB)" and fetched 7.0 GB. Both now
   read the selected model.
 - A session build that fails with a recognizable out-of-memory signal now shows a readable
   status-line message ("not enough memory for this model") instead of the raw runtime error.

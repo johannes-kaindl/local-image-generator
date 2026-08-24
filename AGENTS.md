@@ -162,6 +162,32 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   2026-08-23, M5 Pro): `maxBufferSize` und `maxStorageBufferBindingSize` je 4 GiB statt
   256/128 MiB, `shader-f16` vorhanden, 16 GiB GPU-Belegung ohne device-lost. Puffergrenzen
   sind hier also kein Engpass — die JS-Seite ist es.
+- **SDXLs VAE-Decoder ueberschreitet in fp16 unter dem WebGPU-EP den Wertebereich — und das
+  Ergebnis ist ein reines schwarzes Bild, OHNE jeden Fehler.** Gemessen 2026-08-24: SDXL-Turbo
+  lieferte live gueltige PNGs in der richtigen Groesse, Status „Bereit", Inhalt zu 100 % Schwarz.
+  Drei Runden Instrumentierung haben es eingekreist — Node/CPU-EP mit denselben Gewichten und
+  demselben Code ist durchgaengig saubere Zahlen bis zum Ende der Pipeline; im Renderer/WebGPU
+  sind beide Text-Encoder und beide UNet-Schritte ebenso saubere und mit der CPU-Referenz
+  deckungsgleiche Zahlen, aber der VAE-Decoder-INPUT ist gesund und der VAE-Decoder-OUTPUT ist zu
+  786.432/786.432 (100 %) NaN. Ursache: SDXLs Aktivierungen an dieser Stelle ueberschreiten
+  fp16s Bereich (Maximum 65504) → Inf → NaN; ORTs CPU-Kernel rechnen die identische Graph-Struktur
+  offenbar hoeher praezise und zeigen den Defekt NICHT — **ein Node-seitiger Test kann diesen
+  Fehler grundsaetzlich nicht finden**, nur ein Live-Lauf im Renderer. Eine fp32-Gegenprobe am
+  selben Graph, denselben Gewichten, demselben Code (nur die eine Session getauscht) war NaN-frei
+  und deckungsgleich mit der CPU-Referenz (Min/Max/Mean je auf ~1 % Abweichung) und produzierte
+  ein kohärentes, korrektes Bild. Deshalb bleibt GENAU dieser eine Teil fp32, waehrend alles
+  andere im Modell fp16 bleibt (`tools/convert/convert_model.py`, `MODELS["sdxl-turbo"]["fp32"]`,
+  Funktion `copy_fp32()`) — SD-Turbo ist von diesem Defekt nicht betroffen und bleibt
+  unveraendert vollstaendig fp16. Kosten: **+99 MB** (198.078.154 vs. 99.126.105 Byte, der
+  VAE-Decoder allein) und **+~650 ms** pro `generate()`-Aufruf (2317 ms vs. 1671 ms, n=1, sonst
+  identische warme Sessions). Kein Zufall, dass es dafuer ein bekanntes Community-Fixmodell
+  (`sdxl-vae-fp16-fix`) gibt — das ist eine bekannte Eigenschaft von SDXLs Architektur, kein
+  Defekt in diesem Code. GUI-Smoke-Punkt 25 (`scripts/gui-smoke.ts`) generiert seitdem ein
+  echtes SDXL-Turbo-Bild und misst dessen Pixel-Inhalt (Luma-Standardabweichung + Zahl
+  distinkter Farben) statt nur seine Form — verifiziert per Live-Session-Swap gegen genau
+  diesen fp16-Zustand rot, gegen den fp32-Fix gruen (`docs/SMOKE.md` § 2026-08-24 Phase 4).
+  **Bei jedem weiteren fp16-Konversionsschritt an SDXL: diesen Teil NICHT „der Einheitlichkeit
+  wegen" zurueckstellen** — er sieht wie eine vergessene Aufraeumarbeit aus und ist keine.
 - **Feeds an die Session anpassen, nie hardcoden:** `Session.inputTypes` (Dtype) UND
   `Session.inputShapes` (Rang). Die eigene Konversion deklariert `timestep` als 0-d-Skalar
   (`shape []`) — `dims [1]` bricht das UNet mit „Gemm: must be 2 dimensional" (gemessen

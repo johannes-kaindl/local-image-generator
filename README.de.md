@@ -5,7 +5,7 @@ Wege, wählbar in den Einstellungen:
 
 - **Eingebaut (Standard):** ein Modell rechnet **auf deiner GPU in Obsidian** per
   WebGPU — wählbar in den Einstellungen. **SD-Turbo** (≈ 2,5 GB, 512×512) ist die
-  Vorgabe; **SDXL-Turbo** (≈ 6,9 GB, bis 1024×1024, schärfere Bilder) ist ein
+  Vorgabe; **SDXL-Turbo** (≈ 7,0 GB, bis 1024×1024, schärfere Bilder) ist ein
   optionales zweites Modell, auf das du selbst umstellst. Nichts zu installieren:
   **Modell herunterladen** klicken (per Prüfsumme geprüft, außerhalb des Vaults
   abgelegt), dann Prompt eingeben und Generieren.
@@ -228,7 +228,7 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
   (`shader-f16`) nutzen kann — Apple-Silicon-Macs erfüllen das, ebenso die meisten
   aktuellen dedizierten GPUs. Plattenplatz und Speicherspitze hängen vom gewählten
   Modell ab: **SD-Turbo** braucht ≈ 2,5 GB Platz und rund 4 GB freien Speicher, während
-  ein Bild entsteht; **SDXL-Turbo** braucht ≈ 6,9 GB Platz und beim ersten Sitzungsaufbau
+  ein Bild entsteht; **SDXL-Turbo** braucht ≈ 7,0 GB Platz und beim ersten Sitzungsaufbau
   kurzzeitig etwa das *Doppelte* davon im GPU-Speicher (die Gewichte liegen bis zum Ende
   des Ladens sowohl im JS-Heap als auch auf der GPU) — rund 13 GB Spitze. Auf einem
   16-GB-Rechner kann das knapp werden. Das Panel sagt dir, wenn die GPU gar nicht
@@ -323,7 +323,7 @@ dem Modell-Repository dieses Plugins auf Hugging Face:
 | `sd-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE-Decoder (fp16) | Stability AI Community License |
 | `sd-turbo/tokenizer/vocab.json`, `merges.txt` | ≈ 1,6 MB | CLIP-BPE-Tokenizer-Daten | (Teil des Modell-Releases) |
 
-**SDXL-Turbo** (optionales zweites Modell, ≈ 6,9 GB gesamt):
+**SDXL-Turbo** (optionales zweites Modell, ≈ 7,0 GB gesamt):
 
 | Datei | Größe | Was es ist | Lizenz |
 |---|---|---|---|
@@ -383,7 +383,7 @@ anderer Netzzugriff, keine Telemetrie.
   beteiligt.
   - [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo) — die Vorgabe.
   - [SDXL-Turbo](https://huggingface.co/stabilityai/sdxl-turbo) — das optionale zweite
-    Modell, schärfere Bilder bis 1024×1024, ≈ 6,9 GB.
+    Modell, schärfere Bilder bis 1024×1024, ≈ 7,0 GB.
 - **Server-Modus:** das Modell ist, was deine Server-App geladen hat — seine Lizenz gilt
   für die Bilder, die es erzeugt. Prüfe seine Modellkarte, bevor du erzeugte Bilder
   verwendest, besonders kommerziell.
