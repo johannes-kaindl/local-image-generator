@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/core/engine";
 import { BUILTIN_MODELS, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
-import { LocalEngineBackend, type LocalEngineDeps } from "../src/obsidian/local-engine";
+import { LocalEngineBackend, SessionBuildTimeout, type LocalEngineDeps } from "../src/obsidian/local-engine";
 import type { ModelStore } from "../src/obsidian/model-store";
 
 // Fake-Sessions wie in tests/engine.test.ts — fp32-IO (unsere Konversion), int64-ids.
@@ -35,6 +35,11 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
     },
     checkGpu: async () => "ok",
     encodePng: (rgba, w, h) => `data:image/png;base64,${w}x${h}:${rgba.length}`,
+    // Node-Umgebung hat kein `window` — der Produktions-Default in local-engine.ts (`REAL_TIMERS`)
+    // ruft `window.setTimeout`. Hier bewusst die globalen Timer statt `window.*`, damit alle
+    // bestehenden Tests (die `timers` nicht selbst setzen) nicht an einem ReferenceError
+    // scheitern, sobald `loadPart()` seinen Wachhund aufzieht.
+    timers: { setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number, clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout) },
     get released() { return state.released; },
   };
   return deps;
@@ -160,5 +165,27 @@ describe("LocalEngineBackend", () => {
     const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
     await be.generate(reqOf("katze")).catch(() => undefined);
     expect(ext === undefined || (Array.isArray(ext) && ext.length === 0)).toBe(true);
+  });
+
+  // Spec §8 Punkt 2 — der Wachhund, den es im Code-Stand vor diesem Fix nicht gab (verloren
+  // ueber zwei Engine-Umbauten). Der Punkt dieses Tests: ein Wachhund, den niemand hat feuern
+  // sehen, ist ein Wachhund, von dem niemand weiss, ob er funktioniert. Echte 5 Minuten waeren
+  // hier unbrauchbar — `timers` ist deshalb wie `StoreDeps.timer` injiziert, mit einer winzigen,
+  // aber ECHTEN Frist (kein Fake-Timer-Mock), damit der Test dieselbe `withTimeout`-Race
+  // durchlaeuft, die auch in Obsidian laeuft.
+  it("meldet SessionBuildTimeout, wenn createSession niemals aufloest oder verwirft", async () => {
+    const deps = makeDeps([]);
+    deps.createSession = () => new Promise<Session>(() => { /* haengt absichtlich fuer immer */ });
+    // Deadline fuer DIESEN Test winzig halten — nicht die Produktions-Konstante aendern:
+    // loadPart() ruft `withTimeout(..., SESSION_BUILD_TIMEOUT_MS, this.timers)`, das die
+    // angefragten 5 Minuten an `timers.setTimeout(fn, ms)` weiterreicht; dieser Fake ignoriert
+    // das angefragte `ms` und feuert nach 20 ms — derselbe `withTimeout`-Codepfad, nur mit
+    // kurzer Frist.
+    deps.timers = {
+      setTimeout: (fn) => setTimeout(fn, 20) as unknown as number,
+      clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+    await expect(be.generate(reqOf("hund"))).rejects.toThrow(SessionBuildTimeout);
   });
 });

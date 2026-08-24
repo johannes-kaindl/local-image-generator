@@ -7,7 +7,36 @@ import { SdxlTurboEngine } from "../core/engine-sdxl";
 import { RUNTIME_WASM, type BuiltinModel, type ModelPart } from "../core/model-manifest";
 import type { TokenizerData } from "../core/pipeline/tokenizer";
 import type { ImageBackend, ImageRequest } from "../core/txt2img";
+import { withTimeout, type TimeoutTimers } from "../vendor/kit/timeout";
 import type { ModelStore } from "./model-store";
+
+// Wachhund um den Session-Aufbau (Spec §8 Punkt 2 — im Code-Stand vor diesem Fix nicht
+// vorhanden, obwohl die Plan-Selbstpruefung "keine Luecke" behauptete: geschrieben am
+// 2026-07-18, aber ueber zwei Engine-Umbauten (0.5-Thin-Client-Entfernung, 0.6-Rueckholung)
+// verlorengegangen. ORT bietet KEIN Abort fuer `InferenceSession.create` — ein Timeout kann
+// den Aufruf nicht wirklich abbrechen, nur der UI nach Ablauf eine lesbare Meldung geben und
+// die haengende Promise im Hintergrund verwaisen lassen (derselbe Kompromiss wie im
+// verworfenen 0.4-Entwurf). Deadline **5 Minuten**: deutlich ueber der als normal
+// dokumentierten "minutenlang"-Ladezeit auf Apple Silicon (AGENTS.md, ort-host.ts-Kopf) —
+// SDXL-Turbos ~13-GB-Spitzenlast macht einen legitim langsamen, aber funktionierenden Lauf
+// wahrscheinlicher, und ein zu frueh feuernder Wachhund waere selbst ein Defekt (ein
+// erfolgreicher, nur langsamer Ladevorgang wuerde als Fehlschlag gemeldet). Generous beats
+// clever. Grund fuer die Wahl VOR Ort statt in `ort-host.ts`: die Injektionsstelle
+// (`LocalEngineDeps.createSession`) ist bereits per Fake in Node testbar, `ort-host.ts` ruft
+// echtes ORT und ist es nicht.
+export const SESSION_BUILD_TIMEOUT_MS = 5 * 60_000;
+
+/** Wirft `loadPart()`, wenn `deps.createSession()` innerhalb von `SESSION_BUILD_TIMEOUT_MS`
+ *  weder aufloest noch verwirft — der stille Ewig-Haenger, den dieser Punkt der Spec
+ *  verhindern soll (historischer Vorfall: jsep/asyncify-WASM-Fehlpaarung, `create()` resolved
+ *  nie). Eigene Klasse statt generischer `Error`, damit `main.ts` sie von einem
+ *  Speicherfehler unterscheiden und eine eigene Statuszeile zeigen kann. */
+export class SessionBuildTimeout extends Error {
+  constructor(ms: number) {
+    super(`session build timed out after ${ms} ms`);
+    this.name = "SessionBuildTimeout";
+  }
+}
 
 export type EnginePhase = "loading-model" | "generating";
 
@@ -18,7 +47,17 @@ export interface LocalEngineDeps {
   checkGpu: () => Promise<"ok" | "no-webgpu" | "no-f16">;
   /** RGBA → PNG-Data-URL (Canvas im Renderer, Fake im Test). */
   encodePng: (rgba: Uint8ClampedArray, w: number, h: number) => string;
+  /** Timer-Port für den Session-Build-Wachhund (`SESSION_BUILD_TIMEOUT_MS`). Default
+   *  `window.setTimeout`/`clearTimeout` (Store-Regel prefer-window-timers, Muster wie
+   *  `StoreDeps.timer` in model-store.ts) — ein Test kann hier einen Fake einsetzen, der
+   *  sofort feuert, um den Wachhund ohne echte 5 Minuten Wartezeit auszulösen. */
+  timers?: TimeoutTimers;
 }
+
+const REAL_TIMERS: TimeoutTimers = {
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: (id) => window.clearTimeout(id),
+};
 
 export class LocalEngineBackend implements ImageBackend {
   /** Phasen-Meldung an den Host: „loading-model" einmal je Sitzung vor dem ersten Bild
@@ -31,11 +70,14 @@ export class LocalEngineBackend implements ImageBackend {
    *  aktiven UNet-Schritt wegzuziehen (Review 2026-08-19). */
   private running: Promise<unknown> | null = null;
   private runtimeReady = false;
+  private readonly timers: TimeoutTimers;
 
   constructor(
     private readonly deps: LocalEngineDeps,
     private readonly model: BuiltinModel,
-  ) {}
+  ) {
+    this.timers = deps.timers ?? REAL_TIMERS;
+  }
 
   get loaded(): boolean {
     return this.engine !== null;
@@ -101,7 +143,13 @@ export class LocalEngineBackend implements ImageBackend {
       if (bytes === undefined) throw new Error(`loadPart: fehlender Bucket-Puffer fuer "${d.path}"`);
       return { path: d.path.split("/").pop() ?? d.path, data: bytes };
     });
-    return this.deps.createSession(buf, ext);
+    // Wachhund (Spec §8 Punkt 2): `deps.createSession()` bekommt hoechstens
+    // `SESSION_BUILD_TIMEOUT_MS`, bevor der Aufruf als haengend gilt. Ein spaetes Aufloesen
+    // nach Ablauf wird nicht mehr abgewartet (ORT bietet kein Abort) — die Session bleibt dann
+    // unreleased im Hintergrund verwaist, dieselbe Abwaegung wie im verworfenen 0.4-Entwurf.
+    const raced = await withTimeout(this.deps.createSession(buf, ext), SESSION_BUILD_TIMEOUT_MS, this.timers);
+    if (raced.timedOut) throw new SessionBuildTimeout(SESSION_BUILD_TIMEOUT_MS);
+    return raced.value;
   }
 
   // Welche Pipeline entsteht, entscheidet der Katalog (`model.kind`) — nicht eine

@@ -36,7 +36,7 @@ import { formatBytes, type EngineState, type GenParams, type PanelState, type Se
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
-import { LocalEngineBackend } from "./obsidian/local-engine";
+import { LocalEngineBackend, SessionBuildTimeout } from "./obsidian/local-engine";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
 import { base64OfDataUrl, dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
@@ -724,7 +724,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // erkanntem Signal (`isOutOfMemoryError`, src/core/engine-errors.ts). Erkennt sie nichts,
       // bleibt die rohe Meldung stehen — lesbar, nur nicht freundlich; nie ein Ewig-Spinner,
       // weil dieser catch-Zweig ohnehin greift, sobald `createOrtSession` wirft/verwirft.
-      const displayMsg = builtin && isOutOfMemoryError(e) ? t("status.outOfMemory") : msg;
+      // Spec §8 Punkt 2: haengt `createSession` laenger als `SESSION_BUILD_TIMEOUT_MS`, wirft
+      // `local-engine.ts`s Wachhund `SessionBuildTimeout` — eigener Satz statt „nicht genug
+      // Speicher", weil ein Timeout ein anderer Befund ist (koennte auch ein haengender
+      // Treiber sein, nicht nur GPU-Speicher).
+      const displayMsg =
+        builtin && e instanceof SessionBuildTimeout ? t("status.sessionTimeout")
+        : builtin && isOutOfMemoryError(e) ? t("status.outOfMemory")
+        : msg;
       this.state.run = external ? { kind: "idle" } : { kind: "error", message: displayMsg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
       if (!builtin) void this.checkServer();
