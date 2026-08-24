@@ -32,7 +32,7 @@ export const GENERATED_ASSETS = {
         { path: "sdxl-turbo/unet/unet_011.onnx_data", bytes: 416808960, sha256: "196c388d5242ee2179aa12ec9f3094f3c8019e61758da3544bbff435253a2c4b" },
         { path: "sdxl-turbo/unet/unet_012.onnx_data", bytes: 141271040, sha256: "100beb79369663e1a90e6325ace5ce3219266ef31ebdf7a11765cb44dbb08a56" },
       ] },
-    vae_decoder: { path: "sdxl-turbo/vae_decoder/model.onnx", bytes: 99126105, sha256: "c354ef67ceba82b868745d182f33ecab58072f94764b6b73b6706f563dda8dd3" },
+    vae_decoder: { path: "sdxl-turbo/vae_decoder/model.onnx", bytes: 198078154, sha256: "a49a58ad044e29434b9c806a41155f1976774e564f18143be77acf7103e3a7f6" },
     vocab: { path: "sdxl-turbo/tokenizer/vocab.json", bytes: 1059962, sha256: "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349" },
     merges: { path: "sdxl-turbo/tokenizer/merges.txt", bytes: 524619, sha256: "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a" },
     vocab_2: { path: "sdxl-turbo/tokenizer_2/vocab.json", bytes: 1059962, sha256: "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349" },
