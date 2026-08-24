@@ -146,6 +146,18 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Funktion, statt still ein schlechteres Ergebnis zu liefern (Spec §9-Risiko 1: genau der
   leise Qualitaetsverlust, den ein Fallback waere). Ein Fehlerbild ist hier das gewollte
   Verhalten, kein fehlender Edge-Case.
+- **ORT bietet KEIN Abort fuer `InferenceSession.create` — deshalb sitzt der Wachhund am
+  Rand, nicht im Kern.** `SESSION_BUILD_TIMEOUT_MS` (`src/obsidian/local-engine.ts`, 5 min)
+  umschliesst den Aufruf mit `withTimeout`, aber ein Ablauf BRICHT den Aufruf nicht ab — er
+  meldet nur der UI, dass er als haengend gilt, und laesst die echte Promise im Hintergrund
+  verwaisen; loest sie doch noch spaeter auf, bleibt diese Session unreleased (kein
+  `.dispose()`, GPU-Speicher bleibt belegt). Der Guard sitzt bewusst an der INJIZIERTEN
+  Grenze `LocalEngineDeps.createSession`, nicht in `ort-host.ts`: nur dort ist er mit einem
+  Fake in Node testbar, `ort-host.ts` ruft echtes ORT. **Dieser Wachhund existierte schon
+  einmal** (Entwurf 2026-07-18) und ging ueber zwei Engine-Umbauten (0.5-Entfernung,
+  0.6-Rueckholung) verloren, weil er nur in einer Spec-Datei stand, nicht im Code — genau der
+  Fehlermodus, den dieser Absatz jetzt verhindern soll: was hier nicht steht, kann beim
+  naechsten Umbau wieder verschwinden.
 - **Die WebGPU-Limits im Obsidian-Renderer sind weit ueber den Spec-Defaults** (gemessen
   2026-08-23, M5 Pro): `maxBufferSize` und `maxStorageBufferBindingSize` je 4 GiB statt
   256/128 MiB, `shader-f16` vorhanden, 16 GiB GPU-Belegung ohne device-lost. Puffergrenzen

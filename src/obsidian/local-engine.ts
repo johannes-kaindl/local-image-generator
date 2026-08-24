@@ -147,7 +147,16 @@ export class LocalEngineBackend implements ImageBackend {
     // `SESSION_BUILD_TIMEOUT_MS`, bevor der Aufruf als haengend gilt. Ein spaetes Aufloesen
     // nach Ablauf wird nicht mehr abgewartet (ORT bietet kein Abort) — die Session bleibt dann
     // unreleased im Hintergrund verwaist, dieselbe Abwaegung wie im verworfenen 0.4-Entwurf.
-    const raced = await withTimeout(this.deps.createSession(buf, ext), SESSION_BUILD_TIMEOUT_MS, this.timers);
+    const sessionPromise = this.deps.createSession(buf, ext);
+    // Review-Fund: `withTimeout` haengt intern `work.then(...)` an — nur den Erfolgsfall, kein
+    // `onRejected`. Verwirft `sessionPromise` NACH Ablauf der Frist (die Race also schon per
+    // Timeout entschieden ist), waere das genau die Art `unhandledrejection`, die die eigene
+    // Geschichte dieses Repos schon einmal produziert hat (jsep/asyncify-Fehlpaarung). Der
+    // No-op-Catch HIER, auf dem Original-Promise, macht sie explizit behandelt — `withTimeout`
+    // liest denselben `sessionPromise` weiterhin ganz normal ueber sein eigenes `.then()`, das
+    // Ergebnis unten aendert sich dadurch nicht.
+    sessionPromise.catch(() => { /* nur gegen unhandledrejection nach einem Timeout */ });
+    const raced = await withTimeout(sessionPromise, SESSION_BUILD_TIMEOUT_MS, this.timers);
     if (raced.timedOut) throw new SessionBuildTimeout(SESSION_BUILD_TIMEOUT_MS);
     return raced.value;
   }

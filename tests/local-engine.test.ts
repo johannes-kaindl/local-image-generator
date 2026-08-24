@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/core/engine";
 import { BUILTIN_MODELS, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
-import { LocalEngineBackend, SessionBuildTimeout, type LocalEngineDeps } from "../src/obsidian/local-engine";
+import { LocalEngineBackend, SessionBuildTimeout, SESSION_BUILD_TIMEOUT_MS, type LocalEngineDeps } from "../src/obsidian/local-engine";
 import type { ModelStore } from "../src/obsidian/model-store";
 
 // Fake-Sessions wie in tests/engine.test.ts — fp32-IO (unsere Konversion), int64-ids.
@@ -178,14 +178,18 @@ describe("LocalEngineBackend", () => {
     deps.createSession = () => new Promise<Session>(() => { /* haengt absichtlich fuer immer */ });
     // Deadline fuer DIESEN Test winzig halten — nicht die Produktions-Konstante aendern:
     // loadPart() ruft `withTimeout(..., SESSION_BUILD_TIMEOUT_MS, this.timers)`, das die
-    // angefragten 5 Minuten an `timers.setTimeout(fn, ms)` weiterreicht; dieser Fake ignoriert
-    // das angefragte `ms` und feuert nach 20 ms — derselbe `withTimeout`-Codepfad, nur mit
-    // kurzer Frist.
+    // angefragten 5 Minuten an `timers.setTimeout(fn, ms)` weiterreicht. Dieser Fake laesst die
+    // Race real nach 20 ms feuern (statt echte 5 Minuten abzuwarten), zeichnet das angefragte
+    // `ms` aber AUF — Review-Fund: ein Fake, der `ms` stillschweigend ignoriert, bliebe auch
+    // gruen, wenn `SESSION_BUILD_TIMEOUT_MS` durch einen Tippfehler zu z.B. 5 statt 300000
+    // wuerde. Die Assertion unten prueft die tatsaechlich angefragte Frist gegen die Konstante.
+    const requestedMs: number[] = [];
     deps.timers = {
-      setTimeout: (fn) => setTimeout(fn, 20) as unknown as number,
+      setTimeout: (fn, ms) => { requestedMs.push(ms); return setTimeout(fn, 20) as unknown as number; },
       clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
     };
     const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
     await expect(be.generate(reqOf("hund"))).rejects.toThrow(SessionBuildTimeout);
+    expect(requestedMs).toContain(SESSION_BUILD_TIMEOUT_MS);
   });
 });

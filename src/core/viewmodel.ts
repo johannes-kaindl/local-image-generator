@@ -2,7 +2,7 @@
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
 import { backendCapabilities, type SizeOption } from "./generation";
-import { allAssets, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
+import { assetsFor, modelById, RUNTIME_WASM, totalBytes, type BuiltinModelId } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -230,8 +230,17 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
   const e = s.engine;
   if (e.kind === "gpu-missing") return { text: t("empty.gpuMissing"), ctaLabel: t("empty.noServerCta"), ctaAction: "settings" };
   if (e.kind === "not-downloaded" || e.kind === "error") {
-    const size = formatBytes(totalBytes(allAssets()));
-    return { text: t("empty.notDownloaded", size), ctaLabel: t("empty.downloadCta", size), ctaAction: "download" };
+    // Review-Befund: `allAssets()` liefert IMMER das Default-Modell (sd-turbo) — mit
+    // SDXL-Turbo gewaehlt und nicht gecacht zeigte die Zeile dessen 2,5 GB, laed aber
+    // tatsaechlich 6,4 GB. `assetsFor(s.builtinModel)` traegt keine Runtime-WASM
+    // (Vertrag von assetsFor, siehe AGENTS.md), die haengt jeder Aufrufer selbst an.
+    const model = modelById(s.builtinModel);
+    const size = formatBytes(totalBytes([...assetsFor(s.builtinModel), RUNTIME_WASM]));
+    return {
+      text: t("empty.notDownloaded", model.label, size),
+      ctaLabel: t("empty.downloadCta", size),
+      ctaAction: "download",
+    };
   }
   if (e.kind === "downloading" || e.kind === "verifying")
     return { text: t("empty.downloading"), ctaLabel: t("empty.cancelCta"), ctaAction: "cancel-download" };

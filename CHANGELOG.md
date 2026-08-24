@@ -22,13 +22,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The panel understated an SDXL-Turbo download by 3.9 GB.** The "not downloaded" empty
+  state and its download button always sized and named themselves after the *default*
+  model (SD-Turbo, 2.5 GB), never the one actually selected — with SDXL-Turbo chosen and
+  not yet cached, the button read "Download model (2.5 GB)" and fetched 6.4 GB. Both now
+  read the selected model.
 - A session build that fails with a recognizable out-of-memory signal now shows a readable
-  status-line message ("not enough memory for this model") instead of the raw runtime error —
-  closes the last open item of the two-backend design's robustness section (§8). The
-  classifier is a best-effort heuristic over the error text (no reliable in-browser OOM signal
-  is measured for the WebGPU path, only a neighboring WASM-EP case); when it misses, the
-  previous raw-message behavior applies unchanged — never a stuck spinner either way, since
-  any failed session build already surfaced as an error before this change.
+  status-line message ("not enough memory for this model") instead of the raw runtime error.
+  The classifier is a best-effort heuristic over the error text (no reliable in-browser OOM
+  signal is measured for the WebGPU path, only a neighboring WASM-EP case); when it misses,
+  the previous raw-message behavior applies unchanged — never a stuck spinner either way,
+  since any failed session build already surfaced as an error before this change.
+- **A session build that never resolves or rejects** (the historical jsep/asyncify silent
+  hang that motivated this plugin's watchdog in the first place) now fails after 5 minutes
+  with a readable status-line message, instead of leaving the panel stuck on "Loading
+  model into GPU…" forever. Together with the previous two entries this closes the
+  two-backend design's robustness section (§8) in full.
 - `npm run assets:upload`'s precondition now checks that **both** catalog models are present
   in `dist-assets/` before uploading, not just SD-Turbo.
 

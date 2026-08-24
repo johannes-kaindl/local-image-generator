@@ -5,7 +5,7 @@ account. Two ways to do it, chosen in the settings:
 
 - **Built-in (default):** a model runs **on your GPU inside Obsidian** via
   WebGPU — pick one in the settings. **SD-Turbo** (≈ 2.5 GB, 512×512) is the
-  default; **SDXL-Turbo** (≈ 6.4 GB, up to 1024×1024, sharper output) is an
+  default; **SDXL-Turbo** (≈ 6.9 GB, up to 1024×1024, sharper output) is an
   optional second model you switch to yourself. Nothing to install: click
   **Download model**, verified by checksum and stored outside your vault,
   then type a prompt and press Generate.
@@ -230,7 +230,7 @@ line and settings both show the server's active model name once connected.
   shaders (`shader-f16`) — Apple Silicon Macs qualify, as do most current
   discrete GPUs. Disk and peak GPU memory depend on which model you pick:
   **SD-Turbo** needs ≈ 2.5 GB of disk and roughly 4 GB of free memory while
-  an image is being made; **SDXL-Turbo** needs ≈ 6.4 GB of disk, and briefly
+  an image is being made; **SDXL-Turbo** needs ≈ 6.9 GB of disk, and briefly
   needs about *double* that in GPU memory the first time its session is
   built (the weights sit in both the JS heap and on the GPU until loading
   finishes) — roughly 13 GB peak. That can get tight on a 16 GB machine. The
@@ -332,7 +332,7 @@ Both come from this plugin's model repository on Hugging Face:
 | `sd-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE decoder (fp16) | Stability AI Community License |
 | `sd-turbo/tokenizer/vocab.json`, `merges.txt` | ≈ 1.6 MB | CLIP BPE tokenizer data | (part of the model release) |
 
-**SDXL-Turbo** (optional second model, ≈ 6.4 GB total):
+**SDXL-Turbo** (optional second model, ≈ 6.9 GB total):
 
 | File | Size | What it is | License |
 |---|---|---|---|
@@ -394,20 +394,17 @@ No other network access, no telemetry.
   is involved.
   - [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo) — the default.
   - [SDXL-Turbo](https://huggingface.co/stabilityai/sdxl-turbo) — the
-    optional second model, sharper output at up to 1024×1024, ≈ 6.4 GB.
+    optional second model, sharper output at up to 1024×1024, ≈ 6.9 GB.
 - **Server mode:** the model is whatever your server app has loaded — its
   license applies to the images it makes. Check its model card before using
   generated images, especially for commercial purposes.
 
 ## Roadmap
 
-The two-backend design keeps both halves replaceable. Ideas under
-consideration: a second built-in model with a friendlier license and nicer
-output (an LCM-distilled SD 1.5, MIT) as another catalog entry; img2img
-(most of the target servers already expose `/sdapi/v1/img2img` in the same
-API family); and a small provider API so other community plugins can request
-images through an already-configured backend without duplicating this
-plugin's logic.
+The two-backend design keeps both halves replaceable — img2img, the plugin
+API for other Obsidian plugins, and SDXL-Turbo as a second built-in model
+were all ideas once listed here and have since shipped. Further built-in
+catalog entries remain an option as the format proves itself.
 
 ## License
 

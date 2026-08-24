@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
 import { buildViewModel, formatBytes, formatElapsed, type GenParams, type PanelState } from "../src/core/viewmodel";
+import { assetsFor, RUNTIME_WASM, totalBytes } from "../src/core/model-manifest";
 
 beforeEach(() => {
   registerI18n();
@@ -274,6 +275,26 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     const staleImg = { dataUrl: "d", params: { ...baseParams, cfg: 1, model: "sd-turbo" } };
     expect(buildViewModel({ ...sdxlState, image: matchingImg }).generateEnabled).toBe(false);
     expect(buildViewModel({ ...sdxlState, image: staleImg }).generateEnabled).toBe(true);
+  });
+  // Review-Befund (14a-Fixrunde): engineEmpty() rechnete die "not-downloaded"-Groesse ueber
+  // allAssets() — das ist per Definition IMMER das Default-Modell (sd-turbo). Mit sdxl-turbo
+  // gewaehlt und nicht gecacht zeigte Panel und Download-Knopf 2,5 GB und luden tatsaechlich
+  // 6,4 GB. Der Name war zusaetzlich als Literal "SD-Turbo" im String hartkodiert.
+  it("builtin/not-downloaded nennt Name UND Groesse des GEWAEHLTEN Modells, nicht des Default", () => {
+    const sdTurboSize = formatBytes(totalBytes([...assetsFor("sd-turbo"), RUNTIME_WASM]));
+    const sdxlTurboSize = formatBytes(totalBytes([...assetsFor("sdxl-turbo"), RUNTIME_WASM]));
+    expect(sdxlTurboSize).not.toBe(sdTurboSize); // die Faelle muessen sich ueberhaupt unterscheiden
+
+    const sdVm = buildViewModel({ ...builtin, builtinModel: "sd-turbo" });
+    expect(sdVm.empty?.text).toContain("SD-Turbo");
+    expect(sdVm.empty?.text).toContain(sdTurboSize);
+    expect(sdVm.empty?.ctaLabel).toContain(sdTurboSize);
+
+    const sdxlVm = buildViewModel({ ...builtin, builtinModel: "sdxl-turbo" });
+    expect(sdxlVm.empty?.text).toContain("SDXL-Turbo");
+    expect(sdxlVm.empty?.text).toContain(sdxlTurboSize);
+    expect(sdxlVm.empty?.ctaLabel).toContain(sdxlTurboSize);
+    expect(sdxlVm.empty?.text).not.toContain(sdTurboSize);
   });
   it("formatBytes", () => {
     expect(formatBytes(812e6)).toBe("812 MB");
