@@ -645,9 +645,11 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number): Promise<voi
 
 // --- Zweite Modellstufe (SDXL-Turbo, Spec 0.9): Punkte 20–23 --------------------------------
 
-/** Zähler des lokalen Asset-Mocks (`.mock-assets-counts.json`, Schlüssel = Pfad relativ zu
- *  `dist-assets/`, z. B. `sdxl-turbo/unet/model.onnx`). Dasselbe Muster wie `mockCounts()`
- *  oben, eigene Datei: der Bild-Mock und der Asset-Mock laufen unabhängig voneinander. */
+/** Zähler des lokalen Asset-Mocks (`.mock-assets-counts.json`, Schlüssel = die URL-Pathname
+ *  MIT führendem Slash, z. B. `/sdxl-turbo/unet/model.onnx` — NICHT `sdxl-turbo/...` ohne ihn;
+ *  das war der Bug, den Punkt 23 bei der Selbstprüfung dieses Tasks zeigte, s. dort). Dasselbe
+ *  Muster wie `mockCounts()` oben, eigene Datei: der Bild-Mock und der Asset-Mock laufen
+ *  unabhängig voneinander. */
 function mockAssetCounts(): Record<string, number> | null {
   const file = join(process.cwd(), ".mock-assets-counts.json");
   if (!existsSync(file)) return null;
@@ -728,7 +730,13 @@ async function runModelSwitchCheck(cdp: Cdp): Promise<void> {
   const erwartetVorher = modelRowName(current);
   const erwartetNachher = modelRowName(other);
 
-  const result = await cdp.evaluate<{ vorher: string | null; nachher: string | null; select: boolean }>(`
+  const result = await cdp.evaluate<{
+    vorher: boolean;
+    vorherAndereAbwesend: boolean;
+    nachher: boolean;
+    nachherAlteAbwesend: boolean;
+    select: boolean;
+  }>(`
     app.setting.open();
     app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
     await new Promise((r) => setTimeout(r, 300));
@@ -741,32 +749,44 @@ async function runModelSwitchCheck(cdp: Cdp): Promise<void> {
     if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
     const doc = app.setting?.activeTab?.containerEl?.ownerDocument ?? document;
     const namen = () => [...doc.querySelectorAll(".setting-item-name")].map((el) => el.textContent.trim());
-    const vorher = namen().find((n) => n === ${JSON.stringify(erwartetVorher)}) ?? null;
+    // Nicht nur "die erwartete Zeile ist da", auch "die ANDERE Zeile ist NICHT (mehr) da" —
+    // sonst besteht ein Settings-Tab, der beide Modell-Zeilen gleichzeitig zeigt (z. B. ein
+    // Rebuild-Bug, der die alte Zeile nicht entfernt), denselben Punkt trotzdem.
+    const vorherAlle = namen();
+    const vorher = vorherAlle.includes(${JSON.stringify(erwartetVorher)});
+    const vorherAndereAbwesend = !vorherAlle.includes(${JSON.stringify(erwartetNachher)});
     const select = [...doc.querySelectorAll("select")]
       .find((s) => [...s.options].some((o) => o.value === ${JSON.stringify(other)}));
-    if (!select) { app.setting.close(); return { vorher, nachher: null, select: false }; }
+    if (!select) {
+      app.setting.close();
+      return { vorher, vorherAndereAbwesend, nachher: false, nachherAlteAbwesend: false, select: false };
+    }
     const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype, "value").set;
     setter.call(select, ${JSON.stringify(other)});
     select.dispatchEvent(new Event("change", { bubbles: true }));
-    let nachher = null;
+    let nachherAlle = vorherAlle;
     const grenze = Date.now() + 8000;
     while (Date.now() < grenze) {
-      nachher = namen().find((n) => n === ${JSON.stringify(erwartetNachher)}) ?? null;
-      if (nachher) break;
+      nachherAlle = namen();
+      if (nachherAlle.includes(${JSON.stringify(erwartetNachher)})) break;
       await new Promise((r) => setTimeout(r, 100));
     }
+    const nachher = nachherAlle.includes(${JSON.stringify(erwartetNachher)});
+    const nachherAlteAbwesend = !nachherAlle.includes(${JSON.stringify(erwartetVorher)});
     app.setting.close();
-    return { vorher, nachher, select: true };
+    return { vorher, vorherAndereAbwesend, nachher, nachherAlteAbwesend, select: true };
   `);
 
   const teile: string[] = [];
   if (!result.select) teile.push("Modell-Dropdown im Settings-Tab nicht gefunden");
-  if (result.vorher === null) teile.push(`Zeile vor dem Wechsel nicht gefunden (erwartet „${erwartetVorher}")`);
-  if (result.nachher === null) teile.push(`Zeile nach dem Wechsel nicht gefunden (erwartet „${erwartetNachher}")`);
+  if (!result.vorher) teile.push(`Zeile vor dem Wechsel nicht gefunden (erwartet „${erwartetVorher}")`);
+  if (!result.vorherAndereAbwesend) teile.push(`Zeile des ANDEREN Modells stand schon vor dem Wechsel da (erwartet „${erwartetNachher}" abwesend)`);
+  if (!result.nachher) teile.push(`Zeile nach dem Wechsel nicht gefunden (erwartet „${erwartetNachher}")`);
+  if (!result.nachherAlteAbwesend) teile.push(`Zeile des ALTEN Modells steht nach dem Wechsel noch da (erwartet „${erwartetVorher}" abwesend)`);
   record(
     NAME,
     teile.length === 0,
-    teile.length === 0 ? `„${result.vorher}" → „${result.nachher}"` : teile.join(" · "),
+    teile.length === 0 ? `„${erwartetVorher}" → „${erwartetNachher}" (jeweils die andere Zeile abwesend)` : teile.join(" · "),
   );
 }
 
@@ -841,55 +861,61 @@ async function runModelPickerCheck(cdp: Cdp, assetsBase: string, generateTimeout
   const geladeneModelle = () =>
     cdp.evaluate<BuiltinModelId[]>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].downloadedModels;`);
 
-  // a) Toggle aus — unabhängig vom Cache-Zustand immer prüfbar.
-  await setPicker(false);
-  const aus = await displayOf(".lig-model-pick");
-
-  await setPicker(true);
   let geladen = await geladeneModelle();
 
   // Gegenprobe auf den Skip-Pfad: NUR überspringen, wenn der Zustand "zwei Modelle" weder
-  // schon da ist noch ohne Mock herstellbar wäre.
+  // schon da ist noch ohne Mock herstellbar wäre. Ohne ihn ist KEINE der drei Stufen ehrlich
+  // messbar (auch nicht "Toggle aus" — s. u.), der ganze Punkt wird also übersprungen, nicht
+  // nur die dritte Stufe.
   if (geladen.length < 2 && !assetsUp) {
-    if (aus !== "none") record(NAME, false, `Toggle aus: display ${aus} (erwartet none) — Rest übersprungen`);
     skip(
       NAME,
-      `weniger als zwei geladene Modelle (${geladen.length}) UND Asset-Mock unter ${assetsBase} nicht erreichbar (npm run smoke:assets) — die dritte Stufe ist ohne echten 6,4-GB-Download nicht herstellbar`,
+      `weniger als zwei geladene Modelle (${geladen.length}) UND Asset-Mock unter ${assetsBase} nicht erreichbar (npm run smoke:assets) — der Zwei-Modell-Zustand ist ohne ihn nicht herstellbar, keine der drei Stufen ist damit ehrlich messbar`,
     );
     return;
   }
 
-  let an1: string | null = null;
-  let an2: string | null = null;
-  const teile: string[] = [];
-
-  if (geladen.length >= 2) {
-    // Zustand liegt schon vor (z. B. ein früherer Lauf) — dritte Stufe zuerst, kostenlos.
-    an2 = await displayOf(".lig-model-pick");
-    const entfernt = await cdp.evaluate<boolean>(
-      `return await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});`,
-    );
-    if (!entfernt) teile.push("removeModel(sdxl-turbo) für die Ein-Modell-Stufe fehlgeschlagen");
-    await new Promise((r) => setTimeout(r, 300));
-    an1 = await displayOf(".lig-model-pick");
-    const wiederhergestellt = await downloadModelViaMock(cdp, "sdxl-turbo", generateTimeoutMs);
-    if (!wiederhergestellt.ok) teile.push(`Wiederherstellung von sdxl-turbo fehlgeschlagen: ${wiederhergestellt.detail}`);
-  } else {
-    if (geladen.length === 0) {
-      const dl0 = await downloadModelViaMock(cdp, DEFAULT_BUILTIN_MODEL_ID, generateTimeoutMs);
-      if (!dl0.ok) teile.push(`Download von ${DEFAULT_BUILTIN_MODEL_ID} fehlgeschlagen: ${dl0.detail}`);
-      geladen = await geladeneModelle();
-    }
-    if (geladen.length >= 1) {
-      an1 = await displayOf(".lig-model-pick");
-      const fehlend: BuiltinModelId = geladen.includes("sd-turbo") ? "sdxl-turbo" : "sd-turbo";
-      const dl1 = await downloadModelViaMock(cdp, fehlend, generateTimeoutMs);
-      if (!dl1.ok) teile.push(`Download von ${fehlend} fehlgeschlagen: ${dl1.detail}`);
-      else an2 = await displayOf(".lig-model-pick");
+  // Zwei-Modell-Zustand HERSTELLEN, bevor irgendetwas gemessen wird (auch die Stufe "Toggle
+  // aus"): fehlt hier eines der beiden, laedt der Helfer es nach — liegen beide schon vor
+  // (z. B. ein frueherer Lauf), passiert nichts, der Zustand ist dann kostenlos gegeben.
+  const herstellFehler: string[] = [];
+  for (const id of ["sd-turbo", "sdxl-turbo"] as const) {
+    geladen = await geladeneModelle();
+    if (!geladen.includes(id)) {
+      const dl = await downloadModelViaMock(cdp, id, generateTimeoutMs);
+      if (!dl.ok) herstellFehler.push(`Download von ${id} fehlgeschlagen: ${dl.detail}`);
     }
   }
+  if (herstellFehler.length > 0) {
+    record(NAME, false, `Zwei-Modell-Zustand nicht herstellbar: ${herstellFehler.join(" · ")}`);
+    return;
+  }
 
-  if (aus !== "none") teile.push(`Toggle aus: display ${aus} (erwartet none)`);
+  const teile: string[] = [];
+
+  // a) Toggle aus — jetzt mit ZWEI geladenen Modellen gemessen, nicht vorher (Review-Fund):
+  // mit nur einem geladenen Modell waere diese Stufe auch dann gruen, wenn showModelPicker
+  // komplett ignoriert und die Sichtbarkeit allein an der Modellzahl haengen wuerde. Erst mit
+  // dem Zwei-Modell-Zustand als Vorbedingung testet "aus" wirklich den TOGGLE.
+  await setPicker(false);
+  const aus = await displayOf(".lig-model-pick");
+
+  // b) Toggle an, zwei Modelle — muss sichtbar sein.
+  await setPicker(true);
+  const an2 = await displayOf(".lig-model-pick");
+
+  // c) Toggle an, EIN Modell — sdxl-turbo vorübergehend entfernen, danach wiederherstellen
+  // (Nebenbefund Task 10 Gap 5: removeModel(id) darf NUR das eine Modell treffen).
+  const entfernt = await cdp.evaluate<boolean>(
+    `return await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});`,
+  );
+  if (!entfernt) teile.push("removeModel(sdxl-turbo) für die Ein-Modell-Stufe fehlgeschlagen");
+  await new Promise((r) => setTimeout(r, 300));
+  const an1 = await displayOf(".lig-model-pick");
+  const wiederhergestellt = await downloadModelViaMock(cdp, "sdxl-turbo", generateTimeoutMs);
+  if (!wiederhergestellt.ok) teile.push(`Wiederherstellung von sdxl-turbo fehlgeschlagen: ${wiederhergestellt.detail}`);
+
+  if (aus !== "none") teile.push(`Toggle aus (zwei Modelle geladen): display ${aus} (erwartet none)`);
   if (an1 !== "none") teile.push(`ein geladenes Modell: display ${an1} (erwartet none)`);
   if (an2 === "none" || an2 === null) teile.push(`zwei geladene Modelle: display ${an2} (erwartet sichtbar)`);
 
@@ -906,18 +932,68 @@ async function runModelPickerCheck(cdp: Cdp, assetsBase: string, generateTimeout
  * FALSCHEN Knopf darf ebenfalls keinen fließen lassen). Gemessen am ZÄHLER DES SERVERS
  * (`.mock-assets-counts.json`), nicht am Panel-Zustand — dieselbe Begründung wie Punkt 19:
  * der Zustand kann korrekt aussehen, während die Anfrage trotzdem rausgeht.
+ *
+ * Zwei Review-Funde, beide hier behoben:
+ *
+ * 1. **Vorbedingung herstellen, nicht annehmen.** `ModelStore.download()` filtert bereits
+ *    gecachte Dateien VOR jedem Netzwerkaufruf (`src/obsidian/model-store.ts`). Läuft dieser
+ *    Punkt NACH Punkt 21 (der `sdxl-turbo` in beiden Zweigen vollständig geladen zurücklässt),
+ *    wäre die Null-Messung unten bedeutungslos — sie träfe auch dann zu, wenn der Abbruch gar
+ *    nichts täte, weil ohnehin nichts mehr zu laden war. Deshalb entfernt dieser Punkt
+ *    `sdxl-turbo` selbst zuerst und bestätigt die Entfernung, unabhängig davon, in welcher
+ *    Reihenfolge er aufgerufen wird.
+ * 2. **Positiv-Kontrolle.** Ohne einen Lauf, der den Zähler nachweislich hochzählt, bewiese
+ *    eine konstante Null nichts über den Abbruch — ein kaputter oder falsch gefilterter
+ *    Zähler sähe identisch aus. Nach der Null-Messung bestätigt dieser Punkt deshalb einen
+ *    zweiten Download-Versuch (`downloadModelViaMock`) und verlangt dort eine ECHTE Zunahme.
  */
-async function runConfirmNoBytesCheck(cdp: Cdp): Promise<void> {
+async function runConfirmNoBytesCheck(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
   const NAME = "23. Abbruch am Bestätigungsdialog lädt kein Byte";
-  const vorher = mockAssetCounts();
-  if (vorher === null) {
+  const startDatei = mockAssetCounts();
+  if (startDatei === null) {
     skip(NAME, "kein Asset-Mock (Zählerdatei fehlt) — am HF-Repo nicht messbar, ohne echten Download zu riskieren");
     return;
   }
 
+  // Schluessel im Zaehler tragen den fuehrenden Slash aus der URL-Pathname (mock-assets.mjs:
+  // `normalize(new URL(...).pathname)`), z. B. "/sdxl-turbo/unet/model.onnx" — NICHT
+  // "sdxl-turbo/...". Ohne den Slash matcht `startsWith` nie und der Punkt waere immer
+  // (falsch) gruen, ganz gleich ob Bytes flossen.
+  const PREFIX = "/sdxl-turbo/";
+  // `after` ist `null`, wenn die Datei nicht lesbar war (fehlt, oder von einem gleichzeitigen
+  // Schreiben des Mocks getroffen) — das ist eine ANOMALIE der Messung, keine Null. Der
+  // Aufrufer muss das getrennt von "0 Anfragen" behandeln, sonst wird ein Messfehler zum
+  // stillen Erfolg.
+  const diffSeit = (before: Record<string, number>, after: Record<string, number> | null): number | null => {
+    if (after === null) return null;
+    return Object.entries(after)
+      .filter(([k]) => k.startsWith(PREFIX))
+      .reduce((sum, [k, v]) => sum + (v - (before[k] ?? 0)), 0);
+  };
+
+  const teile: string[] = [];
+
+  // Vorbedingung: sdxl-turbo NICHT im Cache — sonst filtert ModelStore.download() die Datei
+  // schon vor jedem Netzaufruf heraus und die Null-Messung unten sagt nichts über den Klick.
+  const entfernt = await cdp.evaluate<{ ok: boolean; downloadedAfter: BuiltinModelId[] }>(`
+    app.setting.close?.();
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    const ok = await p.removeModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});
+    return { ok, downloadedAfter: p.downloadedModels };
+  `);
+  if (!entfernt.ok || entfernt.downloadedAfter.includes("sdxl-turbo")) {
+    record(
+      NAME,
+      false,
+      `Vorbedingung nicht herstellbar: sdxl-turbo liess sich nicht aus dem Cache entfernen (downloadedModels: ${JSON.stringify(entfernt.downloadedAfter)})`,
+    );
+    return;
+  }
+
+  // --- Abbruch-Messung: 0 Anfragen erwartet -------------------------------------------------
+  const vorAbbruch = mockAssetCounts() ?? startDatei;
   const cancelLabel = t("modal.cancel");
   await cdp.evaluate(`
-    app.setting.close?.();
     const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
     if (p.settings.builtinModel !== ${JSON.stringify("sdxl-turbo" as BuiltinModelId)}) await p.setBuiltinModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});
     window.__ligSmokeCancel = { done: false };
@@ -948,22 +1024,35 @@ async function runConfirmNoBytesCheck(cdp: Cdp): Promise<void> {
   );
   await cdp.evaluate(`delete window.__ligSmokeCancel; return true;`).catch(() => undefined);
 
-  const nachher = mockAssetCounts() ?? vorher;
-  const diff = (prefix: string): number =>
-    Object.entries(nachher)
-      .filter(([k]) => k.startsWith(prefix))
-      .reduce((sum, [k, v]) => sum + (v - (vorher[k] ?? 0)), 0);
-  // Schluessel im Zaehler tragen den fuehrenden Slash aus der URL-Pathname (mock-assets.mjs:
-  // `normalize(new URL(...).pathname)`), z. B. "/sdxl-turbo/unet/model.onnx" — NICHT
-  // "sdxl-turbo/...". Ohne den Slash matcht `startsWith` nie und der Punkt waere immer
-  // (falsch) gruen, ganz gleich ob Bytes flossen.
-  const sdxlAnfragen = diff("/sdxl-turbo/");
+  const nachAbbruch = mockAssetCounts();
+  const sdxlAnfragenAbbruch = diffSeit(vorAbbruch, nachAbbruch);
 
-  const teile: string[] = [];
   if (geklickt !== true) teile.push("Bestätigungsdialog nicht gefunden/angeklickt");
   if (fertig === null) teile.push("startDownload() endete nicht nach dem Abbrechen");
-  if (sdxlAnfragen !== 0) teile.push(`${sdxlAnfragen} Anfragen für sdxl-turbo-Dateien nach dem Abbrechen — es floss Byte`);
-  record(NAME, teile.length === 0, teile.length === 0 ? "Dialog abgebrochen, 0 SDXL-Anfragen" : teile.join(" · "));
+  if (sdxlAnfragenAbbruch === null) teile.push("Zählerdatei nach dem Abbruch nicht lesbar (Anomalie der Messung, nicht 0 Anfragen)");
+  else if (sdxlAnfragenAbbruch !== 0) teile.push(`${sdxlAnfragenAbbruch} Anfragen für sdxl-turbo-Dateien nach dem Abbrechen — es floss Byte`);
+
+  // --- Positiv-Kontrolle: bestätigen statt abbrechen, MUSS Bytes zeigen --------------------
+  // Ohne diesen zweiten Lauf bewiese die Null-Messung oben nichts: ein Zähler, der wegen
+  // eines Bugs immer 0 meldet (genau der Slash-Fehler, den die Selbstprüfung dieses Tasks an
+  // dieser Stelle bereits einmal fand), sähe identisch aus wie ein korrekter Abbruch.
+  const vorKontrolle = mockAssetCounts() ?? nachAbbruch ?? vorAbbruch;
+  const kontrolle = await downloadModelViaMock(cdp, "sdxl-turbo", generateTimeoutMs);
+  const nachKontrolle = mockAssetCounts();
+  const sdxlAnfragenKontrolle = diffSeit(vorKontrolle, nachKontrolle);
+
+  if (!kontrolle.ok) teile.push(`Positiv-Kontrolle: Download fehlgeschlagen: ${kontrolle.detail}`);
+  if (sdxlAnfragenKontrolle === null) teile.push("Zählerdatei nach der Positiv-Kontrolle nicht lesbar");
+  else if (sdxlAnfragenKontrolle <= 0)
+    teile.push(`Positiv-Kontrolle: 0 Anfragen für sdxl-turbo-Dateien trotz bestätigtem Download — der Zähler misst nichts`);
+
+  record(
+    NAME,
+    teile.length === 0,
+    teile.length === 0
+      ? `Abbruch: 0 Anfragen · Bestätigung: ${String(sdxlAnfragenKontrolle)} Anfragen`
+      : teile.join(" · "),
+  );
 }
 
 /** Wrapper für 20–23: schaltet einmalig auf "builtin" (nur dort unterscheiden sich Modelle),
@@ -971,18 +1060,22 @@ async function runConfirmNoBytesCheck(cdp: Cdp): Promise<void> {
  *  Spätere braucht den Server-Modus. Bei fehlender GPU/WebGPU bleibt `downloadedModels` für
  *  immer leer (`refreshEngineState()` bricht vor der Cache-Prüfung ab) — 20 und 22 hängen
  *  NICHT daran (sie lesen nur `settings.builtinModel` bzw. den Modell-Katalog) und laufen
- *  trotzdem; 21 überspringt sich in diesem Fall selbst (s. dort). */
+ *  trotzdem; 21 und 23 überspringen sich in diesem Fall selbst (s. dort). */
 async function runModelStageChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs: number): Promise<void> {
-  // Alle vier Punkte wechseln settings.builtinModel mehrfach hin und her (20 ueber das
-  // Dropdown, 21/22/23 direkt) und lassen es am Ende auf irgendeinem der beiden Modelle
-  // stehen. Ungemerkt bliebe das ein STILLER Seiteneffekt fuer alles, was NACH diesem Block
-  // laeuft: Punkt 17 (modusabhaengige Regler) misst `.lig-size-slot` im builtin-Modus — mit
-  // "sdxl-turbo" aktiv ist die Groessen-Zeile dort ZU RECHT sichtbar (zwei Groessen), und der
-  // Punkt meldete genau das als Defekt, als dieser Restore hier noch fehlte (gemessen bei der
-  // ersten Live-Messung dieses Tasks). Der Fehler lag im Treiber, nicht im Plugin.
-  const originalModel = await cdp.evaluate<BuiltinModelId>(
-    `return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.builtinModel;`,
-  );
+  // Alle vier Punkte wechseln settings.builtinModel UND settings.showModelPicker mehrfach hin
+  // und her und lassen sie am Ende auf irgendeinem Stand stehen. Ungemerkt bliebe das ein
+  // STILLER Seiteneffekt fuer alles, was NACH diesem Block laeuft: Punkt 17 (modusabhaengige
+  // Regler) misst `.lig-size-slot` im builtin-Modus — mit "sdxl-turbo" aktiv ist die
+  // Groessen-Zeile dort ZU RECHT sichtbar (zwei Groessen), und der Punkt meldete genau das als
+  // Defekt, als der `builtinModel`-Restore hier noch fehlte (gemessen bei der ersten
+  // Live-Messung dieses Tasks). Der Fehler lag im Treiber, nicht im Plugin. `showModelPicker`
+  // liest zwar aktuell niemand nach diesem Block — dieselbe Asymmetrie waere aber nur einen
+  // spaeteren Punkt entfernt, der genau das tut, und dann unbemerkt gegen den falschen
+  // Ausgangswert liefe.
+  const original = await cdp.evaluate<{ builtinModel: BuiltinModelId; showModelPicker: boolean }>(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    return { builtinModel: p.settings.builtinModel, showModelPicker: p.settings.showModelPicker };
+  `);
   try {
     await cdp.evaluate(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
@@ -994,12 +1087,18 @@ async function runModelStageChecks(cdp: Cdp, assetsBase: string, generateTimeout
     await runModelSwitchCheck(cdp);
     await runSizeRowCheck(cdp);
     await runModelPickerCheck(cdp, assetsBase, generateTimeoutMs);
-    await runConfirmNoBytesCheck(cdp);
+    await runConfirmNoBytesCheck(cdp, generateTimeoutMs);
   } finally {
     await cdp
       .evaluate(`
         const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-        if (p.settings.builtinModel !== ${JSON.stringify(originalModel)}) await p.setBuiltinModel(${JSON.stringify(originalModel)});
+        const before = ${JSON.stringify(original)};
+        if (p.settings.builtinModel !== before.builtinModel) await p.setBuiltinModel(before.builtinModel);
+        if (p.settings.showModelPicker !== before.showModelPicker) {
+          p.settings.showModelPicker = before.showModelPicker;
+          await p.saveSettings();
+          p.refreshViews();
+        }
         if (p.settings.engine !== "server") await p.setEngine("server");
         return true;
       `)

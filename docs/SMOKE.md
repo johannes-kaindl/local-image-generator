@@ -155,7 +155,7 @@ Browser den Wert beim Sinken von `max` überhaupt klemmt. Mit dem Standardwert 4
 in der Gegenprobe **grün, obwohl der Defekt wieder eingebaut war** — er schiebt den Regler
 seitdem selbst über das builtin-Maximum und meldet es als Befund, wenn kein Klemmen stattfand.
 
-### § 2026-08-2x — Punkte 20–23 (zweite Modellstufe, SDXL-Turbo)
+### § 2026-08-24 — Punkte 20–23 (zweite Modellstufe, SDXL-Turbo)
 
 Vier neue Prüfpunkte für Spec 0.9 (SDXL-Turbo neben SD-Turbo). Alle vier hängen an
 `--builtin` **und** einem erreichbaren `npm run smoke:assets` (lokaler Asset-Server auf
@@ -168,14 +168,22 @@ jeder andere `skip`, nach der Lehre von `c984f47` (dort hatte sich ein Punkt lau
 (`showModelPicker` UND `downloadedModels.length > 1`), nicht am Modus allein. In
 `MODUS_REGLER` geführt, würde Punkt 17 die zweite Sichtbarkeitsstufe als Defekt melden.
 
-**Punkt 21 ist der einzige der vier, der einen echten Cache-Zustand braucht** (zwei
-vollständig geladene Modelle) — und der einzige, der sich selbst überspringen kann, wenn
-dieser Zustand nicht herstellbar ist. Die Gegenprobe auf diesen Skip-Pfad: übersprungen wird
+**Punkt 21 und Punkt 23 können sich beide selbst überspringen** — 21, wenn der
+Zwei-Modell-Cache-Zustand weder schon vorliegt noch ohne Mock herstellbar ist, 23, wenn die
+Zählerdatei des Asset-Mocks fehlt (kein Mock aktiv). Beide melden das LAUT, mit Begründung in
+derselben Zeile wie jeder andere `skip` — ein Lauf ohne `npm run smoke:assets` protokolliert
+das im Ergebnis, statt eine Lücke unsichtbar zu lassen.
+
+Bei Punkt 21 gibt es zusätzlich eine Gegenprobe auf den Skip-Pfad selbst: übersprungen wird
 NUR, wenn `downloadedModels.length < 2` **und** der Asset-Mock nicht erreichbar ist — liegt
 der Zustand schon vor (ein früherer `--builtin`-Lauf hat beide Modelle dagelassen), misst der
 Punkt trotzdem, ohne einen einzigen neuen Download. Ohne diese Unterscheidung würde ein
 zufällig schon vollständiger Cache den Skip-Zweig nie zeigen und die Gegenprobe selbst wäre
-ungeprüft.
+ungeprüft. Aus demselben Grund misst Punkt 21 die Stufe „Toggle aus" ERST, nachdem der
+Zwei-Modell-Zustand hergestellt ist, nicht davor (Review-Fund, zweite Runde): mit nur einem
+geladenen Modell wäre diese Stufe auch dann grün, wenn `showModelPicker` komplett ignoriert
+und die Sichtbarkeit allein an der Modellzahl hinge — sie testet den TOGGLE erst dann
+wirklich, wenn die Modellzahl bereits als Erklärung ausscheidet.
 
 Der Zwei-Modell-Zustand kommt bewusst über `npm run smoke:assets` (lokaler Spiegel von
 `dist-assets/`), nicht über das HF-Repo — SDXL-Turbo ist 6,4 GB, und das wäre ein Missbrauch
@@ -188,6 +196,20 @@ Punkt 23 braucht eine eigene Zählerdatei: `.mock-assets-counts.json`
 sie könnte ein abgebrochener Download nur am PANEL-Zustand gemessen werden, und genau das ist
 die Fehlerklasse, die Punkt 19 schon einmal am Bild-Server gezeigt hat: der Zustand kann
 korrekt aussehen, während Bytes trotzdem geflossen sind.
+
+**Punkt 23 stellt seine eigene Vorbedingung her, statt sie anzunehmen** (Review-Fund, zweite
+Runde): läuft er nach Punkt 21, liegt `sdxl-turbo` bereits vollständig im Cache —
+`ModelStore.download()` filtert gecachte Dateien VOR jedem Netzaufruf heraus
+(`src/obsidian/model-store.ts`), also wäre die Null-Messung unten bedeutungslos, ganz gleich
+ob der Abbruch-Klick überhaupt wirkte. Der Punkt entfernt `sdxl-turbo` deshalb zuerst selbst
+und bestätigt die Entfernung, unabhängig von der Aufrufreihenfolge. **Und er trägt eine
+Positiv-Kontrolle:** nach der Null-Messung bestätigt er einen zweiten Download-Versuch und
+verlangt dort eine echte Zunahme im Zähler — ohne sie bewiese die Null-Messung nichts über
+den Abbruch, sie sähe identisch aus, wenn der Zähler aus irgendeinem Grund (etwa demselben
+Slash-Fehler, den die Selbstprüfung dieses Tasks schon einmal fand) permanent 0 meldete. Eine
+nicht lesbare Zählerdatei nach einer der beiden Messungen zählt als ROT, nicht als 0 —
+`mockAssetCounts()` gibt bei einem fehlenden ODER kaputten (torn write) Read `null` zurück,
+und ein `null ?? vorher`-Fallback hätte einen Messfehler in einen stillen Erfolg verwandelt.
 
 ## Was der Treiber am Wirt verändert (und zurücksetzt)
 
