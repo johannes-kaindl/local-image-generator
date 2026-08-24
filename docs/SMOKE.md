@@ -82,6 +82,8 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 21 | `.lig-model-pick` zeigt sich erst ab **zwei geladenen** Modellen, nicht schon beim Toggle allein | zweite, unabhängige Sichtbarkeitsbedingung wie `.lig-denoise` — braucht einen echten Zwei-Modell-Cache-Zustand |
 | 22 | Die Größen-Zeile folgt dem gewählten Modell (SD-Turbo weg, SDXL-Turbo sichtbar mit 2 Optionen) | `getComputedStyle`, nicht der State — dieselbe Lehre wie 17 |
 | 23 | Abbruch am Bestätigungsdialog vor SDXL-Turbo lädt **kein** Byte | am **Zähler des Asset-Mocks** gemessen (Spec §4: „ohne Klick fließt kein Byte" gilt auch für den falschen Knopf) |
+| 24 | SD-Turbo liefert ein Bild mit echtem **Inhalt** (Luma-Stddev + distinkte Farben) | billige Zusatzabsicherung, misst dasselbe Bild wie 15 |
+| 25 | SDXL-Turbo liefert ein Bild mit echtem **Inhalt**, nicht Schwarz/uniform | der eigentliche Regressionswächter aus Phase 4 des SDXL-Turbo-Debuggings — s. u. |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -154,6 +156,44 @@ Zwei Ja-Sager derselben Bauart sind bei der Gelegenheit mit umgestellt worden �
 Browser den Wert beim Sinken von `max` überhaupt klemmt. Mit dem Standardwert 4 blieb der Punkt
 in der Gegenprobe **grün, obwohl der Defekt wieder eingebaut war** — er schiebt den Regler
 seitdem selbst über das builtin-Maximum und meldet es als Befund, wenn kein Klemmen stattfand.
+
+### § 2026-08-24 (Phase 4) — Punkte 24/25: Bild-INHALT, nicht nur Bild-Form
+
+SDXL-Turbo produzierte live ein rein schwarzes Bild — gültige PNG-Datei, richtige Größe,
+Status „Bereit". 355 Unit-Tests, alle acht Gate-Schritte und die damals 24 Smoke-Punkte waren
+grün, weil **keiner davon den Bildinhalt liest**. Ursache (s. `tools/convert/convert_model.py`,
+Modulkopf): SDXLs VAE-Decoder überschreitet in fp16 unter dem WebGPU-EP den Wertebereich →
+Inf → NaN im gesamten Ausgang, was als reines Schwarz rendert. ORTs CPU-Kernel zeigen den
+Defekt nicht — ein Node-seitiger Test hätte ihn nie gesehen, nur ein Live-Lauf im Renderer.
+Der Fix (`95471fd`) hält den VAE-Decoder fp32.
+
+Punkt 25 ist die Gegenprobe dafür, dass ein künftiger fp16-Rückfall wieder auffällt. Er misst
+über `pixelStats()` zwei unabhängige Größen am aktuell angezeigten `.lig-image`:
+
+- **Luma-Standardabweichung** über alle Pixel (0–255-Skala), Grenze `CONTENT_STDDEV_MIN = 8`.
+- **Zahl distinkter Farben** nach 4-Bit-Quantisierung je Kanal (max. 4096 Buckets), Grenze
+  `CONTENT_COLORS_MIN = 64`.
+
+Beide Grenzen müssen gleichzeitig reißen. Ein Grund allein reicht nicht: ein reines Schwarz
+steht bei beiden auf 0/1, aber ein schwacher Farbverlauf könnte bei EINEM der beiden Maße knapp
+über der Grenze liegen — bei beiden zugleich ist das unwahrscheinlich.
+
+**Verifiziert gegen den Vor-Fix-Zustand** (nicht im laufenden Treiber selbst, sondern per
+Live-Session-Swap, dieselbe Technik wie `phase1b-webgpu-bisect.md`/`phase3-fp32-vae-test.md`):
+mit dem alten fp16-VAE-Decoder maß derselbe `pixelStats()`-Code Luma-Stddev **0,0** und **1**
+distinkte Farbe an einem tatsächlich generierten Bild — der Punkt wäre korrekt ROT gewesen. Mit
+dem fp32-Decoder aus `95471fd` maß er die Werte einer echten Fotografie (Stddev und
+Farbenzahl weit über beiden Grenzen) — GRÜN. Kein Guard, den niemand rot gesehen hat.
+
+Punkt 25 ist teuer (echte SDXL-Turbo-Session + echte Generierung, ~6,9 GB) und läuft deshalb
+nur in derselben Bedingung wie 20–23 (`--builtin`, nicht `--quick`, Asset-Server erreichbar) —
+ein übersprungener Lauf steht wie jeder andere in der Abschlusszeile, nie lautlos.
+
+Punkt 24 kostet dagegen nichts Zusätzliches: er misst dasselbe Bild, das Punkt 15 (SD-Turbo)
+ohnehin schon generiert. SD-Turbo hat keinen bekannten fp16-Defekt dieser Art — aber die
+Prüfkette war bis Phase 4 komplett blind gegen ein rein schwarzes/uniformes Bild, und ob ein
+späteres ORT-/Treiber-Upgrade dieselbe Fehlerklasse einträgt, ist unbekannt. Für eine
+zusätzliche Messung an einem ohnehin vorhandenen Bild lohnt sich die Absicherung.
 
 ### § 2026-08-24 — Punkte 20–23 (zweite Modellstufe, SDXL-Turbo)
 

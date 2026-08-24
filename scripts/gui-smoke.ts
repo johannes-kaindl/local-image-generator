@@ -40,7 +40,7 @@
  * ```bash
  * npm run smoke:gui -- --vault <name>
  * npm run smoke:gui -- --vault <name> --port 9222 --steps 8 --keep
- * npm run smoke:gui -- --vault <name> --builtin                # + Punkte 13–16 (eingebaute Engine)
+ * npm run smoke:gui -- --vault <name> --builtin                # + Punkte 13–16, 20–25 (eingebaute Engine)
  *
  * Punkt 17 (modusabhängige Regler, gerendert gemessen) läuft in JEDEM Lauf — er braucht weder
  * Server noch Assets noch Generierung, nur einen Moduswechsel und `getComputedStyle`.
@@ -156,6 +156,60 @@ async function pollUntil<T>(
   return null;
 }
 
+/**
+ * Miss den tatsächlichen INHALT eines Panel-Bildes statt nur seine Form. Anlass: Phase 1–3 des
+ * SDXL-Turbo-Debuggings (2026-08-24) — ein rein schwarzes 1024×1024-PNG erfüllt jede
+ * Form-Prüfung (gültige PNG-Datei, richtige Größe, Status „Bereit"), war aber zu 100 % NaN aus
+ * dem WebGPU-Renderer (SDXLs VAE-Decoder überschreitet in fp16 den Wertebereich, s.
+ * `tools/convert/convert_model.py`, Modulkopf). 355 Unit-Tests, acht Gate-Schritte und 24
+ * bisherige Smoke-Punkte hätten das nicht gesehen — keiner misst Pixel.
+ *
+ * Liest das aktuell angezeigte `.lig-image` über ein `<canvas>` (`getImageData`), quantisiert
+ * jeden Kanal auf 16 Stufen und liefert zwei UNABHÄNGIGE Maße: die Standardabweichung der Luma
+ * (0–255) und die Zahl distinkter quantisierter Farben. Zwei Maße statt eines, weil sie an
+ * unterschiedlichen Fehlerbildern hängen — ein reines Schwarz steht bei BEIDEN auf 0/1, ein
+ * schwacher Farbverlauf (z. B. 0→40 über die ganze Fläche) kann bei EINEM der beiden knapp
+ * durchrutschen, aber kaum bei beiden zugleich.
+ */
+async function pixelStats(cdp: Cdp): Promise<{ width: number; height: number; stddev: number; distinctColors: number } | null> {
+  return cdp.evaluate(`
+    const img = document.querySelector(".lig-image");
+    if (!img || !img.src.startsWith("data:image/png")) return null;
+    const bild = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Bild liess sich nicht laden"));
+      el.src = img.src;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = bild.naturalWidth;
+    canvas.height = bild.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bild, 0, 0);
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    let sum = 0, sumSq = 0;
+    const farben = new Set();
+    const n = data.length / 4;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      sum += luma; sumSq += luma * luma;
+      farben.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+    }
+    const mean = sum / n;
+    const variance = Math.max(0, sumSq / n - mean * mean);
+    return { width: canvas.width, height: canvas.height, stddev: Math.sqrt(variance), distinctColors: farben.size };
+  `);
+}
+
+/** Grenzwerte für `pixelStats()` — Verifikation in `phase4-fix-report.md` (Block 2): ein rein
+ *  schwarzes Bild misst Stddev 0,0 und 1 distinkte Farbe; eine echte Generierung (SD-Turbo
+ *  wie SDXL-Turbo, gemessen an mehreren Prompts/Seeds) liegt jeweils weit über beiden Grenzen.
+ *  Beide Grenzen müssen zugleich reißen, damit der Punkt grün wird — s. Kommentar an
+ *  `pixelStats()`, warum ein Maß allein nicht reicht. */
+const CONTENT_STDDEV_MIN = 8;
+const CONTENT_COLORS_MIN = 64;
+
 /** Was der Server selbst über sein aktives Modell sagt — vom Treiber direkt geholt, nicht
  *  vom Plugin erfragt. Ein Prüfwerkzeug, das seine Erwartung aus dem Prüfling bezieht,
  *  bestätigt nur dessen Meinung: genau so blieb der `model`/`sd_model_checkpoint`-Fehlgriff
@@ -222,8 +276,13 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
   `);
   let st = await pollUntil(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", 500);
   if (st?.kind === "gpu-missing") {
-    record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16 gegenstandslos`);
-    for (const n of ["14. Download über den Panel-Knopf endet auf „bereit“", "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "16. Zurück auf „Server“ bringt die Regler zurück"])
+    record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24 gegenstandslos`);
+    for (const n of [
+      "14. Download über den Panel-Knopf endet auf „bereit“",
+      "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
+      "16. Zurück auf „Server“ bringt die Regler zurück",
+      "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
+    ])
       skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
     return;
   }
@@ -257,6 +316,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     skip("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
     skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 13 nicht erreicht");
     skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
+    skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
     return;
   }
 
@@ -291,6 +351,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
   if (done14?.kind !== "ready") {
     skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 14 nicht erreicht");
     skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
+    skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
     return;
   }
 
@@ -359,6 +420,26 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         ? `Lauf gescheitert, gemeldet vom Plugin: „${image15.status}"`
         : `${Math.round((Date.now() - t1) / 1000)} s · ${Math.round(image15.length / 1024)} KB · Ladephase gesehen: ${sawLoading} · Notiz: ${JSON.stringify(note15)}`,
   );
+
+  // --- 24. Inhalt statt Form — billige Zusatzabsicherung fuer SD-Turbo -------
+  // Kostet nichts extra: misst dasselbe Bild, das Punkt 15 ohnehin schon generiert hat, kein
+  // zweiter Lauf. SD-Turbo hat keinen bekannten fp16-Defekt (siehe convert_model.py) — aber die
+  // Pruefkette war bis Phase 4 komplett blind gegen ein rein schwarzes/uniformes Bild, und ob
+  // ein spaeteres ORT-/Treiber-Upgrade SD-Turbo dieselbe Fehlerklasse eintraegt, ist unbekannt.
+  // Fuer diese eine zusaetzliche Messung an einem ohnehin vorhandenen Bild lohnt sich das.
+  const NAME24 = "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform";
+  if (image15 !== null && !istFehler(image15.status)) {
+    const stats15 = await pixelStats(cdp);
+    record(
+      NAME24,
+      stats15 !== null && stats15.stddev >= CONTENT_STDDEV_MIN && stats15.distinctColors >= CONTENT_COLORS_MIN,
+      stats15 === null
+        ? "Bild nicht lesbar (kein PNG-Data-URL)"
+        : `${stats15.width}×${stats15.height} · Luma-Stddev ${stats15.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats15.distinctColors} distinkte Farben (Grenze ${CONTENT_COLORS_MIN})`,
+    );
+  } else {
+    skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
+  }
 
   // --- 16. Zurück auf Server -------------------------------------------------
   await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].setEngine("server"); return true;`);
@@ -1106,6 +1187,90 @@ async function runModelStageChecks(cdp: Cdp, assetsBase: string, generateTimeout
   }
 }
 
+/**
+ * Punkt 25: der eigentliche Regressionswächter aus Phase 4 des SDXL-Turbo-Debuggings
+ * (2026-08-24) — misst INHALT, nicht Form. Vorgeschichte: SDXL-Turbo produzierte live ein
+ * rein schwarzes Bild — gültige PNG-Datei, richtige Größe, Status „Bereit", aber der
+ * VAE-Decoder-Ausgang war zu 100 % NaN (SDXLs Aktivierungen überschreiten in fp16 unter dem
+ * WebGPU-EP den Wertebereich; ORTs CPU-Kernel zeigen das nicht — Details am Modulkopf von
+ * `tools/convert/convert_model.py`). 355 Unit-Tests, acht Gate-Schritte, die bisherigen 24
+ * Smoke-Punkte und drei Store-Review-Schichten hätten diesen Defekt NICHT gefunden — alle
+ * messen Form. Der Fix (95471fd) hält den VAE-Decoder fp32; dieser Punkt ist die Gegenprobe,
+ * dass ein künftiger fp16-Rückfall (an diesem Teil oder einem neuen) wieder auffällt.
+ *
+ * Ausdrücklich teuer: echte Session + echte Generierung mit SDXL-Turbo (~6,9 GB, mehrere
+ * Sekunden GPU-Zeit) — deshalb NUR in derselben Gate-Bedingung wie 20–23 (`--builtin`, nicht
+ * `--quick`, Asset-Server erreichbar), niemals lautlos. Ein übersprungener Lauf steht in der
+ * Abschlusszeile wie jeder andere ausgelassene Punkt.
+ *
+ * Verifikation gegen den Vor-Fix-Zustand: siehe `phase4-fix-report.md` Block 2 — mit dem
+ * fp16-Decoder aus dem Stand vor 95471fd misst dieser Punkt Luma-Stddev 0,0 und 1 distinkte
+ * Farbe und fällt korrekt ROT; mit dem fp32-Decoder aus 95471fd misst er die Werte einer
+ * echten Fotografie und ist GRÜN. Ein Wächter, den niemand rot gesehen hat, ist kein
+ * bewiesener Wächter.
+ */
+async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
+  const NAME = "25. SDXL-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform (VAE-fp16-Wächter)";
+  const readyText = t("status.ready");
+
+  const geladen = await cdp.evaluate<BuiltinModelId[]>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].downloadedModels;`);
+  if (!geladen.includes("sdxl-turbo")) {
+    const dl = await downloadModelViaMock(cdp, "sdxl-turbo", generateTimeoutMs);
+    if (!dl.ok) {
+      record(NAME, false, `sdxl-turbo nicht ladbar: ${dl.detail}`);
+      return;
+    }
+  }
+  await cdp.evaluate(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    if (p.settings.builtinModel !== ${JSON.stringify("sdxl-turbo" as BuiltinModelId)}) await p.setBuiltinModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});
+    if (p.settings.engine !== "builtin") await p.setEngine("builtin");
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 500));
+
+  await cdp.evaluate(`
+    const ta = document.querySelector(".lig-panel textarea.lig-prompt");
+    ta.value = ${JSON.stringify(SMOKE_PROMPT + ", sdxl content check")}; ta.dispatchEvent(new Event("input", { bubbles: true }));
+    const seed = document.querySelector(".lig-panel input.lig-seed");
+    seed.value = "4242"; seed.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  `);
+  const imageBefore = await cdp.evaluate<string>(
+    `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
+  );
+  await clickReal(cdp, `document.querySelector(".lig-generate")`);
+  const image25 = await pollUntil(
+    () =>
+      cdp.evaluate<{ length: number; status: string; sig: string }>(`
+        const img = document.querySelector(".lig-image");
+        const status = document.querySelector(".lig-status-text");
+        return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
+      `),
+    (r) => (r.length > 5000 && r.sig !== imageBefore && r.status === readyText) || istFehler(r.status),
+    generateTimeoutMs,
+    "warte auf das SDXL-Turbo-Bild (Punkt 25)",
+    500,
+  );
+
+  if (image25 === null || istFehler(image25.status)) {
+    record(
+      NAME,
+      false,
+      image25 === null ? "kein Bild innerhalb der Frist" : `Lauf gescheitert, gemeldet vom Plugin: „${image25.status}"`,
+    );
+    return;
+  }
+  const stats = await pixelStats(cdp);
+  record(
+    NAME,
+    stats !== null && stats.stddev >= CONTENT_STDDEV_MIN && stats.distinctColors >= CONTENT_COLORS_MIN,
+    stats === null
+      ? "Bild nicht lesbar (kein PNG-Data-URL)"
+      : `${stats.width}×${stats.height} · Luma-Stddev ${stats.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats.distinctColors} distinkte Farben (Grenze ${CONTENT_COLORS_MIN})`,
+  );
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const flag = (name: string): string | undefined => {
@@ -1756,21 +1921,25 @@ async function main(): Promise<void> {
       }
     }
 
-    // --- 13–16, 20–23. Die eingebaute Engine + die zweite Modellstufe (Spec 0.6/0.9) ---------
+    // --- 13–16, 20–25. Die eingebaute Engine + die zweite Modellstufe (Spec 0.6/0.9) ---------
     // Nur mit --builtin und nur gegen einen erreichbaren lokalen Asset-Server: der Block löscht
     // die Modell-Dateien aus dem Plugin-Cache und lädt sie neu (2,5 GB, Punkt 21 im ungünstigen
-    // Fall zusätzlich 6,4 GB SDXL-Turbo) — gegen das HF-Repo wäre das ein Missbrauch der
-    // Leitung, gegen den lokalen Server dauert es Sekunden bis wenige Minuten.
+    // Fall zusätzlich 6,4 GB SDXL-Turbo, Punkt 25 baut zusätzlich eine echte SDXL-Turbo-Session
+    // und generiert damit) — gegen das HF-Repo wäre das ein Missbrauch der Leitung, gegen den
+    // lokalen Server dauert es Sekunden bis wenige Minuten.
     const ZWEITE_STUFE = [
       "20. Modellwechsel im Settings-Tab ändert die Download-Zeile",
       "21. Panel-Modell-Picker zeigt sich erst ab zwei geladenen Modellen",
       "22. Die Größen-Zeile folgt dem gewählten Modell",
       "23. Abbruch am Bestätigungsdialog lädt kein Byte",
+      "25. SDXL-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform (VAE-fp16-Wächter)",
     ];
     if (!builtin) {
-      console.log("\n(ohne --builtin: Punkte 13–16, 20–23 übersprungen — sie brauchen den lokalen Asset-Server)");
+      console.log("\n(ohne --builtin: Punkte 13–16, 20–25 übersprungen — sie brauchen den lokalen Asset-Server)");
+      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "ohne --builtin nicht erreicht");
     } else if (quick) {
-      console.log("\n(--quick: Punkte 13–16, 20–23 übersprungen — sie brauchen Download und/oder Generierung)");
+      console.log("\n(--quick: Punkte 13–16, 20–25 übersprungen — sie brauchen Download und/oder Generierung)");
+      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "--quick: keine Generierung");
     } else {
       const assetsUp = await fetch(`${assetsBase.replace(/\/+$/, "")}/sd-turbo/tokenizer/vocab.json`, { method: "HEAD", signal: AbortSignal.timeout(3000) })
         .then((r) => r.status === 200)
@@ -1781,12 +1950,14 @@ async function main(): Promise<void> {
           "14. Download über den Panel-Knopf endet auf „bereit“",
           "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
           "16. Zurück auf „Server“ bringt die Regler zurück",
+          "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
           ...ZWEITE_STUFE,
         ])
           skip(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);
       } else {
         await runBuiltinChecks(cdp, assetsBase, generateTimeoutMs);
         await runModelStageChecks(cdp, assetsBase, generateTimeoutMs);
+        await runSdxlContentCheck(cdp, generateTimeoutMs);
       }
     }
 
