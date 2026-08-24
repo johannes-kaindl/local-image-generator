@@ -6,10 +6,10 @@
 // nicht kopiert — Verbatim-Duplikate eines Logikblocks gelten in diesem Projekt als Defekt.
 // SD-Turbo (engine.ts) bleibt dabei unangetastet.
 import {
-  firstOutput,
+  decodeLatents,
   floatFeed,
   idsFeed,
-  timestepFeed,
+  runDiffusion,
   toF32,
   type BuiltinEngine,
   type GenerateRequest,
@@ -18,9 +18,7 @@ import {
   type ProgressFn,
   type Session,
 } from "./engine";
-import { chwToRgba } from "./pipeline/image";
-import { gaussianArray } from "./pipeline/prng";
-import { makeSchedule, scaleInput, schedulerStep } from "./pipeline/scheduler";
+import { makeSchedule } from "./pipeline/scheduler";
 import { tokenize, type TokenizerData } from "./pipeline/tokenizer";
 
 export interface SdxlSessions {
@@ -67,7 +65,8 @@ function pickHidden(outputs: Record<string, OrtValue>): OrtValue {
     .sort((a, b) => a - b);
   if (indices.length < 2) {
     throw new Error(
-      "pickHidden: kein indizierter hidden_states.N-Ausgang gefunden (SDXL-Text-Encoder liefern sie einzeln, Spec 0.9 §9.1)",
+      `pickHidden: nur ${indices.length} indizierte hidden_states.N-Ausgaenge gefunden (mind. 2 noetig fuer einen ` +
+        `"vorletzten" Layer — SDXL-Text-Encoder liefern sie einzeln, Spec 0.9 §9.1)`,
     );
   }
   const vorletzter = indices[indices.length - 2]!;
@@ -95,6 +94,16 @@ function concatLastDim(a: Float32Array, dimA: number, b: Float32Array, dimB: num
     out.set(b.subarray(s * dimB, (s + 1) * dimB), s * (dimA + dimB) + dimA);
   }
   return out;
+}
+
+// Rang-Pruefung statt stiller `?? 0`-Fallbacks: ein hidden_states-Ausgang mit Rang ≠ 3
+// waere sonst ein leerer Konkat-Beitrag (dimA/dimB = 0) statt eines Fehlers — das
+// widerspraeche der Wirf-nicht-verschlechtere-Doktrin dieses Moduls (pickHidden).
+function hiddenSeqDim(v: OrtValue, label: string): { seq: number; dim: number } {
+  if (v.dims.length !== 3) {
+    throw new Error(`${label}: erwarteter Rang 3 [batch,seq,dim] fuer hidden_states, gefunden dims=[${v.dims.join(",")}]`);
+  }
+  return { seq: v.dims[1]!, dim: v.dims[2]! };
 }
 
 export class SdxlTurboEngine implements BuiltinEngine {
@@ -129,7 +138,7 @@ export class SdxlTurboEngine implements BuiltinEngine {
     try {
       const size = req.size ?? this.opts.size;
       const latentSide = size / 8;
-      const n = 4 * latentSide * latentSide;
+      const latentDims = [1, 4, latentSide, latentSide] as const;
 
       const idsA = tokenize(req.prompt, this.tokenizers.primary, { pad: PRIMARY_PAD_TOKEN });
       const idsB = tokenize(req.prompt, this.tokenizers.secondary, { pad: SECONDARY_PAD_TOKEN });
@@ -143,43 +152,32 @@ export class SdxlTurboEngine implements BuiltinEngine {
 
       const hidA = pickHidden(encAOut);
       const hidB = pickHidden(encBOut);
-      const seq = hidA.dims[1] ?? 0;
-      const dimA = hidA.dims[2] ?? 0;
-      const dimB = hidB.dims[2] ?? 0;
-      const hidden = concatLastDim(toF32(hidA), dimA, toF32(hidB), dimB, seq);
-      const hiddenDims = [1, seq, dimA + dimB];
+      const a = hiddenSeqDim(hidA, "textEncoder");
+      const b = hiddenSeqDim(hidB, "textEncoder2");
+      if (a.seq !== b.seq) {
+        throw new Error(`hidden_states seq-Laenge weicht zwischen den Encodern ab: ${a.seq} vs ${b.seq}`);
+      }
+      const hidden = concatLastDim(toF32(hidA), a.dim, toF32(hidB), b.dim, a.seq);
+      const hiddenDims = [1, a.seq, a.dim + b.dim];
 
       const pooledOut = pickOutput(encBOut, "text_embeds");
       const pooled = toF32(pooledOut);
       const timeIds = new Float32Array([size, size, 0, 0, size, size]);
 
       const schedule = makeSchedule(req.steps);
-      let latents = gaussianArray(req.seed, n);
-      for (let i = 0; i < n; i++) latents[i] = latents[i]! * schedule.initNoiseSigma;
-
-      for (let i = 0; i < schedule.timesteps.length; i++) {
-        const sigma = schedule.sigmas[i]!;
-        const scaled = scaleInput(latents, sigma);
-        const unetOut = await this.sessions.unet.run({
-          sample: floatFeed(this.sessions.unet, "sample", scaled, [1, 4, latentSide, latentSide]),
-          timestep: timestepFeed(this.sessions.unet, "timestep", schedule.timesteps[i]!),
+      const latents = await runDiffusion(
+        this.sessions.unet,
+        schedule,
+        req.seed,
+        latentDims,
+        {
           encoder_hidden_states: floatFeed(this.sessions.unet, "encoder_hidden_states", hidden, hiddenDims),
           text_embeds: floatFeed(this.sessions.unet, "text_embeds", pooled, pooledOut.dims),
           time_ids: floatFeed(this.sessions.unet, "time_ids", timeIds, [1, 6]),
-        });
-        const noisePred = toF32(firstOutput(this.sessions.unet, unetOut));
-        const stepNoise = gaussianArray(req.seed + 1000 + i, n); // Ancestral-Noise, seed-abgeleitet
-        latents = schedulerStep(noisePred, latents, i, schedule.sigmas, stepNoise);
-        onProgress?.(i + 1, schedule.timesteps.length);
-      }
-
-      const scaledLatents = new Float32Array(n);
-      for (let i = 0; i < n; i++) scaledLatents[i] = latents[i]! / this.opts.vaeScaling;
-      const vaeOut = await this.sessions.vaeDecoder.run({
-        latent_sample: floatFeed(this.sessions.vaeDecoder, "latent_sample", scaledLatents, [1, 4, latentSide, latentSide]),
-      });
-      const imageChw = toF32(firstOutput(this.sessions.vaeDecoder, vaeOut));
-      return { rgba: chwToRgba(imageChw, size, size), width: size, height: size, seed: req.seed };
+        },
+        onProgress,
+      );
+      return await decodeLatents(this.sessions.vaeDecoder, latents, latentDims, this.opts.vaeScaling, size, req.seed);
     } finally {
       this._busy = false;
     }
