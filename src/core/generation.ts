@@ -47,7 +47,7 @@ export function backendCapabilities(mode: EngineChoice): BackendCapabilities {
         initImage: false,
         minSteps: BUILTIN_MODEL.steps.min,
         maxSteps: BUILTIN_MODEL.steps.max,
-        fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
+        fixedSize: BUILTIN_MODEL.sizes[0] ?? { width: 512, height: 512 },
       }
     : { negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null };
 }

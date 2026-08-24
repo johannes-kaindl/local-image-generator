@@ -19,7 +19,7 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
   const state = { released: 0 };
   const store = {
     getBuffer: async (f: AssetFile) => { log.push(`buffer:${f.key}`); return new ArrayBuffer(8); },
-    getText: async (f: AssetFile) => { log.push(`text:${f.key}`); return f.key === "vocab" ? JSON.stringify({ "cat</w>": 1 }) : "#version\n"; },
+    getText: async (f: AssetFile) => { log.push(`text:${f.key}`); return f.key.endsWith("/vocab") ? JSON.stringify({ "cat</w>": 1 }) : "#version\n"; },
   } as unknown as ModelStore;
   const deps: LocalEngineDeps & { released: number } = {
     store,
@@ -53,7 +53,7 @@ describe("LocalEngineBackend", () => {
     expect(log.filter((l) => l === "initRuntime")).toHaveLength(1);
     expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
     expect(log).toContain(`buffer:${RUNTIME_WASM.key}`);
-    expect(log).toContain("text:vocab");
+    expect(log).toContain("text:sd-turbo/vocab");
     expect(phases[0]).toBe("loading-model");
     expect(be.loaded).toBe(true);
     const before = log.length;

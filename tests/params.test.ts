@@ -31,8 +31,8 @@ describe("hardenParams", () => {
     );
     expect(p.negativePrompt).toBe("");
     expect(p.cfg).toBe(1);
-    expect(p.width).toBe(BUILTIN_MODEL.size);
-    expect(p.height).toBe(BUILTIN_MODEL.size);
+    expect(p.width).toBe(BUILTIN_MODEL.sizes[0]?.width);
+    expect(p.height).toBe(BUILTIN_MODEL.sizes[0]?.height);
     // Steps werden auf das Backend-Maximum geklemmt, nicht abgelehnt: ein Konsument, der 30
     // schickt, bekommt ein Bild mit 4 Schritten und erfaehrt das im Rueckgabewert.
     expect(p.steps).toBe(BUILTIN_MODEL.steps.max);

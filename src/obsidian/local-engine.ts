@@ -19,10 +19,21 @@ export interface LocalEngineDeps {
   encodePng: (rgba: Uint8ClampedArray, w: number, h: number) => string;
 }
 
-function fileOf(model: BuiltinModel, key: AssetFile["key"]): AssetFile {
-  const f = model.files.find((x) => x.key === key);
-  if (!f) throw new Error(`model ${model.id} has no asset ${key}`);
-  return f;
+/** Die Engine ist bis Task 8/9 SD-Turbo-spezifisch (kein Modellwechsel hier, das ist die
+ *  Aufgabe der Aufrufer in Task 10–12) — deshalb der feste Fünfer statt eines generischen
+ *  Katalog-Walks, und ein Guard, der bei einem sdxl-geformten Modell sofort und lesbar
+ *  scheitert statt mit einem irrefuehrenden `undefined`-Zugriff auf `parts.textEncoder2`. */
+function fileOf(model: BuiltinModel, key: "text_encoder" | "unet" | "vae_decoder" | "vocab" | "merges"): AssetFile {
+  if (model.kind !== "sd") {
+    throw new Error(`LocalEngineBackend kennt nur SD-Turbo-foermige Modelle, nicht "${model.id}" (kind "${model.kind}")`);
+  }
+  switch (key) {
+    case "text_encoder": return model.parts.textEncoder.file;
+    case "unet": return model.parts.unet.file;
+    case "vae_decoder": return model.parts.vaeDecoder.file;
+    case "vocab": return model.parts.tokenizer.vocab;
+    case "merges": return model.parts.tokenizer.merges;
+  }
 }
 
 export class LocalEngineBackend implements ImageBackend {

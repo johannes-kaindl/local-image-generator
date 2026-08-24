@@ -40,7 +40,7 @@ describe("backendCapabilities", () => {
       initImage: false,
       minSteps: BUILTIN_MODEL.steps.min,
       maxSteps: BUILTIN_MODEL.steps.max,
-      fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
+      fixedSize: BUILTIN_MODEL.sizes[0],
     });
   });
   it("server kann alles, was das Panel anbietet", () => {

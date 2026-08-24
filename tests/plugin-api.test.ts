@@ -32,7 +32,7 @@ describe("status()", () => {
     expect(s.capabilities).toEqual({
       negativePrompt: false, cfg: false, initImage: false,
       maxSteps: BUILTIN_MODEL.steps.max,
-      fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
+      fixedSize: BUILTIN_MODEL.sizes[0],
     });
   });
 
