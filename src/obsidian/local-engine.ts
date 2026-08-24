@@ -3,7 +3,7 @@
 // Unterschied. Alles Schwere ist injiziert (Store, Session-Fabrik, Runtime-Init, GPU-Check,
 // PNG-Encoder), damit die Ladeschritte in Node testbar sind. Kein obsidian-Import nötig.
 import { SdTurboEngine, type Session } from "../core/engine";
-import { BUILTIN_MODEL, RUNTIME_WASM, type AssetFile, type BuiltinModel } from "../core/model-manifest";
+import { BUILTIN_MODEL, RUNTIME_WASM, type BuiltinModel, type ModelPart } from "../core/model-manifest";
 import type { TokenizerData } from "../core/pipeline/tokenizer";
 import type { ImageBackend, ImageRequest } from "../core/txt2img";
 import type { ModelStore } from "./model-store";
@@ -12,28 +12,11 @@ export type EnginePhase = "loading-model" | "generating";
 
 export interface LocalEngineDeps {
   store: Pick<ModelStore, "getBuffer" | "getText">;
-  createSession: (buf: ArrayBuffer) => Promise<Session>;
+  createSession: (buf: ArrayBuffer, externalData?: readonly { path: string; data: ArrayBuffer }[]) => Promise<Session>;
   initRuntime: (wasm: ArrayBuffer) => void;
   checkGpu: () => Promise<"ok" | "no-webgpu" | "no-f16">;
   /** RGBA → PNG-Data-URL (Canvas im Renderer, Fake im Test). */
   encodePng: (rgba: Uint8ClampedArray, w: number, h: number) => string;
-}
-
-/** Die Engine ist bis Task 8/9 SD-Turbo-spezifisch (kein Modellwechsel hier, das ist die
- *  Aufgabe der Aufrufer in Task 10–12) — deshalb der feste Fünfer statt eines generischen
- *  Katalog-Walks, und ein Guard, der bei einem sdxl-geformten Modell sofort und lesbar
- *  scheitert statt mit einem irrefuehrenden `undefined`-Zugriff auf `parts.textEncoder2`. */
-function fileOf(model: BuiltinModel, key: "text_encoder" | "unet" | "vae_decoder" | "vocab" | "merges"): AssetFile {
-  if (model.kind !== "sd") {
-    throw new Error(`LocalEngineBackend kennt nur SD-Turbo-foermige Modelle, nicht "${model.id}" (kind "${model.kind}")`);
-  }
-  switch (key) {
-    case "text_encoder": return model.parts.textEncoder.file;
-    case "unet": return model.parts.unet.file;
-    case "vae_decoder": return model.parts.vaeDecoder.file;
-    case "vocab": return model.parts.tokenizer.vocab;
-    case "merges": return model.parts.tokenizer.merges;
-  }
 }
 
 export class LocalEngineBackend implements ImageBackend {
@@ -100,23 +83,44 @@ export class LocalEngineBackend implements ImageBackend {
     return this.loading;
   }
 
+  /** Ein Modellteil samt seiner External-Data-Buckets laden (SDXL-Turbos UNet: 13 Stueck,
+   *  alles andere: leere Liste). Reihenfolge ist tragend — `p.data` steht in Manifest-
+   *  Reihenfolge (`_000`, `_001`, …), und `ext[i]` muss zu `data[i]` passen; deshalb hier
+   *  ein Promise.all ueber ein ARRAY statt ueber ein Objekt (dessen Key-Reihenfolge nicht
+   *  zugesichert waere). `path` MUSS der reine location-Dateiname sein, nicht der Cache-
+   *  Schluessel aus `d.key` und nicht der HF-Pfad aus `d.path` — sonst findet ORT die
+   *  Daten nicht. */
+  private async loadPart(p: ModelPart): Promise<Session> {
+    const [buf, ...data] = await Promise.all([
+      this.deps.store.getBuffer(p.file),
+      ...p.data.map((d) => this.deps.store.getBuffer(d)),
+    ]);
+    const ext = p.data.map((d, i) => {
+      const bytes = data[i];
+      if (bytes === undefined) throw new Error(`loadPart: fehlender Bucket-Puffer fuer "${d.path}"`);
+      return { path: d.path.split("/").pop() ?? d.path, data: bytes };
+    });
+    return this.deps.createSession(buf, ext);
+  }
+
   private async load(): Promise<SdTurboEngine> {
-    const { store, createSession, initRuntime } = this.deps;
+    const { store, initRuntime } = this.deps;
     if (!this.runtimeReady) {
       initRuntime(await store.getBuffer(RUNTIME_WASM));
       this.runtimeReady = true;
     }
-    const [textEncoder, unet, vaeDecoder, vocabText, mergesText] = await Promise.all([
-      store.getBuffer(fileOf(this.model, "text_encoder")).then(createSession),
-      store.getBuffer(fileOf(this.model, "unet")).then(createSession),
-      store.getBuffer(fileOf(this.model, "vae_decoder")).then(createSession),
-      store.getText(fileOf(this.model, "vocab")),
-      store.getText(fileOf(this.model, "merges")),
+    const { textEncoder, unet, vaeDecoder, tokenizer } = this.model.parts;
+    const [textEncoderSession, unetSession, vaeDecoderSession, vocabText, mergesText] = await Promise.all([
+      this.loadPart(textEncoder),
+      this.loadPart(unet),
+      this.loadPart(vaeDecoder),
+      store.getText(tokenizer.vocab),
+      store.getText(tokenizer.merges),
     ]);
-    const tokenizer: TokenizerData = {
+    const tokenizerData: TokenizerData = {
       vocab: JSON.parse(vocabText) as Record<string, number>,
       merges: mergesText.split("\n").filter((l) => l.length > 0 && !l.startsWith("#")),
     };
-    return new SdTurboEngine({ textEncoder, unet, vaeDecoder }, tokenizer);
+    return new SdTurboEngine({ textEncoder: textEncoderSession, unet: unetSession, vaeDecoder: vaeDecoderSession }, tokenizerData);
   }
 }

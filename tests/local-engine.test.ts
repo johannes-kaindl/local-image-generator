@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/core/engine";
-import { BUILTIN_MODEL, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
+import { BUILTIN_MODEL, BUILTIN_MODELS, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
 import { LocalEngineBackend, type LocalEngineDeps } from "../src/obsidian/local-engine";
 import type { ModelStore } from "../src/obsidian/model-store";
 
@@ -42,6 +42,10 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
 
 const req = { prompt: "cat", negativePrompt: "", width: 512, height: 512, steps: 2, seed: 7, cfg: 1,
   initImageData: null, denoising: null };
+
+function reqOf(prompt: string): typeof req {
+  return { ...req, prompt };
+}
 
 describe("LocalEngineBackend", () => {
   it("erster generate lädt WASM, drei Sessions und den Tokenizer genau einmal — der zweite nicht mehr", async () => {
@@ -133,5 +137,28 @@ describe("LocalEngineBackend", () => {
     // Die pure Engine ist single-flight („engine is busy"); der Backend-Loader aber nur einmal.
     expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
     expect(typeof r2).toBe("string");
+  });
+
+  it("uebergibt Bucket-Puffer als externalData mit dem location-Namen", async () => {
+    const seen: { path: string; bytes: number }[] = [];
+    const deps = makeDeps([]);
+    deps.createSession = async (buf, ext) => {
+      for (const e of ext ?? []) seen.push({ path: e.path, bytes: e.data.byteLength });
+      return fakeSession(["sample"], "out_sample", [1, 4, 64, 64], {});
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sdxl-turbo"]);
+    await be.generate(reqOf("hund")).catch(() => undefined);
+    expect(seen.map((s) => s.path)).toEqual(
+      BUILTIN_MODELS["sdxl-turbo"].parts.unet.data.map((d) => d.path.split("/").pop()),
+    );
+  });
+
+  it("monolithische Modelle bekommen kein externalData", async () => {
+    let ext: unknown = "ungesetzt";
+    const deps = makeDeps([]);
+    deps.createSession = async (_buf, e) => { ext = e; return fakeSession(["sample"], "out_sample", [1, 4, 64, 64], {}); };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+    await be.generate(reqOf("katze")).catch(() => undefined);
+    expect(ext === undefined || (Array.isArray(ext) && ext.length === 0)).toBe(true);
   });
 });
