@@ -1,4 +1,4 @@
-import { backendCapabilities, CFG, DEFAULT_SIZE, DENOISING } from "./generation";
+import { backendCapabilities, CFG, DEFAULT_SIZE, DENOISING, type SizeOption } from "./generation";
 import type { BuiltinModelId } from "./model-manifest";
 import { isoStamp } from "./filename";
 import type { EngineChoice } from "./settings";
@@ -67,6 +67,25 @@ function clampFloat(v: number | undefined, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, n));
 }
 
+/** Die naechstgelegene erlaubte Groesse aus `sizes` waehlen (I2-Fix, Final-Review 2026-08-24) —
+ *  "so wie sie heute schon Steps klemmt" (Spec-Zusage an v1-API-Konsumenten). Quadrierter
+ *  euklidischer Abstand statt Wurzel (monoton, spart die sqrt, aendert das Ergebnis nicht) —
+ *  bei Gleichstand gewinnt der ERSTE Treffer in `sizes` (Katalog-Reihenfolge = Praeferenz,
+ *  z. B. SDXL-Turbos `[512, 1024]`: 768 liegt genau in der Mitte und landet deshalb auf 512).
+ *  `sizes` ist nie leer — jedes builtin-Modell traegt mindestens einen Eintrag (Katalog). */
+function nearestSize(width: number, height: number, sizes: readonly SizeOption[]): SizeOption {
+  let best: SizeOption = sizes[0]!;
+  let bestDist = Infinity;
+  for (const s of sizes) {
+    const dist = (s.width - width) ** 2 + (s.height - height) ** 2;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = s;
+    }
+  }
+  return best;
+}
+
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
   const caps = backendCapabilities(ctx.mode, ctx.builtinModel);
   // clampInt gibt seinen Fallback UNGEPRUEFT zurueck — ein defaultSteps von 20 landete im
@@ -76,14 +95,23 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
   // Kann das Backend kein img2img, faellt die ganze Vorlage weg — still, wie Negativ-Prompt
   // und CFG (Keine-Attrappen-Linie). Das SIGNAL ist die Anwesenheit, nicht der Pfad darin.
   const wanted = caps.initImage ? input.initImage : undefined;
+  // Groesse klemmen wie Steps: `caps.sizes` ist im builtin-Modus immer gesetzt (jedes Modell
+  // traegt seinen Katalog) — ein unpassendes Paar wird auf die naechstgelegene erlaubte Groesse
+  // gezogen, nicht abgelehnt. `caps.sizes === null` heisst freie Wahl (Server-Modus); dort bleibt
+  // der bisherige Finite-Guard die einzige Absicherung. `caps.fixedSize` deckt sich fuer
+  // Ein-Groessen-Modelle (SD-Turbo) mit dem naechstgelegenen Treffer aus `sizes` — kein
+  // Sonderfall mehr noetig.
+  const wantedWidth = finite(input.width, DEFAULT_SIZE.width);
+  const wantedHeight = finite(input.height, DEFAULT_SIZE.height);
+  const size = caps.sizes ? nearestSize(wantedWidth, wantedHeight, caps.sizes) : { width: wantedWidth, height: wantedHeight };
   return {
     prompt: input.prompt,
     // Ein Regler, den das Backend nicht kann, wird nicht abgelehnt, sondern neutralisiert —
     // der Aufrufer sieht am Rueckgabewert, was daraus wurde (Keine-Attrappen-Linie).
     negativePrompt: caps.negativePrompt ? (input.negativePrompt ?? "") : "",
     cfg: caps.cfg ? finite(input.cfg, CFG.default) : 1,
-    width: caps.fixedSize?.width ?? finite(input.width, DEFAULT_SIZE.width),
-    height: caps.fixedSize?.height ?? finite(input.height, DEFAULT_SIZE.height),
+    width: size.width,
+    height: size.height,
     steps: clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps),
     seed: finite(input.seed, () => ctx.randomSeed()),
     model: ctx.model,

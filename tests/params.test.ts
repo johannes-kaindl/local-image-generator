@@ -93,6 +93,34 @@ describe("hardenParams", () => {
     expect(s).toBe(BUILTIN_MODELS["sd-turbo"].steps.max);
   });
 
+  // I2 (Final-Review, 2026-08-24): hardenParams klemmte bisher nur `caps.fixedSize` — das ist
+  // `null` fuer jedes Modell mit mehr als einer erlaubten Groesse (SDXL-Turbo). Eine Anfrage
+  // mit 700x700 (in keinem Katalogeintrag) lief bis hierher unveraendert durch, obwohl die
+  // Spec fuer v1-API-Konsumenten ausdruecklich zusagt: "so wie sie heute schon Steps klemmt".
+  // Ohne diesen Fix waere lig-Engine.pickSize() (local-engine.ts) der einzige verbliebene
+  // Schutz — und der faellt bei einem Fehltreffer auf sizes[0] zurueck, nicht auf den
+  // naechstgelegenen Eintrag, und ist Provider-API-Konsumenten (die nur GenParams sehen)
+  // unsichtbar: die Notiz haette 700x700 behauptet, gerechnet worden waeren 512x512.
+  it("klemmt eine unpassende Groesse auf die naechstgelegene erlaubte (SDXL-Turbo, I2-Fix)", () => {
+    const p = hardenParams({ prompt: "x", width: 700, height: 700 }, ctx("builtin", "sdxl-turbo"));
+    expect(p.width).toBe(512);
+    expect(p.height).toBe(512);
+  });
+
+  it("Gleichstand zwischen zwei erlaubten Groessen entscheidet die Katalog-Reihenfolge (erster Treffer gewinnt)", () => {
+    // 768 liegt exakt in der Mitte zwischen SDXL-Turbos 512 und 1024 — quadrierter Abstand ist
+    // fuer beide identisch. sizes = [512, 1024] (Katalog-Reihenfolge) → 512 gewinnt.
+    const p = hardenParams({ prompt: "x", width: 768, height: 768 }, ctx("builtin", "sdxl-turbo"));
+    expect(p.width).toBe(512);
+    expect(p.height).toBe(512);
+  });
+
+  it("laesst eine unpassende Groesse im Server-Modus unveraendert (freie Wahl, sizes === null)", () => {
+    const p = hardenParams({ prompt: "x", width: 700, height: 900 }, ctx("server"));
+    expect(p.width).toBe(700);
+    expect(p.height).toBe(900);
+  });
+
   it("faengt NaN/Infinity in cfg, width, height und seed ab, statt sie durchzureichen", () => {
     const p = hardenParams(
       {
