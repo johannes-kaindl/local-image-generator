@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format follows
 
 - **SDXL-Turbo as a second built-in model**, alongside SD-Turbo, chosen from a dropdown in
   the settings and in the generator panel — sharper output, up to 1024×1024, at the cost of
-  a larger download (≈ 6.4 GB) and a higher GPU-memory peak during loading (≈ 13 GB). The
+  a larger download (≈ 6.9 GB) and a higher GPU-memory peak during loading (≈ 13 GB). The
   panel's size picker now offers whichever sizes the active model actually supports; the
   four-session pipeline (two text encoders, UNet, VAE decoder) and its own tokenizer pair
   are this plugin's own ONNX conversion of the official `stabilityai/sdxl-turbo` weights.
@@ -25,7 +25,7 @@ All notable changes to this project are documented here. The format follows
 - **The panel understated an SDXL-Turbo download by 3.9 GB.** The "not downloaded" empty
   state and its download button always sized and named themselves after the *default*
   model (SD-Turbo, 2.5 GB), never the one actually selected — with SDXL-Turbo chosen and
-  not yet cached, the button read "Download model (2.5 GB)" and fetched 6.4 GB. Both now
+  not yet cached, the button read "Download model (2.5 GB)" and fetched 6.9 GB. Both now
   read the selected model.
 - A session build that fails with a recognizable out-of-memory signal now shows a readable
   status-line message ("not enough memory for this model") instead of the raw runtime error.

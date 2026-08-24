@@ -54,9 +54,13 @@ after the user clicks "Download" and verifies their SHA-256 before use.
 """)
 print("LICENSE.md + NOTICE.md geschrieben:", dst)
 PY
-# Model-Card fürs HF-Repo (getrackte Vorlage, Lizenz-Metadaten im Frontmatter) — bislang nur
-# fuer sd-turbo gepflegt; die sdxl-turbo-Fassung folgt mit der eigenen Konversion (Task 3).
-# Nur bei der ausgelieferten Konversion kopieren, nicht bei einer Gegenprobe mit --out.
-if [ "$MODEL" = "sd-turbo" ] && [ "$OUT" = "dist-assets/sd-turbo" ]; then
+# Model-Card fürs HF-Repo (getrackte Vorlage, Lizenz-Metadaten im Frontmatter, deckt seit
+# 2026-08-24 beide Modelle — I3-Fix, Final-Review). Frueher an "$MODEL" = "sd-turbo" gegated
+# mit dem Kommentar "die sdxl-turbo-Fassung folgt mit der eigenen Konversion (Task 3)" — Task 3
+# lieferte die Konversion, die Karte blieb einmodellig UND die Kopie lief nie fuer sdxl-turbo.
+# Beide Modelle liegen unter derselben Repo-Wurzel (dist-assets/README.md), die Karte gehoert
+# also bei JEDER kanonischen Konversion aktualisiert, nicht nur bei sd-turbo. Nur bei der
+# ausgelieferten Konversion kopieren, nicht bei einer Gegenprobe mit --out.
+if [ "$OUT" = "dist-assets/$MODEL" ]; then
   cp tools/convert/hf-readme.md dist-assets/README.md && echo "README.md (Model-Card) kopiert"
 fi
