@@ -4,7 +4,7 @@
 // weiterer Eintrag hier plus ein Ordner in dist-assets/ — kein Umbau. Pure, obsidian-frei.
 import { GENERATED_ASSETS, ORT_VERSION } from "./engine-manifest.generated";
 
-export type AssetKey = keyof typeof GENERATED_ASSETS;
+export type AssetKey = string;
 
 export interface AssetFile {
   key: AssetKey;
@@ -39,11 +39,18 @@ export const DEFAULT_ASSET_BASE_URL =
   "https://huggingface.co/johannes-kaindl/local-image-generator-models/resolve/main";
 
 function file(key: AssetKey, kind: AssetFile["kind"]): AssetFile {
-  const g = GENERATED_ASSETS[key];
+  // Non-null: key kommt ausschließlich aus den file()-Aufrufen unten, die feste Schlüssel des
+  // generierten sd-turbo-Katalogs referenzieren (noUncheckedIndexedAccess). Die Indexsignatur
+  // brauchen wir hier explizit, weil AssetKey (Task 5: BUILTIN_MODELS-Katalog) generisch bleibt.
+  const models: Record<string, { path: string; bytes: number; sha256: string } | undefined> = GENERATED_ASSETS.models["sd-turbo"];
+  const g = models[key]!;
   return { key, path: g.path, bytes: g.bytes, sha256: g.sha256, kind };
 }
 
-export const RUNTIME_WASM: AssetFile = file("ort_wasm", "wasm");
+export const RUNTIME_WASM: AssetFile = (() => {
+  const g = GENERATED_ASSETS.runtime.ort_wasm;
+  return { key: "ort_wasm", path: g.path, bytes: g.bytes, sha256: g.sha256, kind: "wasm" };
+})();
 export { ORT_VERSION };
 
 export const BUILTIN_MODEL: BuiltinModel = {
