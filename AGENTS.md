@@ -126,6 +126,26 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   ⚠️ **Spitzenspeicher ist rund das Doppelte der Modellgroesse** — ORT gibt die JS-Puffer
   erst nach `createSession` frei (`unmountExternalData` im `finally`), bis dahin liegen
   Gewichte in JS UND auf der GPU; auf Apple Silicon ist das derselbe Speicherpool.
+  **Gebautes Gegenstueck (Stand 2026-08-24):** die reale SDXL-Turbo-Konversion stueckelt
+  ihr UNet (≈ 5,1 GiB) in **13 External-Data-Buckets** (`sdxl-turbo/unet/unet_000.onnx_data`
+  … `_012`, keiner ueber 420 MB) plus die 4,4-MB-Modell-Shell — genau die Form, die dieser
+  Punkt vorschreibt; `src/core/engine-manifest.generated.ts` listet alle 13 mit eigenem
+  Hash, `src/obsidian/local-engine.ts::loadPart()` laedt sie als Array (Reihenfolge = die
+  des Manifests) und reicht sie als `externalData` an `createOrtSession`.
+- **`location`-Strings in External Data sind reine Dateinamen, nie Cache-Schluessel oder
+  HF-Pfade.** `split_external_data.py` schreibt in jeden Bucket-Verweis nur den Basisnamen
+  (`unet_003.onnx_data`), und `loadPart()` muss ORT exakt diesen String zurueckgeben —
+  `d.path.split("/").pop()`, NICHT `d.key` (der Cache-API-Schluessel, hash-gebunden seit
+  0.6) und NICHT der HF-Pfad (`sdxl-turbo/unet/unet_003.onnx_data`, mit Ordner). Reicht man
+  Cache-Schluessel oder HF-Pfad durch, findet ORT die Bucket-Daten nicht — der Session-Aufbau
+  scheitert, aber mit einer Meldung, die nach einem Datenfehler aussieht, nicht nach einem
+  Pfadfehler.
+- **`pickHidden()` (`src/core/engine-sdxl.ts`) nimmt den VORLETZTEN indizierten
+  `hidden_states.N`-Ausgang und faellt NICHT auf `last_hidden_state` zurueck — bewusst.**
+  Fehlt der erwartete Index (weniger als zwei indizierte Ausgaenge gefunden), wirft die
+  Funktion, statt still ein schlechteres Ergebnis zu liefern (Spec §9-Risiko 1: genau der
+  leise Qualitaetsverlust, den ein Fallback waere). Ein Fehlerbild ist hier das gewollte
+  Verhalten, kein fehlender Edge-Case.
 - **Die WebGPU-Limits im Obsidian-Renderer sind weit ueber den Spec-Defaults** (gemessen
   2026-08-23, M5 Pro): `maxBufferSize` und `maxStorageBufferBindingSize` je 4 GiB statt
   256/128 MiB, `shader-f16` vorhanden, 16 GiB GPU-Belegung ohne device-lost. Puffergrenzen
@@ -248,6 +268,12 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Vorlage zu aendern. Ein Regler ohne Vorlage bewirkt nichts und waere dieselbe Attrappe wie
   ein CFG-Regler im builtin-Modus. Deshalb steht `.lig-denoise` auch NICHT in `MODUS_REGLER`
   von `scripts/gui-smoke.ts`: dort gefuehrt, wuerde Punkt 17 die zweite Stufe als Defekt melden.
+- **`.lig-model-pick` gehoert aus demselben Grund NICHT in `MODUS_REGLER`.** Die
+  Modellwahl im Panel hat ebenfalls zwei UNABHAENGIGE Sichtbarkeitsbedingungen —
+  `settings.showModelPicker` UND mehr als ein heruntergeladenes Modell — statt der einen
+  (`mode`), die `MODUS_REGLER` prueft. Dort gefuehrt, meldete der Modus-Umschalt-Punkt einen
+  Defekt in jedem Setup, in dem der Picker aus einem der beiden anderen Gruende zu Recht
+  verborgen ist.
 - **„Speichern & als Vorlage" speichert wirklich — das ist der Punkt.** Der Knopf legt das
   Ergebnis erst im Vault ab und macht dann dessen Pfad zur Vorlage. Ohne das entstuende eine
   Vorlage ohne benennbare Herkunft, und die Ergebnis-Notiz muesste „Vorlage: das vorige

@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **SDXL-Turbo as a second built-in model**, alongside SD-Turbo, chosen from a dropdown in
+  the settings and in the generator panel — sharper output, up to 1024×1024, at the cost of
+  a larger download (≈ 6.4 GB) and a higher GPU-memory peak during loading (≈ 13 GB). The
+  panel's size picker now offers whichever sizes the active model actually supports; the
+  four-session pipeline (two text encoders, UNet, VAE decoder) and its own tokenizer pair
+  are this plugin's own ONNX conversion of the official `stabilityai/sdxl-turbo` weights.
+- A confirmation dialog before downloading any model other than the default, naming its
+  size and the peak-memory note above — cancelling starts no download.
+- The model's UNet (≈ 5.1 GB) exceeds both ONNX's and the browser's single-file/single-buffer
+  limits, so the conversion pipeline now stripes it across 13 external-data buckets
+  (`tools/convert/split_external_data.py`) that the engine reassembles at load.
+
+### Fixed
+
+- A session build that fails with a recognizable out-of-memory signal now shows a readable
+  status-line message ("not enough memory for this model") instead of the raw runtime error —
+  closes the last open item of the two-backend design's robustness section (§8). The
+  classifier is a best-effort heuristic over the error text (no reliable in-browser OOM signal
+  is measured for the WebGPU path, only a neighboring WASM-EP case); when it misses, the
+  previous raw-message behavior applies unchanged — never a stuck spinner either way, since
+  any failed session build already surfaced as an error before this change.
+- `npm run assets:upload`'s precondition now checks that **both** catalog models are present
+  in `dist-assets/` before uploading, not just SD-Turbo.
+
 ## [0.8.0] — 2026-08-23
 
 ### Added

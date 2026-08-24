@@ -3,10 +3,12 @@
 Generate images inside Obsidian — on your own machine, with no cloud and no
 account. Two ways to do it, chosen in the settings:
 
-- **Built-in (default):** a small, fast model (SD-Turbo) runs **on your GPU
-  inside Obsidian** via WebGPU. Nothing to install: click **Download model**
-  once (≈ 2.5 GB, verified by checksum, stored outside your vault), then type
-  a prompt and press Generate — an image in seconds.
+- **Built-in (default):** a model runs **on your GPU inside Obsidian** via
+  WebGPU — pick one in the settings. **SD-Turbo** (≈ 2.5 GB, 512×512) is the
+  default; **SDXL-Turbo** (≈ 6.4 GB, up to 1024×1024, sharper output) is an
+  optional second model you switch to yourself. Nothing to install: click
+  **Download model**, verified by checksum and stored outside your vault,
+  then type a prompt and press Generate.
 - **Server:** a local image server you run yourself —
   [Draw Things](https://drawthings.ai/),
   [AUTOMATIC1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui),
@@ -61,10 +63,12 @@ Either way, your prompts and images never leave your machine.
   generation's prompt, seed, steps, size and date in its frontmatter and the
   image embedded, and open that note instead. **Insert** always just saves
   the image and embeds it at your cursor in the current note.
-- **Built-in engine:** SD-Turbo is a distilled model — 512 × 512, 1–4 steps,
-  no guidance — so in this mode the panel shows only what the model honours:
-  prompt, steps (1–4), seed and the style chips. Negative prompt, CFG and the
-  size picker appear when you switch to a server.
+- **Built-in engine:** both catalog models are distilled — 1–4 steps, no
+  guidance — so in this mode the panel shows only what a model honours:
+  prompt, steps (1–4), seed and the style chips, plus a size picker once you
+  have more than one size to choose from (SD-Turbo is fixed at 512×512;
+  SDXL-Turbo also offers 1024×1024). Negative prompt and CFG stay
+  server-only either way — no built-in model supports guidance.
 - **Server:** which model actually runs is chosen in your server app (Draw
   Things, AUTOMATIC1111, etc.), not in this plugin — the plugin sends generic
   generation parameters and shows the server's active model name as a status
@@ -151,8 +155,11 @@ no progress (Draw Things has no progress endpoint) — show an indeterminate spi
    (or manually — see
    [Releases](https://github.com/johannes-kaindl/local-image-generator/releases)).
 2. **Built-in engine (default):** open the generator and click **Download
-   model (2.5 GB)** — or do it from **Settings → Local Image Generator →
-   Engine**. When the status says *Ready*, generate. That's the whole setup.
+   model** — or do it from **Settings → Local Image Generator → Engine**.
+   The button names the size of the currently selected model (SD-Turbo,
+   ≈ 2.5 GB, by default); pick SDXL-Turbo there first if you want the
+   sharper, larger model instead. When the status says *Ready*, generate.
+   That's the whole setup.
 3. **Server instead?** Switch **Engine** to *Server (Draw Things / A1111)*,
    enter the server's URL in **Server endpoint**, and click **Test
    connection**.
@@ -221,9 +228,14 @@ line and settings both show the server's active model name once connected.
   run on Obsidian Mobile).
 - **Built-in engine:** a GPU that Obsidian's WebGPU can use with 16-bit
   shaders (`shader-f16`) — Apple Silicon Macs qualify, as do most current
-  discrete GPUs — plus roughly 4 GB of free RAM while an image is being
-  made and 2.5 GB of disk for the model. The panel tells you if the GPU
-  does not qualify; the server mode is the way out then.
+  discrete GPUs. Disk and peak GPU memory depend on which model you pick:
+  **SD-Turbo** needs ≈ 2.5 GB of disk and roughly 4 GB of free memory while
+  an image is being made; **SDXL-Turbo** needs ≈ 6.4 GB of disk, and briefly
+  needs about *double* that in GPU memory the first time its session is
+  built (the weights sit in both the JS heap and on the GPU until loading
+  finishes) — roughly 13 GB peak. That can get tight on a 16 GB machine. The
+  panel tells you if the GPU does not qualify at all; the server mode is the
+  way out then.
 - **Server mode:** any A1111-compatible local image server, running and
   reachable — Draw Things, AUTOMATIC1111, Forge, or SD.Next. The server app
   owns the model, its hardware requirements and its own disk footprint.
@@ -236,10 +248,12 @@ line and settings both show the server's active model name once connected.
 
 **Settings → Local Image Generator**:
 
-- **Engine** — *Built-in (SD-Turbo)* or *Server (Draw Things / A1111)*.
-  - Built-in shows the **model row**: size, license, status, and
-    **Download** / **Cancel** / **Remove**. Nothing is downloaded until you
-    click Download.
+- **Engine** — *Built-in (on your GPU)* or *Server (Draw Things / A1111)*.
+  - Built-in shows a **model** dropdown (SD-Turbo / SDXL-Turbo) and, below
+    it, that model's **row**: size, license, status, and **Download** /
+    **Cancel** / **Remove**. Switching to a model other than SD-Turbo asks
+    for confirmation before it downloads anything. Nothing is downloaded
+    until you click Download.
   - Server shows the **Server endpoint** — the URL of your local image
     server (e.g. `http://127.0.0.1:7860`), plus a **Test connection** button
     that checks reachability and reports the server's active model.
@@ -265,17 +279,23 @@ line and settings both show the server's active model name once connected.
 The plugin owns the interface — prompt, presets, history, where files land —
 and one of two **backends** owns the generation:
 
-**Built-in engine.** SD-Turbo runs inside Obsidian through
+**Built-in engine.** The selected catalog model (SD-Turbo, or SDXL-Turbo)
+runs inside Obsidian through
 [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/) on the WebGPU
 backend. The model files are this plugin's **own ONNX conversion** of the
-official `stabilityai/sd-turbo` weights (fp16 weights, fp32 inputs/outputs),
-published in the plugin's model repository together with the license and a
-notice; the conversion script is in `tools/convert/`. On first use after
-Obsidian starts, the three sessions (text encoder, UNet, VAE decoder) are
+official `stabilityai/sd-turbo`/`stabilityai/sdxl-turbo` weights (fp16
+weights, fp32 inputs/outputs), published in the plugin's model repository
+together with the license and a notice; the conversion script is in
+`tools/convert/`. On first use after Obsidian starts (or after switching
+models), the model's sessions — three for SD-Turbo (text encoder, UNet, VAE
+decoder), four for SDXL-Turbo (two text encoders, UNet, VAE decoder) — are
 loaded into the GPU — the status line counts the seconds — then each image
-takes one text-encoder pass, 1–4 UNet steps and a VAE decode. The pipeline
-(CLIP tokenizer, Euler-ancestral scheduler, seeded noise) is pure TypeScript
-and unit-tested against fake sessions.
+takes one text-encoder pass, 1–4 UNet steps and a VAE decode. SDXL-Turbo's
+UNet alone is ≈ 5 GB and exceeds the single-file limits both ONNX and the
+browser's JS heap impose, so it is split into external-data buckets at
+conversion time and reassembled by the engine at load. The pipeline (CLIP
+tokenizer, Euler-ancestral scheduler, seeded noise) is pure TypeScript and
+unit-tested against fake sessions.
 
 **Server.** A generation is one `POST /sdapi/v1/txt2img` against the endpoint
 you configured, carrying nothing but the generic parameters shown in the panel
@@ -297,10 +317,13 @@ file itself carries no dependency on the plugin.
 
 ## How network and storage are used
 
-**Out of the box the plugin downloads nothing.** The built-in engine needs its
-model files, and it fetches them **once, only when you click Download** (in
-the generator panel or in the settings), from this plugin's model repository
-on Hugging Face:
+**Out of the box the plugin downloads nothing.** The built-in engine needs
+model files, and it fetches them **once per model, only when you click
+Download** (in the generator panel or in the settings) — you pick which of
+the two catalog models to download; nothing else is fetched automatically.
+Both come from this plugin's model repository on Hugging Face:
+
+**SD-Turbo** (default, ≈ 2.5 GB total):
 
 | File | Size | What it is | License |
 |---|---|---|---|
@@ -308,13 +331,31 @@ on Hugging Face:
 | `sd-turbo/unet/model.onnx` | ≈ 1.7 GB | UNet (fp16) | Stability AI Community License |
 | `sd-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE decoder (fp16) | Stability AI Community License |
 | `sd-turbo/tokenizer/vocab.json`, `merges.txt` | ≈ 1.6 MB | CLIP BPE tokenizer data | (part of the model release) |
+
+**SDXL-Turbo** (optional second model, ≈ 6.4 GB total):
+
+| File | Size | What it is | License |
+|---|---|---|---|
+| `sdxl-turbo/text_encoder/model.onnx` | ≈ 246 MB | CLIP-L text encoder (fp16) | Stability AI Community License |
+| `sdxl-turbo/text_encoder_2/model.onnx` | ≈ 1.4 GB | OpenCLIP bigG text encoder (fp16) | Stability AI Community License |
+| `sdxl-turbo/unet/model.onnx` + 13 external-data buckets | ≈ 5.1 GB | UNet (fp16, split across files — no single file exceeds 2 GB) | Stability AI Community License |
+| `sdxl-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE decoder (fp16) | Stability AI Community License |
+| `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3.2 MB | CLIP BPE tokenizer data, both encoders | (part of the model release) |
+
+Shared by both models:
+
+| File | Size | What it is | License |
+|---|---|---|---|
 | `runtime/ort-<version>/ort-wasm-simd-threaded.asyncify.wasm` | ≈ 24 MB | ONNX Runtime Web (the same version the plugin is built against) | MIT |
 
 Every file is checked against a SHA-256 pinned in the plugin before it is
-used; a mismatch is discarded and reported. The files live in the browser's
-Cache API inside Obsidian's profile — **outside your vault**, so they are
-never synced — and **Remove** in the settings deletes them again. You can
-cancel a download at any time; finished files are kept.
+used; a mismatch is discarded and reported. Before downloading any model
+other than the default (currently just SDXL-Turbo) the plugin shows a
+confirmation dialog naming its size and the peak-memory note above —
+cancelling it downloads nothing. The files live in the browser's Cache API
+inside Obsidian's profile — **outside your vault**, so they are never
+synced — and **Remove** in the settings deletes them again. You can cancel a
+download at any time; finished files are kept.
 
 The download source is the only network connection the built-in engine makes.
 In server mode, the only connection is to the server endpoint you configure,
@@ -342,13 +383,18 @@ No other network access, no telemetry.
 ## Model & licenses
 
 - **Plugin code:** AGPL-3.0-or-later (see `LICENSE`).
-- **Built-in model:** [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo)
-  by Stability AI, redistributed as this plugin's own ONNX conversion under
-  the [Stability AI Community License](https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md)
+- **Built-in models:** two catalog entries, both by Stability AI, both
+  redistributed as this plugin's own ONNX conversion (fp16 weights, fp32
+  inputs/outputs) under the
+  [Stability AI Community License](https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md)
   — free for research, non-commercial and limited commercial use; read the
   license before using generated images commercially. *Powered by Stability
-  AI.* The conversion is reproducible from the official weights with
-  `tools/convert-model.sh sd-turbo`; no third-party conversion is involved.
+  AI.* Conversions are reproducible from the official weights with
+  `tools/convert-model.sh <sd-turbo|sdxl-turbo>`; no third-party conversion
+  is involved.
+  - [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo) — the default.
+  - [SDXL-Turbo](https://huggingface.co/stabilityai/sdxl-turbo) — the
+    optional second model, sharper output at up to 1024×1024, ≈ 6.4 GB.
 - **Server mode:** the model is whatever your server app has loaded — its
   license applies to the images it makes. Check its model card before using
   generated images, especially for commercial purposes.

@@ -3,10 +3,12 @@
 Bilder in Obsidian erzeugen — auf dem eigenen Rechner, ohne Cloud und ohne Konto. Zwei
 Wege, wählbar in den Einstellungen:
 
-- **Eingebaut (Standard):** ein kleines, schnelles Modell (SD-Turbo) rechnet **auf deiner
-  GPU in Obsidian** per WebGPU. Nichts zu installieren: einmal **Modell herunterladen**
-  klicken (≈ 2,5 GB, per Prüfsumme geprüft, außerhalb des Vaults abgelegt), dann Prompt
-  eingeben und Generieren — ein Bild in Sekunden.
+- **Eingebaut (Standard):** ein Modell rechnet **auf deiner GPU in Obsidian** per
+  WebGPU — wählbar in den Einstellungen. **SD-Turbo** (≈ 2,5 GB, 512×512) ist die
+  Vorgabe; **SDXL-Turbo** (≈ 6,4 GB, bis 1024×1024, schärfere Bilder) ist ein
+  optionales zweites Modell, auf das du selbst umstellst. Nichts zu installieren:
+  **Modell herunterladen** klicken (per Prüfsumme geprüft, außerhalb des Vaults
+  abgelegt), dann Prompt eingeben und Generieren.
 - **Server:** ein lokaler Bild-Server, den du selbst betreibst —
   [Draw Things](https://drawthings.ai/),
   [AUTOMATIC1111](https://github.com/AUTOMATIC1111/stable-diffusion-webui),
@@ -61,10 +63,12 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
   Schritten, Größe und Datum im Frontmatter und eingebettetem Bild, und diese Notiz wird
   geöffnet. **Einfügen** speichert das Bild immer nur und bettet es an der
   Cursorposition der aktuellen Notiz ein.
-- **Eingebaute Engine:** SD-Turbo ist ein destilliertes Modell — 512 × 512, 1–4 Schritte,
-  keine Guidance — deshalb zeigt das Panel in diesem Modus nur, was das Modell auch
-  beachtet: Prompt, Schritte (1–4), Seed und die Stil-Chips. Negativ-Prompt, CFG und die
-  Größenwahl erscheinen, sobald du auf einen Server umstellst.
+- **Eingebaute Engine:** beide Katalog-Modelle sind destilliert — 1–4 Schritte, keine
+  Guidance — deshalb zeigt das Panel in diesem Modus nur, was ein Modell auch beachtet:
+  Prompt, Schritte (1–4), Seed und die Stil-Chips, dazu eine Größenwahl, sobald es mehr
+  als eine Größe gibt (SD-Turbo ist fest auf 512×512; SDXL-Turbo bietet zusätzlich
+  1024×1024). Negativ-Prompt und CFG bleiben so oder so server-only — kein eingebautes
+  Modell kennt Guidance.
 - **Server:** Welches Modell tatsächlich läuft, entscheidest du in deiner Server-App (Draw
   Things, AUTOMATIC1111, …), nicht in diesem Plugin — es schickt generische
   Erzeugungsparameter und zeigt den Namen des aktiven Modells als Statushinweis.
@@ -150,8 +154,10 @@ das Plugin wurde zwischen deinem `generate()`- und `save()`-Aufruf deaktiviert).
 1. Das Plugin über Obsidians Community-Plugin-Browser installieren und aktivieren (oder
    manuell — siehe
    [Releases](https://github.com/johannes-kaindl/local-image-generator/releases)).
-2. **Eingebaute Engine (Standard):** den Generator öffnen und **Modell herunterladen
-   (2,5 GB)** klicken — oder in **Einstellungen → Local Image Generator → Engine**. Sobald
+2. **Eingebaute Engine (Standard):** den Generator öffnen und **Modell herunterladen**
+   klicken — oder in **Einstellungen → Local Image Generator → Engine**. Der Knopf nennt
+   die Größe des gerade gewählten Modells (Vorgabe SD-Turbo, ≈ 2,5 GB); dort zuerst
+   SDXL-Turbo wählen, wenn stattdessen das schärfere, größere Modell gewünscht ist. Sobald
    der Status *Bereit* meldet, generieren. Das ist die ganze Einrichtung.
 3. **Lieber ein Server?** **Engine** auf *Server (Draw Things / A1111)* stellen, die URL
    des Servers unter **Server-Endpunkt** eintragen und **Verbindung testen** klicken.
@@ -220,8 +226,12 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
   Obsidian Mobile).
 - **Eingebaute Engine:** eine GPU, die Obsidians WebGPU mit 16-Bit-Shadern
   (`shader-f16`) nutzen kann — Apple-Silicon-Macs erfüllen das, ebenso die meisten
-  aktuellen dedizierten GPUs — dazu rund 4 GB freier Arbeitsspeicher während ein Bild
-  entsteht und 2,5 GB Platz für das Modell. Das Panel sagt dir, wenn die GPU nicht
+  aktuellen dedizierten GPUs. Plattenplatz und Speicherspitze hängen vom gewählten
+  Modell ab: **SD-Turbo** braucht ≈ 2,5 GB Platz und rund 4 GB freien Speicher, während
+  ein Bild entsteht; **SDXL-Turbo** braucht ≈ 6,4 GB Platz und beim ersten Sitzungsaufbau
+  kurzzeitig etwa das *Doppelte* davon im GPU-Speicher (die Gewichte liegen bis zum Ende
+  des Ladens sowohl im JS-Heap als auch auf der GPU) — rund 13 GB Spitze. Auf einem
+  16-GB-Rechner kann das knapp werden. Das Panel sagt dir, wenn die GPU gar nicht
   reicht; dann ist der Server-Modus der Ausweg.
 - **Server-Modus:** ein beliebiger A1111-kompatibler lokaler Bild-Server, laufend und
   erreichbar — Draw Things, AUTOMATIC1111, Forge oder SD.Next. Die Server-App besitzt das
@@ -235,10 +245,11 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 
 **Einstellungen → Local Image Generator**:
 
-- **Engine** — *Eingebaut (SD-Turbo)* oder *Server (Draw Things / A1111)*.
-  - Eingebaut zeigt die **Modell-Zeile**: Größe, Lizenz, Status und
-    **Herunterladen** / **Abbrechen** / **Entfernen**. Ohne Klick auf Herunterladen wird
-    nichts geladen.
+- **Engine** — *Eingebaut (auf deiner GPU)* oder *Server (Draw Things / A1111)*.
+  - Eingebaut zeigt eine **Modell**-Auswahl (SD-Turbo / SDXL-Turbo) und darunter dessen
+    **Zeile**: Größe, Lizenz, Status und **Herunterladen** / **Abbrechen** / **Entfernen**.
+    Ein Wechsel auf ein anderes Modell als SD-Turbo fragt vor dem Download nach
+    Bestätigung. Ohne Klick auf Herunterladen wird nichts geladen.
   - Server zeigt den **Server-Endpunkt** — die URL deines lokalen Bild-Servers (z.B.
     `http://127.0.0.1:7860`), dazu eine Schaltfläche **Verbindung testen**, die
     Erreichbarkeit prüft und das aktive Modell des Servers meldet.
@@ -264,16 +275,21 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 Das Plugin besitzt die Oberfläche — Prompt, Stile, Verlauf, Ablageort — und eines von
 zwei **Backends** besitzt die Erzeugung:
 
-**Eingebaute Engine.** SD-Turbo läuft in Obsidian über
-[onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/) auf dem WebGPU-Backend. Die
-Modell-Dateien sind die **eigene ONNX-Konversion** dieses Plugins aus den offiziellen
-`stabilityai/sd-turbo`-Gewichten (fp16-Gewichte, fp32-Ein-/Ausgänge), veröffentlicht im
-Modell-Repository des Plugins samt Lizenz und Hinweis; das Konversionsskript liegt in
-`tools/convert/`. Beim ersten Lauf nach dem Start von Obsidian werden die drei Sessions
-(Text-Encoder, UNet, VAE-Decoder) in die GPU geladen — die Statuszeile zählt die
-Sekunden —, danach kostet jedes Bild einen Text-Encoder-Durchlauf, 1–4 UNet-Schritte und
-einen VAE-Decode. Die Pipeline (CLIP-Tokenizer, Euler-Ancestral-Scheduler, geseedetes
-Rauschen) ist reines TypeScript und gegen Fake-Sessions getestet.
+**Eingebaute Engine.** Das gewählte Katalog-Modell (SD-Turbo oder SDXL-Turbo) läuft in
+Obsidian über [onnxruntime-web](https://onnxruntime.ai/docs/tutorials/web/) auf dem
+WebGPU-Backend. Die Modell-Dateien sind die **eigene ONNX-Konversion** dieses Plugins aus
+den offiziellen `stabilityai/sd-turbo`- bzw. `stabilityai/sdxl-turbo`-Gewichten
+(fp16-Gewichte, fp32-Ein-/Ausgänge), veröffentlicht im Modell-Repository des Plugins samt
+Lizenz und Hinweis; das Konversionsskript liegt in `tools/convert/`. Beim ersten Lauf nach
+dem Start von Obsidian (oder nach einem Modellwechsel) werden die Sessions des Modells
+geladen — drei bei SD-Turbo (Text-Encoder, UNet, VAE-Decoder), vier bei SDXL-Turbo (zwei
+Text-Encoder, UNet, VAE-Decoder) — die Statuszeile zählt die Sekunden —, danach kostet
+jedes Bild einen Text-Encoder-Durchlauf, 1–4 UNet-Schritte und einen VAE-Decode. SDXL-Turbos
+UNet allein ist ≈ 5 GB groß und sprengt sowohl die Einzeldatei-Grenze von ONNX als auch die
+des JS-Heaps im Browser — die Konversion stückelt es deshalb in External-Data-Buckets, die
+die Engine beim Laden wieder zusammensetzt. Die Pipeline (CLIP-Tokenizer,
+Euler-Ancestral-Scheduler, geseedetes Rauschen) ist reines TypeScript und gegen
+Fake-Sessions getestet.
 
 **Server.** Eine Erzeugung ist ein `POST /sdapi/v1/txt2img` gegen den eingetragenen
 Endpunkt, mit nichts als den generischen Parametern des Panels (Prompt, Negativ-Prompt,
@@ -292,10 +308,13 @@ aus der der Verlaufs-Tab liest — die Bilddatei selbst hängt nicht vom Plugin 
 
 ## Wie Netzwerk und Speicher genutzt werden
 
-**Ab Werk lädt das Plugin nichts herunter.** Die eingebaute Engine braucht ihre
-Modell-Dateien und holt sie **einmal, nur wenn du auf Herunterladen klickst** (im
-Generator-Panel oder in den Einstellungen), aus dem Modell-Repository dieses Plugins auf
-Hugging Face:
+**Ab Werk lädt das Plugin nichts herunter.** Die eingebaute Engine braucht
+Modell-Dateien und holt sie **je Modell einmal, nur wenn du auf Herunterladen klickst**
+(im Generator-Panel oder in den Einstellungen) — welches der beiden Katalog-Modelle
+geladen wird, entscheidest du; nichts anderes wird automatisch geholt. Beide kommen aus
+dem Modell-Repository dieses Plugins auf Hugging Face:
+
+**SD-Turbo** (Vorgabe, ≈ 2,5 GB gesamt):
 
 | Datei | Größe | Was es ist | Lizenz |
 |---|---|---|---|
@@ -303,13 +322,30 @@ Hugging Face:
 | `sd-turbo/unet/model.onnx` | ≈ 1,7 GB | UNet (fp16) | Stability AI Community License |
 | `sd-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE-Decoder (fp16) | Stability AI Community License |
 | `sd-turbo/tokenizer/vocab.json`, `merges.txt` | ≈ 1,6 MB | CLIP-BPE-Tokenizer-Daten | (Teil des Modell-Releases) |
+
+**SDXL-Turbo** (optionales zweites Modell, ≈ 6,4 GB gesamt):
+
+| Datei | Größe | Was es ist | Lizenz |
+|---|---|---|---|
+| `sdxl-turbo/text_encoder/model.onnx` | ≈ 246 MB | CLIP-L-Text-Encoder (fp16) | Stability AI Community License |
+| `sdxl-turbo/text_encoder_2/model.onnx` | ≈ 1,4 GB | OpenCLIP-bigG-Text-Encoder (fp16) | Stability AI Community License |
+| `sdxl-turbo/unet/model.onnx` + 13 External-Data-Buckets | ≈ 5,1 GB | UNet (fp16, auf mehrere Dateien gestückelt — keine Einzeldatei über 2 GB) | Stability AI Community License |
+| `sdxl-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE-Decoder (fp16) | Stability AI Community License |
+| `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3,2 MB | CLIP-BPE-Tokenizer-Daten, beide Encoder | (Teil des Modell-Releases) |
+
+Gemeinsam für beide Modelle:
+
+| Datei | Größe | Was es ist | Lizenz |
+|---|---|---|---|
 | `runtime/ort-<version>/ort-wasm-simd-threaded.asyncify.wasm` | ≈ 24 MB | ONNX Runtime Web (dieselbe Version, gegen die das Plugin gebaut ist) | MIT |
 
 Jede Datei wird vor der Verwendung gegen eine im Plugin hinterlegte SHA-256 geprüft; bei
-Abweichung wird sie verworfen und gemeldet. Die Dateien liegen in der Cache-API des
-Browsers im Obsidian-Profil — **außerhalb deines Vaults**, werden also nie gesynct — und
-**Entfernen** in den Einstellungen löscht sie wieder. Ein Download lässt sich jederzeit
-abbrechen; fertige Dateien bleiben.
+Abweichung wird sie verworfen und gemeldet. Vor dem Download jedes anderen Modells als
+der Vorgabe (derzeit nur SDXL-Turbo) zeigt das Plugin einen Bestätigungsdialog mit dessen
+Größe und dem Hinweis zur Speicherspitze oben — Abbrechen lädt nichts. Die Dateien liegen
+in der Cache-API des Browsers im Obsidian-Profil — **außerhalb deines Vaults**, werden
+also nie gesynct — und **Entfernen** in den Einstellungen löscht sie wieder. Ein Download
+lässt sich jederzeit abbrechen; fertige Dateien bleiben.
 
 Die Download-Quelle ist die einzige Netzwerkverbindung der eingebauten Engine. Im
 Server-Modus ist die einzige Verbindung der Server-Endpunkt, den du konfigurierst — und
@@ -336,13 +372,18 @@ anderer Netzzugriff, keine Telemetrie.
 ## Modell & Lizenzen
 
 - **Plugin-Code:** AGPL-3.0-or-later (siehe `LICENSE`).
-- **Eingebautes Modell:** [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo) von
-  Stability AI, weiterverteilt als eigene ONNX-Konversion dieses Plugins unter der
+- **Eingebaute Modelle:** zwei Katalog-Einträge, beide von Stability AI, beide
+  weiterverteilt als eigene ONNX-Konversion dieses Plugins (fp16-Gewichte,
+  fp32-Ein-/Ausgänge) unter der
   [Stability AI Community License](https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md)
   — frei für Forschung, nicht-kommerzielle und begrenzt kommerzielle Nutzung; lies die
-  Lizenz, bevor du erzeugte Bilder kommerziell verwendest. *Powered by Stability AI.* Die
-  Konversion ist aus den offiziellen Gewichten mit `tools/convert-model.sh sd-turbo`
-  reproduzierbar; keine Drittkonversion ist beteiligt.
+  Lizenz, bevor du erzeugte Bilder kommerziell verwendest. *Powered by Stability AI.*
+  Konversionen sind aus den offiziellen Gewichten mit
+  `tools/convert-model.sh <sd-turbo|sdxl-turbo>` reproduzierbar; keine Drittkonversion ist
+  beteiligt.
+  - [SD-Turbo](https://huggingface.co/stabilityai/sd-turbo) — die Vorgabe.
+  - [SDXL-Turbo](https://huggingface.co/stabilityai/sdxl-turbo) — das optionale zweite
+    Modell, schärfere Bilder bis 1024×1024, ≈ 6,4 GB.
 - **Server-Modus:** das Modell ist, was deine Server-App geladen hat — seine Lizenz gilt
   für die Bilder, die es erzeugt. Prüfe seine Modellkarte, bevor du erzeugte Bilder
   verwendest, besonders kommerziell.
