@@ -2,7 +2,8 @@
 // Implementiert dasselbe ImageBackend wie der A1111Client — der Router in main.ts sieht keinen
 // Unterschied. Alles Schwere ist injiziert (Store, Session-Fabrik, Runtime-Init, GPU-Check,
 // PNG-Encoder), damit die Ladeschritte in Node testbar sind. Kein obsidian-Import nötig.
-import { SdTurboEngine, type Session } from "../core/engine";
+import { SdTurboEngine, type BuiltinEngine, type Session } from "../core/engine";
+import { SdxlTurboEngine } from "../core/engine-sdxl";
 import { BUILTIN_MODEL, RUNTIME_WASM, type BuiltinModel, type ModelPart } from "../core/model-manifest";
 import type { TokenizerData } from "../core/pipeline/tokenizer";
 import type { ImageBackend, ImageRequest } from "../core/txt2img";
@@ -24,8 +25,8 @@ export class LocalEngineBackend implements ImageBackend {
    *  (Weight-Upload + Shader-Compile, minutenlang möglich), „generating" je UNet-Schritt. */
   onPhase?: (phase: EnginePhase, step?: number, total?: number) => void;
 
-  private engine: SdTurboEngine | null = null;
-  private loading: Promise<SdTurboEngine> | null = null;
+  private engine: BuiltinEngine | null = null;
+  private loading: Promise<BuiltinEngine> | null = null;
   /** Laufender generate()-Aufruf — dispose() wartet darauf, statt die GPU-Sessions unter einem
    *  aktiven UNet-Schritt wegzuziehen (Review 2026-08-19). */
   private running: Promise<unknown> | null = null;
@@ -72,7 +73,7 @@ export class LocalEngineBackend implements ImageBackend {
     if (e) await e.dispose();
   }
 
-  private ensureLoaded(): Promise<SdTurboEngine> {
+  private ensureLoaded(): Promise<BuiltinEngine> {
     if (this.engine) return Promise.resolve(this.engine);
     if (!this.loading) {
       this.onPhase?.("loading-model");
@@ -103,11 +104,34 @@ export class LocalEngineBackend implements ImageBackend {
     return this.deps.createSession(buf, ext);
   }
 
-  private async load(): Promise<SdTurboEngine> {
+  // Welche Pipeline entsteht, entscheidet der Katalog (`model.kind`) — nicht eine
+  // Zeichenkette im Code. `model.sizes[0]` liefert nur den VORGABEwert fuer SdxlTurboEngine;
+  // welche Groesse eine einzelne Anfrage bekommt, entscheidet ein spaeterer Task ueber
+  // `req.size` (Controller-Ruling Task 9).
+  private async load(): Promise<BuiltinEngine> {
     const { store, initRuntime } = this.deps;
     if (!this.runtimeReady) {
       initRuntime(await store.getBuffer(RUNTIME_WASM));
       this.runtimeReady = true;
+    }
+    if (this.model.kind === "sdxl") {
+      const { textEncoder, textEncoder2, unet, vaeDecoder, tokenizer, tokenizer2 } = this.model.parts;
+      const [textEncoderSession, textEncoder2Session, unetSession, vaeDecoderSession, vocabText, mergesText, vocab2Text, merges2Text] =
+        await Promise.all([
+          this.loadPart(textEncoder),
+          this.loadPart(textEncoder2),
+          this.loadPart(unet),
+          this.loadPart(vaeDecoder),
+          store.getText(tokenizer.vocab),
+          store.getText(tokenizer.merges),
+          store.getText(tokenizer2.vocab),
+          store.getText(tokenizer2.merges),
+        ]);
+      return new SdxlTurboEngine(
+        { textEncoder: textEncoderSession, textEncoder2: textEncoder2Session, unet: unetSession, vaeDecoder: vaeDecoderSession },
+        { primary: parseTokenizer(vocabText, mergesText), secondary: parseTokenizer(vocab2Text, merges2Text) },
+        { vaeScaling: this.model.vaeScaling, size: this.model.sizes[0]!.width },
+      );
     }
     const { textEncoder, unet, vaeDecoder, tokenizer } = this.model.parts;
     const [textEncoderSession, unetSession, vaeDecoderSession, vocabText, mergesText] = await Promise.all([
@@ -117,10 +141,16 @@ export class LocalEngineBackend implements ImageBackend {
       store.getText(tokenizer.vocab),
       store.getText(tokenizer.merges),
     ]);
-    const tokenizerData: TokenizerData = {
-      vocab: JSON.parse(vocabText) as Record<string, number>,
-      merges: mergesText.split("\n").filter((l) => l.length > 0 && !l.startsWith("#")),
-    };
-    return new SdTurboEngine({ textEncoder: textEncoderSession, unet: unetSession, vaeDecoder: vaeDecoderSession }, tokenizerData);
+    return new SdTurboEngine(
+      { textEncoder: textEncoderSession, unet: unetSession, vaeDecoder: vaeDecoderSession },
+      parseTokenizer(vocabText, mergesText),
+    );
   }
+}
+
+function parseTokenizer(vocabText: string, mergesText: string): TokenizerData {
+  return {
+    vocab: JSON.parse(vocabText) as Record<string, number>,
+    merges: mergesText.split("\n").filter((l) => l.length > 0 && !l.startsWith("#")),
+  };
 }

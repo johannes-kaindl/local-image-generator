@@ -45,6 +45,11 @@ export interface GenerateRequest {
   prompt: string;
   steps: number;
   seed: number;
+  /** Kantenlänge in Pixeln. OPTIONAL — SdTurboEngine ignoriert es (immer 512),
+   *  SdxlTurboEngine liest `req.size ?? opts.size` (Spec 0.9 §5.2). Pflicht hätte
+   *  SdTurboEngine und alle bestehenden Aufrufer geändert, gegen die Zusage, dass
+   *  SD-Turbo unangetastet bleibt (Controller-Ruling Task 9). */
+  size?: number;
 }
 
 export interface GenerateResult {
@@ -56,25 +61,33 @@ export interface GenerateResult {
 
 export type ProgressFn = (step: number, total: number) => void;
 
+/** Gemeinsame Schnittstelle beider eingebauter Pipelines (SdTurboEngine, SdxlTurboEngine) —
+ *  `local-engine.ts` routet über `model.kind`, ohne den konkreten Typ zu kennen. */
+export interface BuiltinEngine {
+  readonly busy: boolean;
+  generate(req: GenerateRequest, onProgress?: ProgressFn): Promise<GenerateResult>;
+  dispose(): Promise<void>;
+}
+
 const LATENT = { c: 4, h: 64, w: 64 } as const;
 const IMAGE_SIZE = 512;
 const VAE_SCALING = 0.18215;
 
-function toF32(v: OrtValue): Float32Array {
+export function toF32(v: OrtValue): Float32Array {
   if (v.data instanceof Uint16Array) return f16ArrayToF32(v.data);
   if (v.data instanceof Float32Array) return v.data;
   throw new Error(`unexpected tensor dtype for ${v.dims.join("x")}`);
 }
 
 // Float-Feed passend zum deklarierten Eingabetyp der Session bauen.
-function floatFeed(session: Session, name: string, f32: Float32Array, dims: readonly number[]): OrtValue {
+export function floatFeed(session: Session, name: string, f32: Float32Array, dims: readonly number[]): OrtValue {
   return session.inputTypes[name] === "float16"
     ? { data: f32ArrayToF16(f32), dims }
     : { data: f32, dims };
 }
 
 // Skalarer Timestep im deklarierten Typ (int64 | float32 | float16) und Rang (0-d oder [1]).
-function timestepFeed(session: Session, name: string, t: number): OrtValue {
+export function timestepFeed(session: Session, name: string, t: number): OrtValue {
   const type = session.inputTypes[name] ?? "int64";
   const dims: number[] = session.inputShapes?.[name]?.length === 0 ? [] : [1];
   if (type === "float32") return { data: new Float32Array([t]), dims };
@@ -83,20 +96,20 @@ function timestepFeed(session: Session, name: string, t: number): OrtValue {
 }
 
 // Token-IDs im deklarierten Typ (int32 | int64).
-function idsFeed(session: Session, name: string, ids: Int32Array): OrtValue {
+export function idsFeed(session: Session, name: string, ids: Int32Array): OrtValue {
   return session.inputTypes[name] === "int64"
     ? { data: BigInt64Array.from(ids, (x) => BigInt(x)), dims: [1, ids.length] }
     : { data: new Int32Array(ids), dims: [1, ids.length] };
 }
 
-function firstOutput(session: Session, outputs: Record<string, OrtValue>): OrtValue {
+export function firstOutput(session: Session, outputs: Record<string, OrtValue>): OrtValue {
   const name = session.outputNames[0];
   const out = name !== undefined ? outputs[name] : undefined;
   if (!out) throw new Error("session returned no output");
   return out;
 }
 
-export class SdTurboEngine {
+export class SdTurboEngine implements BuiltinEngine {
   private _busy = false;
   private _disposed = false;
 
