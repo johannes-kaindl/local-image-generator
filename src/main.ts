@@ -232,6 +232,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.addRibbonIcon("image-plus", t("view.title"), () => void this.activateView());
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
+    // Cache-Migration (C2-Fix, Final-Review 2026-08-24) VOR dem ersten isComplete()-Blick:
+    // Ruling Task 5 qualifizierte die Cache-Schluessel modell-spezifisch — eine Bestands-
+    // installation traegt ihre ~2,5 GB SD-Turbo noch unter dem alten, flachen Schluessel.
+    // Awaited, damit refreshEngineState() gleich danach den migrierten Stand sieht statt eine
+    // Race gegen die eigene Migration zu laufen und einen 2,5-GB-Neudownload anzubieten.
+    await this.modelStore.migrateLegacyKeys(assetsFor("sd-turbo"));
     if (this.settings.engine === "builtin") void this.refreshEngineState();
     else void this.checkServer();
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro

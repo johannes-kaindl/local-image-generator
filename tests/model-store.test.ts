@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cacheKey, type AssetFile } from "../src/core/model-manifest";
+import { cacheKey, legacyCacheKey, type AssetFile } from "../src/core/model-manifest";
 import { sha256Hex } from "../src/vendor/kit/sha256";
 import { DownloadAborted, IntegrityError, ModelStore, type CacheLike, type StoreDeps } from "../src/obsidian/model-store";
 
@@ -154,6 +154,57 @@ describe("ModelStore", () => {
     expect(maxLive).toBe(1);
     expect(live).toBe(0);
     expect(cancelled).toBe(armed);
+  });
+
+  // C2 (Final-Review, 2026-08-24): Ruling Task 5 qualifizierte cacheKey() modell-spezifisch
+  // (`${modelId}/${key}`). SD-Turbos fuenf Eintraege liegen bei einer Bestandsinstallation
+  // aber noch unter dem ALTEN, flachen Schluessel (`legacyCacheKey`) — ohne Migration faende
+  // isComplete() sie nie wieder, und das Panel boete einen unnoetigen 2,5-GB-Neudownload an.
+  // Dieser Test legt Bytes NUR unter dem legacy-Schluessel ab (kein cache.put unter dem neuen
+  // Schluessel — genau der Bestandszustand) und beweist zwei Dinge:
+  //   1. NACH migrateLegacyKeys() findet isComplete() die Datei — vorher (ungetestet hier, aber
+  //      strukturell zwingend: cachedKeys() prueft ausschliesslich cacheKey()) waere das false.
+  //   2. Kein einziger fetch-Aufruf: fetchFn wirft sofort, wenn es je aufgerufen wuerde — die
+  //      Migration ist reines cache.match/put/delete, kein zweiter Ladepfad neben download().
+  it("migrateLegacyKeys findet einen legacy-keyed Eintrag wieder — ohne jeden fetch", async () => {
+    const data = bytesOf(40);
+    const f: AssetFile = { key: "sd-turbo/unet", path: "sd-turbo/unet/model.onnx", bytes: data.length, sha256: sha256Hex(data), kind: "onnx" };
+    const cache = fakeCache();
+    cache.map.set(legacyCacheKey(f), data); // Bestandszustand VOR Ruling Task 5
+    let fetchCalls = 0;
+    const store = new ModelStore(deps(cache, async () => { fetchCalls++; throw new Error("darf nie gerufen werden — Migration ist cache-only"); }));
+
+    // Vor der Migration: unter dem NEUEN Schluessel ist nichts zu finden — das ist der Defekt,
+    // den C2 beschreibt (isComplete() misst dort und boete einen Neudownload an).
+    expect(await store.isComplete([f])).toBe(false);
+
+    await store.migrateLegacyKeys([f]);
+
+    expect(await store.isComplete([f])).toBe(true);
+    expect(new Uint8Array(await store.getBuffer(f))).toEqual(data);
+    expect(cache.map.has(cacheKey(f))).toBe(true);
+    expect(cache.map.has(legacyCacheKey(f))).toBe(false); // alter Eintrag weggeraeumt, kein Leak
+    expect(fetchCalls).toBe(0);
+  });
+
+  it("migrateLegacyKeys ist idempotent und ruehrt Dateien ohne Modell-Praefix nicht an", async () => {
+    const data = bytesOf(12);
+    // ort_wasm hat keinen "${modelId}/"-Praefix — legacyCacheKey === cacheKey, nichts zu tun.
+    const wasm: AssetFile = { key: "ort_wasm", path: "runtime/ort-wasm.wasm", bytes: data.length, sha256: sha256Hex(data), kind: "wasm" };
+    const unet: AssetFile = { key: "sd-turbo/unet", path: "sd-turbo/unet/model.onnx", bytes: data.length, sha256: sha256Hex(data), kind: "onnx" };
+    const cache = fakeCache();
+    cache.map.set(cacheKey(wasm), data); // bereits am NEUEN (= einzigen) Schluessel
+    cache.map.set(cacheKey(unet), data); // schon migriert (z. B. Neuinstallation)
+    let fetchCalls = 0;
+    const store = new ModelStore(deps(cache, async () => { fetchCalls++; throw new Error("darf nie gerufen werden"); }));
+
+    await store.migrateLegacyKeys([wasm, unet]);
+    await store.migrateLegacyKeys([wasm, unet]); // zweiter Aufruf: nichts mehr zu tun
+
+    expect(cache.map.size).toBe(2);
+    expect(cache.map.has(cacheKey(wasm))).toBe(true);
+    expect(cache.map.has(cacheKey(unet))).toBe(true);
+    expect(fetchCalls).toBe(0);
   });
 
   it("deleteAll entfernt alle Keys der Liste", async () => {

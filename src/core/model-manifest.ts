@@ -195,6 +195,20 @@ export function cacheKey(f: AssetFile): string {
   return `https://lig-asset.invalid/${f.key}/${f.sha256.slice(0, 16)}/${base}`;
 }
 
+/** Der Cache-Schluessel vor der Modell-Qualifizierung von `asset()` (Ruling Task 5,
+ *  2026-08-24 — `key` bekam das `${modelId}/`-Praefix). NUR fuer die Einmal-Migration
+ *  bestehender SD-Turbo-Downloads gedacht (`ModelStore.migrateLegacyKeys`, C2-Fix): ohne sie
+ *  faende `isComplete()` die ~2,5 GB jeder Bestandsinstallation nie wieder, und das Panel
+ *  boete einen unnoetigen Neudownload an, waehrend die alten Bytes fuer immer im Cache
+ *  liegen blieben. Fuer Dateien ohne Modell-Praefix (aktuell nur `ort_wasm`) liefert diese
+ *  Funktion denselben Schluessel wie `cacheKey()` — dort ist nichts zu migrieren. NICHT fuer
+ *  neue Downloads verwenden. */
+export function legacyCacheKey(f: AssetFile): string {
+  const base = f.path.split("/").pop() ?? f.path;
+  const legacyPart = f.key.startsWith("sd-turbo/") ? f.key.slice("sd-turbo/".length) : f.key;
+  return `https://lig-asset.invalid/${legacyPart}/${f.sha256.slice(0, 16)}/${base}`;
+}
+
 export function allAssets(): AssetFile[] {
   return [...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM];
 }
