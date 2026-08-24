@@ -99,8 +99,8 @@ export const EN: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Built-in: SD-Turbo runs on your GPU inside Obsidian (model downloaded once on request, {0}). Server: a local Draw Things / A1111-compatible server with its own models and full controls.",
-  "settings.engine.builtin": "Built-in (SD-Turbo)",
+  "settings.engine.desc": "Built-in: an image model runs on your GPU inside Obsidian (downloaded once on request — see the model row below for which one and its size). Server: a local Draw Things / A1111-compatible server with its own models and full controls.",
+  "settings.engine.builtin": "Built-in (on your GPU)",
   "settings.engine.server": "Server (Draw Things / A1111)",
   "settings.model.name": "{0} model ({1})",
   "settings.model.desc": "{0} · {1}. Downloaded only when you click, verified by checksum, stored outside your vault.",
@@ -242,8 +242,8 @@ export const DE: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Eingebaut: SD-Turbo rechnet auf deiner GPU in Obsidian (Modell einmal auf Wunsch geladen, {0}). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern.",
-  "settings.engine.builtin": "Eingebaut (SD-Turbo)",
+  "settings.engine.desc": "Eingebaut: ein Bildmodell rechnet auf deiner GPU in Obsidian (einmal auf Wunsch geladen — welches und wie groß steht in der Modell-Zeile darunter). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern.",
+  "settings.engine.builtin": "Eingebaut (auf deiner GPU)",
   "settings.engine.server": "Server (Draw Things / A1111)",
   "settings.model.name": "{0}-Modell ({1})",
   "settings.model.desc": "{0} · {1}. Wird nur nach Klick geladen, per Prüfsumme geprüft, außerhalb des Vaults abgelegt.",

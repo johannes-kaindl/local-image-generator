@@ -317,6 +317,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       mode: this.settings.engine,
       defaultSteps: this.settings.defaultSteps,
       model: this.currentModelName(),
+      builtinModel: this.settings.builtinModel,
       now: new Date(),
       randomSeed: () => Math.floor(Math.random() * 2 ** 31),
     };

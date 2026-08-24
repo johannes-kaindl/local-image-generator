@@ -3,10 +3,11 @@ import { hardenParams } from "../src/core/params";
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { CFG, DEFAULT_SIZE, DENOISING, STEPS } from "../src/core/generation";
 
-const ctx = (mode: "builtin" | "server") => ({
+const ctx = (mode: "builtin" | "server", builtinModel: keyof typeof BUILTIN_MODELS = "sd-turbo") => ({
   mode,
   defaultSteps: 20,
-  model: mode === "builtin" ? BUILTIN_MODELS["sd-turbo"].id : "someModel.safetensors",
+  model: mode === "builtin" ? BUILTIN_MODELS[builtinModel].id : "someModel.safetensors",
+  builtinModel: BUILTIN_MODELS[builtinModel].id,
   now: new Date("2026-08-22T22:15:00"),
   randomSeed: () => 4242,
 });
@@ -36,6 +37,22 @@ describe("hardenParams", () => {
     // Steps werden auf das Backend-Maximum geklemmt, nicht abgelehnt: ein Konsument, der 30
     // schickt, bekommt ein Bild mit 4 Schritten und erfaehrt das im Rueckgabewert.
     expect(p.steps).toBe(BUILTIN_MODELS["sd-turbo"].steps.max);
+  });
+
+  // Regression (Review-Fund Task 12): backendCapabilities(ctx.mode) OHNE Modellargument fiel
+  // auf ihren Default-Parameter (SD-Turbo, fixedSize 512x512) zurueck und ueberschrieb JEDE
+  // Groesse eines anderen builtin-Modells still — mit SDXL-Turbo aktiv waere 1024x1024 nie
+  // durchgekommen, obwohl Panel und Settings-Tab es korrekt anbieten. ctx.builtinModel ist
+  // deshalb ein Pflichtfeld; dieser Test haelt fest, dass 1024x1024 mit sdxl-turbo als
+  // gewaehltem Modell tatsaechlich haertungsfest ist.
+  it("laesst 1024x1024 unveraendert, wenn sdxl-turbo das gewaehlte Modell ist", () => {
+    const p = hardenParams(
+      { prompt: "a cat", width: 1024, height: 1024, seed: 7 },
+      ctx("builtin", "sdxl-turbo"),
+    );
+    expect(p.width).toBe(1024);
+    expect(p.height).toBe(1024);
+    expect(p.model).toBe("sdxl-turbo");
   });
 
   it("wuerfelt den Seed, wenn keiner mitkommt", () => {
@@ -164,6 +181,7 @@ describe("eine Haertung, zwei Aufrufer", () => {
   // durch dieselbe Haertung — dieser Test haelt fest, dass der schmale Auftrag dieselben
   // Backend-Wahrheiten bekommt wie der volle, statt eigener Defaults.
   const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODELS["sd-turbo"].id,
+              builtinModel: BUILTIN_MODELS["sd-turbo"].id,
               now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
 
   it("der schmale Auftrag erbt dieselben Backend-Wahrheiten wie der volle", () => {

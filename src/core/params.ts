@@ -1,4 +1,5 @@
 import { backendCapabilities, CFG, DEFAULT_SIZE, DENOISING } from "./generation";
+import type { BuiltinModelId } from "./model-manifest";
 import { isoStamp } from "./filename";
 import type { EngineChoice } from "./settings";
 import type { GenParams } from "./viewmodel";
@@ -27,6 +28,16 @@ export interface HardenContext {
   defaultSteps: number;
   /** Modellname, wie ihn das Backend meldet. Im Server-Modus waehlt ihn der Server. */
   model: string;
+  /** Das AKTIVE eingebaute Modell (settings.builtinModel) — getrennt von `model` oben, weil
+   *  `model` ein loser String ist (Server-Modus traegt dort einen `.safetensors`-Namen, den
+   *  `backendCapabilities` nicht als BuiltinModelId lesen kann). Pflichtfeld, nicht optional:
+   *  ohne diese Trennung fiel `backendCapabilities(ctx.mode)` auf ihren Default-Parameter
+   *  zurueck (SD-Turbo) und ueberschrieb im builtin-Modus JEDE Groesse eines anderen Modells
+   *  still auf 512x512 — SDXL-Turbos 1024x1024 kam nie im GenParams an, obwohl Panel und
+   *  Settings-Tab es korrekt anboten (Review-Fund, Task 12 Fixrunde). Im Server-Modus
+   *  ungenutzt (backendCapabilities ignoriert `model`, wenn mode !== "builtin"), aber trotzdem
+   *  Pflicht: ein optionales Feld waere wieder ein stiller Default gewesen. */
+  builtinModel: BuiltinModelId;
   /** Wird eingefroren — die Notiz beschreibt das Bild, das man sieht. */
   now: Date;
   /** Injiziert statt Math.random(), damit die Haertung testbar bleibt. */
@@ -57,7 +68,7 @@ function clampFloat(v: number | undefined, min: number, max: number, fallback: n
 }
 
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
-  const caps = backendCapabilities(ctx.mode);
+  const caps = backendCapabilities(ctx.mode, ctx.builtinModel);
   // clampInt gibt seinen Fallback UNGEPRUEFT zurueck — ein defaultSteps von 20 landete im
   // builtin-Modus (max 4) sonst unveraendert im Ergebnis. Deshalb wird auch er geklemmt;
   // das faengt zugleich ein kaputtes defaultSteps aus einer handeditierten data.json.

@@ -21,7 +21,7 @@
 // FolderSuggest ein.
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { STEPS } from "../core/generation";
-import { allAssets, assetsFor, BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, modelById, RUNTIME_WASM, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
+import { assetsFor, BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, modelById, RUNTIME_WASM, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type LigSettings } from "../core/settings";
 import { formatBytes, type EngineState } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
@@ -107,7 +107,12 @@ export class LigSettingTab extends PluginSettingTab {
         items: [
           {
             name: t("settings.engine.name"),
-            desc: t("settings.engine.desc", formatBytes(totalBytes(allAssets()))),
+            // Modellneutral (Task 12 Fixrunde): diese Zeile beschreibt den ENGINE-Modus
+            // (eingebaut vs. Server), nicht ein bestimmtes Modell — Groesse/Name des
+            // aktiven Modells stehen bereits in modelRow direkt darunter. Vorher hardcodiert
+            // auf SD-Turbo/dessen Groesse: mit SDXL-Turbo gewaehlt widersprach diese Zeile
+            // der Zeile direkt darunter (Review-Fund Task 12).
+            desc: t("settings.engine.desc"),
             control: {
               type: "dropdown",
               key: "engine",
