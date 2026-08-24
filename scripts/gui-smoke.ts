@@ -164,14 +164,27 @@ async function pollUntil<T>(
  * `tools/convert/convert_model.py`, Modulkopf). 355 Unit-Tests, acht Gate-Schritte und 24
  * bisherige Smoke-Punkte hätten das nicht gesehen — keiner misst Pixel.
  *
- * Liest das aktuell angezeigte `.lig-image` über ein `<canvas>` (`getImageData`), quantisiert
- * jeden Kanal auf 16 Stufen und liefert zwei UNABHÄNGIGE Maße: die Standardabweichung der Luma
- * (0–255) und die Zahl distinkter quantisierter Farben. Zwei Maße statt eines, weil sie an
- * unterschiedlichen Fehlerbildern hängen — ein reines Schwarz steht bei BEIDEN auf 0/1, ein
- * schwacher Farbverlauf (z. B. 0→40 über die ganze Fläche) kann bei EINEM der beiden knapp
- * durchrutschen, aber kaum bei beiden zugleich.
+ * Liest das aktuell angezeigte `.lig-image` über ein `<canvas>` (`getImageData`) und liefert
+ * zwei UNABHÄNGIGE Maße über die LUMA (0,299 R + 0,587 G + 0,114 B je Pixel) — Standardabweichung
+ * und Zahl distinkter Luma-STUFEN (auf 6 Bit / 64 Stufen quantisiert, gegen Kompressionsrauschen).
+ *
+ * BEWUSST Luma statt RGB-Farbkombinationen (Review-Fund, zweite Runde): eine frühere Fassung
+ * zählte distinkte (R,G,B)-Tripel nach 4-Bit-Quantisierung je Kanal (max. 4096 erreichbar). Für
+ * ein echtes Graustufenbild (R=G=B, wie der Smoke-Prompt „ein grauer Kieselstein" es nahelegt)
+ * kollabieren die erreichbaren Werte auf die DIAGONALE — höchstens 16 von 4096 — gegen eine
+ * Grenze von 64. Ein KORREKTES Graustufenbild wäre also per Konstruktion durchgefallen; nur
+ * Sampling-Rauschen (Pixel, die knapp von der Diagonale abweichen) rettete den Punkt bislang,
+ * belegt bei n=1. Die Luma-Zahl selbst ist für Grau- wie Farbbilder derselbe Wertebereich (0–63
+ * Stufen erreichbar in beiden Fällen) — kein Bild wird für fehlende Buntheit bestraft.
+ *
+ * Zwei Maße statt eines, weil sie an unterschiedlichen Fehlerbildern hängen — ein reines
+ * Schwarz steht bei BEIDEN auf 0/1, ein schwacher Farbverlauf (z. B. 0→40 über die ganze
+ * Fläche) besetzt nur wenige Luma-Stufen (Stufenbreite 4 → ~10 von 64) und kann so bei der
+ * Stufenzahl durchfallen, während seine Standardabweichung schon ausreicht — und umgekehrt
+ * eine Standardabweichung, die zwei weit auseinanderliegende, aber je flache Cluster erzeugt,
+ * bei der Stufenzahl durchfällt. Beide Grenzen müssen zugleich reißen.
  */
-async function pixelStats(cdp: Cdp): Promise<{ width: number; height: number; stddev: number; distinctColors: number } | null> {
+async function pixelStats(cdp: Cdp): Promise<{ width: number; height: number; stddev: number; distinctLuma: number } | null> {
   return cdp.evaluate(`
     const img = document.querySelector(".lig-image");
     if (!img || !img.src.startsWith("data:image/png")) return null;
@@ -188,27 +201,27 @@ async function pixelStats(cdp: Cdp): Promise<{ width: number; height: number; st
     ctx.drawImage(bild, 0, 0);
     const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let sum = 0, sumSq = 0;
-    const farben = new Set();
+    const stufen = new Set();
     const n = data.length / 4;
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], g = data[i + 1], b = data[i + 2];
       const luma = 0.299 * r + 0.587 * g + 0.114 * b;
       sum += luma; sumSq += luma * luma;
-      farben.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+      stufen.add(Math.min(63, Math.floor(luma / 4)));
     }
     const mean = sum / n;
     const variance = Math.max(0, sumSq / n - mean * mean);
-    return { width: canvas.width, height: canvas.height, stddev: Math.sqrt(variance), distinctColors: farben.size };
+    return { width: canvas.width, height: canvas.height, stddev: Math.sqrt(variance), distinctLuma: stufen.size };
   `);
 }
 
 /** Grenzwerte für `pixelStats()` — Verifikation in `phase4-fix-report.md` (Block 2): ein rein
- *  schwarzes Bild misst Stddev 0,0 und 1 distinkte Farbe; eine echte Generierung (SD-Turbo
- *  wie SDXL-Turbo, gemessen an mehreren Prompts/Seeds) liegt jeweils weit über beiden Grenzen.
- *  Beide Grenzen müssen zugleich reißen, damit der Punkt grün wird — s. Kommentar an
- *  `pixelStats()`, warum ein Maß allein nicht reicht. */
+ *  schwarzes Bild misst Stddev 0,0 und 1 distinkte Luma-Stufe (von 64 erreichbaren); eine echte
+ *  Generierung (SD-Turbo wie SDXL-Turbo, gemessen an mehreren Prompts/Seeds) liegt weit über
+ *  beiden Grenzen. Beide Grenzen müssen zugleich reißen, damit der Punkt grün wird — s.
+ *  Kommentar an `pixelStats()`, warum ein Maß allein nicht reicht. */
 const CONTENT_STDDEV_MIN = 8;
-const CONTENT_COLORS_MIN = 64;
+const CONTENT_LUMA_BUCKETS_MIN = 20;
 
 /** Was der Server selbst über sein aktives Modell sagt — vom Treiber direkt geholt, nicht
  *  vom Plugin erfragt. Ein Prüfwerkzeug, das seine Erwartung aus dem Prüfling bezieht,
@@ -432,10 +445,10 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     const stats15 = await pixelStats(cdp);
     record(
       NAME24,
-      stats15 !== null && stats15.stddev >= CONTENT_STDDEV_MIN && stats15.distinctColors >= CONTENT_COLORS_MIN,
+      stats15 !== null && stats15.stddev >= CONTENT_STDDEV_MIN && stats15.distinctLuma >= CONTENT_LUMA_BUCKETS_MIN,
       stats15 === null
         ? "Bild nicht lesbar (kein PNG-Data-URL)"
-        : `${stats15.width}×${stats15.height} · Luma-Stddev ${stats15.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats15.distinctColors} distinkte Farben (Grenze ${CONTENT_COLORS_MIN})`,
+        : `${stats15.width}×${stats15.height} · Luma-Stddev ${stats15.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats15.distinctLuma} distinkte Luma-Stufen (Grenze ${CONTENT_LUMA_BUCKETS_MIN})`,
     );
   } else {
     skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
@@ -1208,6 +1221,11 @@ async function runModelStageChecks(cdp: Cdp, assetsBase: string, generateTimeout
  * Farbe und fällt korrekt ROT; mit dem fp32-Decoder aus 95471fd misst er die Werte einer
  * echten Fotografie und ist GRÜN. Ein Wächter, den niemand rot gesehen hat, ist kein
  * bewiesener Wächter.
+ *
+ * `builtinModel`/`engine` in einem `finally` zurückgestellt, nicht dem Aufrufer überlassen —
+ * dieselbe Begründung wie bei `runModelStageChecks()`: eine implizite Reihenfolge-Abhängigkeit
+ * (hier: „Punkt 17 räumt danach ohnehin auf") ist genau der Fehlermodus, den dieses Muster
+ * verhindern soll (Review-Fund, zweite Runde).
  */
 async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
   const NAME = "25. SDXL-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform (VAE-fp16-Wächter)";
@@ -1221,54 +1239,77 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
       return;
     }
   }
-  await cdp.evaluate(`
+
+  // builtinModel/engine wie runModelStageChecks() zurueckstellen — NICHT dem Aufrufer
+  // ueberlassen: dieser Punkt lief bisher ohne try/finally und hing an der Reihenfolge, dass
+  // Punkt 17 (das naechste Element in main()) den Engine-Modus ohnehin zurueck auf "server"
+  // zwingt. Genau diese implizite Reihenfolge-Abhaengigkeit ist der historische Bug, den
+  // runModelStageChecks() mit seinem try/finally schon einmal beheben musste (s. dortiger
+  // Kommentar) — ein spaeteres Umsortieren von main() haette sie lautlos wieder eingefuehrt.
+  const original = await cdp.evaluate<{ builtinModel: BuiltinModelId; engine: string }>(`
     const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-    if (p.settings.builtinModel !== ${JSON.stringify("sdxl-turbo" as BuiltinModelId)}) await p.setBuiltinModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});
-    if (p.settings.engine !== "builtin") await p.setEngine("builtin");
-    return true;
+    return { builtinModel: p.settings.builtinModel, engine: p.settings.engine };
   `);
-  await new Promise((r) => setTimeout(r, 500));
+  try {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.builtinModel !== ${JSON.stringify("sdxl-turbo" as BuiltinModelId)}) await p.setBuiltinModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});
+      if (p.settings.engine !== "builtin") await p.setEngine("builtin");
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 500));
 
-  await cdp.evaluate(`
-    const ta = document.querySelector(".lig-panel textarea.lig-prompt");
-    ta.value = ${JSON.stringify(SMOKE_PROMPT + ", sdxl content check")}; ta.dispatchEvent(new Event("input", { bubbles: true }));
-    const seed = document.querySelector(".lig-panel input.lig-seed");
-    seed.value = "4242"; seed.dispatchEvent(new Event("input", { bubbles: true }));
-    return true;
-  `);
-  const imageBefore = await cdp.evaluate<string>(
-    `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
-  );
-  await clickReal(cdp, `document.querySelector(".lig-generate")`);
-  const image25 = await pollUntil(
-    () =>
-      cdp.evaluate<{ length: number; status: string; sig: string }>(`
-        const img = document.querySelector(".lig-image");
-        const status = document.querySelector(".lig-status-text");
-        return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
-      `),
-    (r) => (r.length > 5000 && r.sig !== imageBefore && r.status === readyText) || istFehler(r.status),
-    generateTimeoutMs,
-    "warte auf das SDXL-Turbo-Bild (Punkt 25)",
-    500,
-  );
+    await cdp.evaluate(`
+      const ta = document.querySelector(".lig-panel textarea.lig-prompt");
+      ta.value = ${JSON.stringify(SMOKE_PROMPT + ", sdxl content check")}; ta.dispatchEvent(new Event("input", { bubbles: true }));
+      const seed = document.querySelector(".lig-panel input.lig-seed");
+      seed.value = "4242"; seed.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    `);
+    const imageBefore = await cdp.evaluate<string>(
+      `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
+    );
+    await clickReal(cdp, `document.querySelector(".lig-generate")`);
+    const image25 = await pollUntil(
+      () =>
+        cdp.evaluate<{ length: number; status: string; sig: string }>(`
+          const img = document.querySelector(".lig-image");
+          const status = document.querySelector(".lig-status-text");
+          return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
+        `),
+      (r) => (r.length > 5000 && r.sig !== imageBefore && r.status === readyText) || istFehler(r.status),
+      generateTimeoutMs,
+      "warte auf das SDXL-Turbo-Bild (Punkt 25)",
+      500,
+    );
 
-  if (image25 === null || istFehler(image25.status)) {
+    if (image25 === null || istFehler(image25.status)) {
+      record(
+        NAME,
+        false,
+        image25 === null ? "kein Bild innerhalb der Frist" : `Lauf gescheitert, gemeldet vom Plugin: „${image25.status}"`,
+      );
+      return;
+    }
+    const stats = await pixelStats(cdp);
     record(
       NAME,
-      false,
-      image25 === null ? "kein Bild innerhalb der Frist" : `Lauf gescheitert, gemeldet vom Plugin: „${image25.status}"`,
+      stats !== null && stats.stddev >= CONTENT_STDDEV_MIN && stats.distinctLuma >= CONTENT_LUMA_BUCKETS_MIN,
+      stats === null
+        ? "Bild nicht lesbar (kein PNG-Data-URL)"
+        : `${stats.width}×${stats.height} · Luma-Stddev ${stats.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats.distinctLuma} distinkte Luma-Stufen (Grenze ${CONTENT_LUMA_BUCKETS_MIN})`,
     );
-    return;
+  } finally {
+    await cdp
+      .evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        const before = ${JSON.stringify(original)};
+        if (p.settings.builtinModel !== before.builtinModel) await p.setBuiltinModel(before.builtinModel);
+        if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
+        return true;
+      `)
+      .catch(() => undefined);
   }
-  const stats = await pixelStats(cdp);
-  record(
-    NAME,
-    stats !== null && stats.stddev >= CONTENT_STDDEV_MIN && stats.distinctColors >= CONTENT_COLORS_MIN,
-    stats === null
-      ? "Bild nicht lesbar (kein PNG-Data-URL)"
-      : `${stats.width}×${stats.height} · Luma-Stddev ${stats.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats.distinctColors} distinkte Farben (Grenze ${CONTENT_COLORS_MIN})`,
-  );
 }
 
 async function main(): Promise<void> {

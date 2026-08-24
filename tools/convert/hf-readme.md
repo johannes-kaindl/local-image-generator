@@ -39,7 +39,7 @@ conversion of the respective official Stability AI weights — no third-party co
 | `sdxl-turbo/text_encoder/model.onnx` | CLIP-L text encoder (primary), fp16 weights, fp32 inputs/outputs |
 | `sdxl-turbo/text_encoder_2/model.onnx` | OpenCLIP-bigG text encoder (secondary), fp16 weights, fp32 inputs/outputs |
 | `sdxl-turbo/unet/model.onnx` + `unet/unet_*.onnx_data` | UNet (≈ 5.1 GB), fp16 weights, split across 13 external-data buckets — the model exceeds ONNX's and the browser's single-buffer limits |
-| `sdxl-turbo/vae_decoder/model.onnx` | VAE decoder, fp16 weights, fp32 inputs/outputs |
+| `sdxl-turbo/vae_decoder/model.onnx` | VAE decoder, **fp32** weights and inputs/outputs (kept fp32 — SDXL's activations exceed fp16's range under WebGPU, which produced a silent pure-black image; ≈ 198 MB vs. ≈ 99 MB for the fp16 build) |
 | `sdxl-turbo/tokenizer/vocab.json`, `merges.txt` | Primary (CLIP-L) BPE tokenizer data |
 | `sdxl-turbo/tokenizer_2/vocab.json`, `merges.txt` | Secondary (OpenCLIP-bigG) BPE tokenizer data |
 | `sdxl-turbo/LICENSE.md`, `sdxl-turbo/NOTICE.md` | Stability AI Community License and attribution (SDXL-Turbo) |

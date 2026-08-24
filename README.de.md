@@ -330,8 +330,10 @@ dem Modell-Repository dieses Plugins auf Hugging Face:
 | `sdxl-turbo/text_encoder/model.onnx` | ≈ 246 MB | CLIP-L-Text-Encoder (fp16) | Stability AI Community License |
 | `sdxl-turbo/text_encoder_2/model.onnx` | ≈ 1,4 GB | OpenCLIP-bigG-Text-Encoder (fp16) | Stability AI Community License |
 | `sdxl-turbo/unet/model.onnx` + 13 External-Data-Buckets | ≈ 5,1 GB | UNet (fp16, auf mehrere Dateien gestückelt — keine Einzeldatei über 2 GB) | Stability AI Community License |
-| `sdxl-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE-Decoder (fp16) | Stability AI Community License |
+| `sdxl-turbo/vae_decoder/model.onnx` | ≈ 198 MB | VAE-Decoder (fp32 — siehe Hinweis unten) | Stability AI Community License |
 | `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3,2 MB | CLIP-BPE-Tokenizer-Daten, beide Encoder | (Teil des Modell-Releases) |
+
+SDXL-Turbos VAE-Decoder ist die einzige Datei in beiden Modellen, die **fp32** bleibt — seine Aktivierungen überschreiten unter der WebGPU-Ausführung den fp16-Wertebereich, was ein stilles, fehlerfreies rein schwarzes Bild ohne jedes andere Symptom erzeugte. Alles andere in beiden Modellen bleibt fp16.
 
 Gemeinsam für beide Modelle:
 
