@@ -96,10 +96,23 @@ export class LocalEngineBackend implements ImageBackend {
   private async run(req: ImageRequest): Promise<string> {
     const engine = await this.ensureLoaded();
     const steps = Math.min(this.model.steps.max, Math.max(this.model.steps.min, Math.round(req.steps)));
-    const res = await engine.generate({ prompt: req.prompt, steps, seed: req.seed }, (s, t) => this.onPhase?.("generating", s, t));
+    const size = this.pickSize(req);
+    const res = await engine.generate({ prompt: req.prompt, steps, seed: req.seed, size }, (s, t) => this.onPhase?.("generating", s, t));
     const dataUrl = this.deps.encodePng(res.rgba, res.width, res.height);
     // Wie A1111Client: nackte Base64 — main.ts hängt das data:-Präfix selbst an.
     return dataUrl.slice(dataUrl.indexOf(",") + 1);
+  }
+
+  /** `req.width`/`req.height` gegen `model.sizes` validieren (C1-Fix, 2026-08-24): vorher wurde
+   *  hier gar nichts an `engine.generate()` uebergeben, obwohl `hardenParams` die angeforderte
+   *  Groesse laengst korrekt durchgereicht hatte — SDXL-Turbo rechnete deshalb IMMER auf
+   *  `model.sizes[0]` (512), egal was Notiz/Dateiname/Provider-API behaupteten. Ein Treffer im
+   *  Katalog gewinnt; sonst (fremder/kaputter Wert, z. B. ein API-Aufrufer an `hardenParams`
+   *  vorbei) faellt es auf die erste erlaubte Groesse zurueck statt zu werfen — dieselbe
+   *  Groesse, die vorher hart verdrahtet war. */
+  private pickSize(req: ImageRequest): number {
+    const match = this.model.sizes.find((s) => s.width === req.width && s.height === req.height);
+    return (match ?? this.model.sizes[0]!).width;
   }
 
   /** Sessions freigeben (GPU-Speicher, 0.1-Leak-Befund). Idempotent; ein laufendes Laden oder
@@ -162,9 +175,9 @@ export class LocalEngineBackend implements ImageBackend {
   }
 
   // Welche Pipeline entsteht, entscheidet der Katalog (`model.kind`) — nicht eine
-  // Zeichenkette im Code. `model.sizes[0]` liefert nur den VORGABEwert fuer SdxlTurboEngine;
-  // welche Groesse eine einzelne Anfrage bekommt, entscheidet ein spaeterer Task ueber
-  // `req.size` (Controller-Ruling Task 9).
+  // Zeichenkette im Code. `model.sizes[0]` ist hier nur der Konstruktor-Default fuer
+  // SdxlTurboEngine (falls je ohne `size` aufgerufen); `run()`/`pickSize()` uebergeben die
+  // pro Anfrage gueltige Groesse explizit (C1-Fix).
   private async load(): Promise<BuiltinEngine> {
     const { store, initRuntime } = this.deps;
     if (!this.runtimeReady) {

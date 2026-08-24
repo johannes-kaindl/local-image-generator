@@ -85,9 +85,78 @@ describe("LocalEngineBackend", () => {
     const be = new LocalEngineBackend(makeDeps([]), BUILTIN_MODELS["sd-turbo"]);
     const steps: string[] = [];
     be.onPhase = (p, s, t) => { if (p === "generating") steps.push(`${s}/${t}`); };
-    await be.generate({ ...req, steps: 20, width: 1024, height: 768 });
+    const png = await be.generate({ ...req, steps: 20, width: 1024, height: 768 });
     expect(steps).toHaveLength(BUILTIN_MODELS["sd-turbo"].steps.max);
     expect(steps[steps.length - 1]).toBe(`${BUILTIN_MODELS["sd-turbo"].steps.max}/${BUILTIN_MODELS["sd-turbo"].steps.max}`);
+    // Die eigentliche Zusage im Titel: SD-Turbo kann nur 512² — eine Anfrage mit 1024×768
+    // (kein gueltiger Eintrag in model.sizes) faellt auf die einzige erlaubte Groesse zurueck,
+    // nicht auf einen ungeprueften Wert aus der Anfrage. Vorher pruefte dieser Test nur die
+    // Steps-Klemmung und liess das Versprechen im eigenen Namen unbelegt (Final-Review-Fund C1).
+    expect(png).toBe(`512x512:${512 * 512 * 4}`);
+  });
+
+  // C1 (Final-Review, 2026-08-24): local-engine.ts baute den Auftrag an die Engine bisher als
+  // `{ prompt, steps, seed }` — `req.width`/`req.height` wurden nie uebergeben. SdxlTurboEngine
+  // faellt dann IMMER auf `opts.size` zurueck (`model.sizes[0]!.width` = 512), egal was Panel,
+  // Notiz, Dateiname oder Provider-API als Groesse behaupteten. Dieser Test laesst die ECHTE
+  // SdxlTurboEngine ueber vier voll ausgestattete Fake-Sessions laufen (Encoder liefern
+  // hidden_states.N + text_embeds, wie am echten Modell gemessen) und prueft die
+  // zurueckgegebene Groesse — decodeLatents() setzt `width`/`height` direkt aus dem `size`-
+  // Parameter, den `run()` uebergibt, nicht aus den (hier bedeutungslosen) VAE-Fake-Dims.
+  // Gegen den Stand VOR diesem Fix schlaegt der Test fehl: `engine.generate()` bekam gar kein
+  // `size`, SdxlTurboEngine haette 512×512 statt der angeforderten 1024×1024 geliefert.
+  it("uebergibt die angeforderte Groesse an die Engine (SDXL-Turbo, C1-Regression)", async () => {
+    const deps = makeDeps([]);
+    const ROLE_BYTES = { textEncoder: 11, textEncoder2: 12, unet: 13, vaeDecoder: 14 } as const;
+    const model = BUILTIN_MODELS["sdxl-turbo"];
+    if (model.kind !== "sdxl") throw new Error("unreachable: sdxl-turbo ist immer kind sdxl");
+    deps.store = {
+      getBuffer: async (f: AssetFile) => {
+        if (f.key === model.parts.textEncoder.file.key) return new ArrayBuffer(ROLE_BYTES.textEncoder);
+        if (f.key === model.parts.textEncoder2.file.key) return new ArrayBuffer(ROLE_BYTES.textEncoder2);
+        if (f.key === model.parts.unet.file.key) return new ArrayBuffer(ROLE_BYTES.unet);
+        if (f.key === model.parts.vaeDecoder.file.key) return new ArrayBuffer(ROLE_BYTES.vaeDecoder);
+        return new ArrayBuffer(1); // External-Data-Buckets: Inhalt hier irrelevant
+      },
+      getText: async (f: AssetFile) =>
+        f.key.endsWith("/vocab") || f.key.endsWith("/vocab_2") ? JSON.stringify({ "hund</w>": 1 }) : "#version\n",
+    } as unknown as ModelStore;
+    function hiddenOutputs(count: number, dim: number): Record<string, unknown> {
+      const out: Record<string, unknown> = {};
+      for (let i = 0; i < count; i++) out[`hidden_states.${i}`] = [1, 77, dim];
+      return out;
+    }
+    function multiSession(outputs: Record<string, unknown>): Session {
+      const outputNames = Object.keys(outputs);
+      return {
+        inputNames: [],
+        outputNames,
+        inputTypes: {},
+        run: async () => {
+          const result: Record<string, { data: Float32Array; dims: number[] }> = {};
+          for (const [name, dims] of Object.entries(outputs)) {
+            const d = dims as number[];
+            result[name] = { data: new Float32Array(d.reduce((a, b) => a * b, 1)).fill(1), dims: d };
+          }
+          return result;
+        },
+        release: async () => {},
+      };
+    }
+    const byRole: Record<string, Session> = {
+      textEncoder: multiSession(hiddenOutputs(13, 768)),
+      textEncoder2: multiSession({ ...hiddenOutputs(33, 1280), text_embeds: [1, 1280] }),
+      unet: multiSession({ out_sample: [1, 4, 4, 4] }),
+      vaeDecoder: multiSession({ sample: [1, 3, 8, 8] }),
+    };
+    deps.createSession = async (buf) => {
+      const role = Object.entries(ROLE_BYTES).find(([, len]) => len === buf.byteLength)?.[0];
+      const s = role ? byRole[role]! : byRole.vaeDecoder!; // Bucket-Aufrufe (unet.data.*) fallen hier nie an
+      return s;
+    };
+    const be = new LocalEngineBackend(deps, model);
+    const png = await be.generate({ ...req, width: 1024, height: 1024 });
+    expect(png).toBe(`1024x1024:${1024 * 1024 * 4}`);
   });
 
   it("dispose gibt die Sessions frei; danach lädt generate neu", async () => {

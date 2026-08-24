@@ -37,8 +37,9 @@ export interface SdxlEngineOpts {
   /** SDXL: 0.13025 (SD-Turbo: 0.18215) — Konstruktor-Parameter statt Modul-Konstante,
    *  damit engine.ts unangetastet bleibt. */
   vaeScaling: number;
-  /** Default-Kantenlaenge, falls die Anfrage keine `size` traegt (Katalog liefert
-   *  `model.sizes[0]`; welche Groesse pro Anfrage gewaehlt wird, ist nicht dieser Task). */
+  /** Default-Kantenlaenge, falls die Anfrage keine `size` traegt. `local-engine.ts` uebergibt
+   *  seit dem C1-Fix (2026-08-24) bei jeder Anfrage eine gegen `model.sizes` gepruefte `size` —
+   *  dieser Fallback greift nur, wenn jemand die Engine direkt ohne `size` aufruft. */
   size: number;
 }
 
