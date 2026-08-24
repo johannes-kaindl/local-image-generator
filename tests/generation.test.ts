@@ -34,7 +34,7 @@ describe("generation constants (Spec §4)", () => {
 
 describe("backendCapabilities", () => {
   it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt", () => {
-    expect(backendCapabilities("builtin")).toEqual({
+    expect(backendCapabilities("builtin", "sd-turbo")).toEqual({
       negativePrompt: false,
       cfg: false,
       initImage: false,
@@ -44,8 +44,8 @@ describe("backendCapabilities", () => {
       sizes: BUILTIN_MODELS["sd-turbo"].sizes,
     });
   });
-  it("server kann alles, was das Panel anbietet", () => {
-    expect(backendCapabilities("server")).toEqual({
+  it("server kann alles, was das Panel anbietet (Modellargument ist Pflicht, aber im Server-Zweig unbeachtet)", () => {
+    expect(backendCapabilities("server", "sd-turbo")).toEqual({
       negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max,
       fixedSize: null, sizes: null,
     });
@@ -76,20 +76,16 @@ describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
   });
 
   it("Server bleibt unveraendert: freie Wahl, sizes null", () => {
-    const c = backendCapabilities("server");
+    const c = backendCapabilities("server", "sd-turbo");
     expect(c.fixedSize).toBeNull();
     expect(c.sizes).toBeNull();
     expect(c.maxSteps).toBe(50);
-  });
-
-  it("ohne Modellargument gilt der Default", () => {
-    expect(backendCapabilities("builtin")).toEqual(backendCapabilities("builtin", "sd-turbo"));
   });
 });
 
 describe("img2img-Faehigkeit", () => {
   it("nur der Server-Modus kann ein Ausgangsbild", () => {
-    expect(backendCapabilities("server").initImage).toBe(true);
-    expect(backendCapabilities("builtin").initImage).toBe(false);
+    expect(backendCapabilities("server", "sd-turbo").initImage).toBe(true);
+    expect(backendCapabilities("builtin", "sd-turbo").initImage).toBe(false);
   });
 });

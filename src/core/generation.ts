@@ -1,6 +1,6 @@
 // Generations-Grenzen (Spec §4) — ersetzen den Modell-Katalog (models.ts stirbt in Task 8):
 // der Server hält die Modelle, das Plugin bietet generische, ehrliche Regler.
-import { DEFAULT_BUILTIN_MODEL_ID, modelById, type BuiltinModelId } from "./model-manifest";
+import { modelById, type BuiltinModelId } from "./model-manifest";
 import type { EngineChoice } from "./settings";
 
 export interface SizeOption { width: number; height: number; }
@@ -45,14 +45,16 @@ export interface BackendCapabilities {
   sizes: readonly SizeOption[] | null;
 }
 
-/** Was ein Backend ehrlich kann. Im builtin-Modus haengt das Ergebnis vom AKTIVEN Modell
- *  ab (SD-Turbo: eine Größe, SDXL-Turbo: zwei) — `model` faellt deshalb auf das Default-Modell
- *  zurueck, nicht auf einen der beiden Katalogeintraege fest verdrahtet. Der Server-Zweig
- *  bleibt davon unberuehrt: er kennt kein "Modell" in diesem Sinn, der Server waehlt selbst. */
-export function backendCapabilities(
-  mode: EngineChoice,
-  model: BuiltinModelId = DEFAULT_BUILTIN_MODEL_ID,
-): BackendCapabilities {
+/** Was ein Backend ehrlich kann. Im builtin-Modus haengt das Ergebnis vom AKTIVEN Modell ab
+ *  (SD-Turbo: eine Größe, SDXL-Turbo: zwei) — `model` ist deshalb PFLICHT, kein Default mehr
+ *  (Final-Review-Fund, 2026-08-24): ein still auf `DEFAULT_BUILTIN_MODEL_ID` zurueckfallender
+ *  Aufruf ohne zweites Argument war genau der Mechanismus, der C1 (`local-engine.ts` rechnete
+ *  SDXL-Turbo-Anfragen still auf SD-Turbos 512²) im Vorfeld unsichtbar hielt — ein Test, der
+ *  nur "ohne Modellargument gilt der Default" belegte, waere nach C1 eine Rechtfertigung fuer
+ *  denselben Fehler gewesen. `HardenContext.builtinModel` ist schon seit Task 12 Pflichtfeld;
+ *  jeder Produktionsaufrufer uebergab bereits ein Modell. Der Server-Zweig bleibt vom Argument
+ *  unberuehrt: er kennt kein "Modell" in diesem Sinn, der Server waehlt selbst. */
+export function backendCapabilities(mode: EngineChoice, model: BuiltinModelId): BackendCapabilities {
   if (mode !== "builtin") {
     return {
       negativePrompt: true, cfg: true, initImage: true,
