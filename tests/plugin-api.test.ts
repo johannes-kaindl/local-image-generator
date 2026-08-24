@@ -12,6 +12,7 @@ const params = {
 function deps(over: Partial<ApiDeps> = {}): ApiDeps {
   return {
     getMode: () => "builtin",
+    builtinModel: () => "sd-turbo",
     readiness: () => ({ ready: true }),
     isBusy: () => false,
     harden: () => params,
@@ -33,6 +34,7 @@ describe("status()", () => {
       negativePrompt: false, cfg: false, initImage: false,
       maxSteps: BUILTIN_MODEL.steps.max,
       fixedSize: BUILTIN_MODEL.sizes[0],
+      sizes: BUILTIN_MODEL.sizes,
     });
   });
 
@@ -53,7 +55,7 @@ describe("status()", () => {
     const s = createImageGenerationApi(deps({ getMode: () => "server" })).status();
     expect(s.engine).toBe("server");
     expect(s.capabilities).toEqual({
-      negativePrompt: true, cfg: true, initImage: true, maxSteps: STEPS.max, fixedSize: null,
+      negativePrompt: true, cfg: true, initImage: true, maxSteps: STEPS.max, fixedSize: null, sizes: null,
     });
   });
 });
