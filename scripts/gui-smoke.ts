@@ -514,7 +514,6 @@ const MODUS_REGLER = [
   ".lig-cfg-label",
   ".lig-cfg",
   ".lig-cfg-value",
-  ".lig-size-slot",
   // img2img (0.8): die ganze Vorlagen-Zeile haengt am Modus. Der Denoise-Regler steht
   // BEWUSST nicht hier — er haengt zusaetzlich daran, ob eine Vorlage gesetzt ist, und
   // waere im Server-Modus ohne Vorlage korrekterweise unsichtbar. Ihn hier zu fuehren
@@ -526,6 +525,14 @@ const MODUS_REGLER = [
   // downloadedModels.length > 1), nicht am Modus allein. Im Server-Modus waere es korrekt
   // unsichtbar (kein builtin), im builtin-Modus mit nur einem geladenen Modell ebenso — hier
   // gefuehrt, meldete Punkt 17 diese zweite Stufe als Defekt. Eigener Prüfpunkt: 21.
+  //
+  // `.lig-size-slot` steht aus demselben Grund NICHT hier (seit der zweiten Modellstufe,
+  // 2026-08-24 im GUI-Smoke gemessen): die Zeile haengt an ZWEI unabhaengigen Bedingungen
+  // (Modus UND `sizes.length > 1` — sizes ist im Server-Modus ohnehin `null`, s.
+  // viewmodel.ts). SDXL-Turbo hat zwei Groessen; im builtin-Modus MIT SDXL-Turbo ist die
+  // Zeile deshalb korrekt sichtbar, waehrend Punkt 17 (der nur den MODUS wechselt, das
+  // Modell aber unveraendert laesst, egal welches gerade in data.json steht) das als
+  // "builtin trotzdem sichtbar" meldete. Eigener Prüfpunkt: 22 (misst beide Modelle explizit).
 ] as const;
 
 /** Gerenderte Sichtbarkeit + Zustand jedes modusabhängigen Reglers, aus dem Renderer geholt.

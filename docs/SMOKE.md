@@ -208,6 +208,22 @@ jeder andere `skip`, nach der Lehre von `c984f47` (dort hatte sich ein Punkt lau
 (`showModelPicker` UND `downloadedModels.length > 1`), nicht am Modus allein. In
 `MODUS_REGLER` geführt, würde Punkt 17 die zweite Sichtbarkeitsstufe als Defekt melden.
 
+**`.lig-size-slot` steht seit 2026-08-25 aus demselben Grund NICHT mehr in `MODUS_REGLER`**
+(Fund beim Release-Beweis von 0.9-dev, s. `§ 2026-08-25` unten): die Zeile hängt ebenfalls an
+ZWEI unabhängigen Bedingungen — Modus UND `sizes.length > 1` (`viewmodel.ts`: `sizes` ist im
+Server-Modus `null`, im builtin-Modus abhängig vom gewählten Modell). SDXL-Turbo hat zwei
+Größen; im builtin-Modus MIT SDXL-Turbo ist die Zeile deshalb korrekt sichtbar. Punkt 17
+wechselt aber nur den MODUS, nie das Modell — welches Modell dabei aktiv ist, erbt er aus
+`settings.builtinModel`, wie es gerade in `data.json` steht. Stand dort `sdxl-turbo` (etwa
+aus einer vorherigen Session oder einem vorher abgebrochenen Lauf), meldete Punkt 17
+`.lig-size-slot → display:block` als Defekt, obwohl das Panel korrekt war. Die frühere
+Absicherung (`runModelStageChecks` stellt `builtinModel` in seinem eigenen `finally` wieder
+her, s. `§ 2026-08-24`) deckt nur ab, dass der EIGENE Lauf des Treibers nichts hinterlässt —
+sie deckt nicht den Fall, dass der Vault den Wert schon VOR dem Start des Treibers trägt.
+`.lig-size-slot` aus `MODUS_REGLER` zu nehmen behebt die Fehlerklasse strukturell, statt sie
+an einer weiteren Stelle abzufangen: Punkt 22 misst die Zeile bereits explizit für beide
+Modelle und bleibt die einzige Quelle dafür.
+
 **Punkt 21 und Punkt 23 können sich beide selbst überspringen** — 21, wenn der
 Zwei-Modell-Cache-Zustand weder schon vorliegt noch ohne Mock herstellbar ist, 23, wenn die
 Zählerdatei des Asset-Mocks fehlt (kein Mock aktiv). Beide melden das LAUT, mit Begründung in
@@ -273,7 +289,21 @@ unabhängig. Beide Ursachen sind Treiber-Defekte, keine Produktregression.
    Fehlermeldung liest jetzt denselben Wert, den `pollUntil` auch bekommen hat — sie kann
    nicht mehr von ihm abweichen.
 
-Kein neuer Lauf ist an dieser Stelle festgehalten — der Fix wurde gegen Lesen + `npm run
+2. **Punkt 17 nahm eine Vorbedingung an, statt sie herzustellen.** `.lig-size-slot` stand in
+   `MODUS_REGLER`, obwohl seine Sichtbarkeit — seit SDXL-Turbo zwei Größen hat — an ZWEI
+   unabhängigen Bedingungen hängt, nicht am Modus allein (dieselbe Fehlerklasse wie
+   `.lig-model-pick`/`.lig-denoise`, s. oben). Punkt 17 wechselt nur `setEngine()`, nie das
+   Modell — welches Modell dabei aktiv ist, erbt er unverändert aus `settings.builtinModel`.
+   Stand dort (wie in diesem Lauf) `sdxl-turbo`, ist die Zeile im builtin-Modus ZU RECHT
+   sichtbar, und Punkt 17 meldete das trotzdem als „builtin trotzdem sichtbar". Eine frühere
+   Absicherung (`runModelStageChecks` stellt `builtinModel` im eigenen `finally` wieder her,
+   s. `§ 2026-08-24`) deckt nur den eigenen Lauf des Treibers ab, nicht den Fall, dass der
+   Vault den Wert schon vor dem Start trägt. Fix: `.lig-size-slot` aus `MODUS_REGLER` entfernt
+   (Kommentar dort erklärt die zwei Bedingungen) — Punkt 22 misst die Zeile bereits explizit
+   für beide Modelle und bleibt die einzige Quelle dafür, statt dass Punkt 17 sie ein zweites
+   Mal, aber falsch, mitprüft.
+
+Kein neuer Lauf ist an dieser Stelle festgehalten — beide Fixes wurden gegen Lesen + `npm run
 gate` verifiziert, nicht gegen einen echten Download (der reale Beweislauf folgt separat und
 trägt dann seinen eigenen Log-Eintrag oben in diesem Abschnitt).
 
