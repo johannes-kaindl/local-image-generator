@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-25
+
 ### Added
 
 - **SDXL-Turbo as a second built-in model**, alongside SD-Turbo, chosen from a dropdown in
