@@ -736,9 +736,22 @@ function mockCounts(): Record<string, number> | null {
  * Der Lauf geht über die Provider-API statt über das Panel: dort ist die Vorlage ein
  * Base64-Parameter, der Punkt braucht also keine Vault-Datei und keinen Klickpfad — und er
  * misst denselben `runGeneration`-Weg, den auch der Generate-Knopf nimmt.
+ *
+ * Braucht den Server-Modus (die eingebaute Engine kann kein img2img) — bislang nur beim
+ * Aufrufer dokumentiert und aus der Reihenfolge geerbt (17/18 lassen "server" stehen). Hier
+ * zusätzlich selbst ETABLIERT, damit ein künftiger Punkt zwischen 18 und 19, der den Modus
+ * wechselt und vergisst zurückzustellen, nicht zu einer falschen ROT-Meldung führt (die
+ * Anfrage ginge dann an keinen Endpunkt, der Zähler bliebe bei 0).
  */
 async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
   const NAME = "19. Ein Lauf mit Vorlage geht an /sdapi/v1/img2img";
+  await cdp
+    .evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== "server") await p.setEngine("server");
+      return true;
+    `)
+    .catch(() => undefined);
   const vorher = mockCounts();
   if (vorher === null) {
     skip(NAME, "kein Mock-Server (Zählerdatei fehlt) — am echten Server nicht messbar");

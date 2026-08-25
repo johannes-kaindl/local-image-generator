@@ -303,9 +303,32 @@ unabhängig. Beide Ursachen sind Treiber-Defekte, keine Produktregression.
    für beide Modelle und bleibt die einzige Quelle dafür, statt dass Punkt 17 sie ein zweites
    Mal, aber falsch, mitprüft.
 
-Kein neuer Lauf ist an dieser Stelle festgehalten — beide Fixes wurden gegen Lesen + `npm run
-gate` verifiziert, nicht gegen einen echten Download (der reale Beweislauf folgt separat und
-trägt dann seinen eigenen Log-Eintrag oben in diesem Abschnitt).
+3. **Punkte 13–15 erbten `builtinModel` ebenfalls, aus demselben Grund wie Punkt 17.** Sie
+   setzen nur `setEngine("builtin")` (Punkt 13), messen aber gegen SD-Turbo (Punkt 15 prüft
+   `model: sd-turbo` in der Notiz) — welches Modell dabei tatsächlich aktiv ist, kam
+   unverändert aus `data.json`. Stand dort `sdxl-turbo` (derselbe Vault-Zustand, der schon
+   Punkt 17 traf), schlug Punkt 13 den 7-GB-CTA statt des 2,5-GB-CTA vor, Punkt 14 lief 66 min
+   statt der kalibrierten ≈30 min, 15/16/24 wurden mangels Vorbedingung übersprungen. Fix:
+   Punkt 13 stellt `builtinModel` jetzt selbst auf `DEFAULT_BUILTIN_MODEL_ID` (sd-turbo), ein
+   gemerkter Originalwert wird in einem `finally` um den gesamten Block 13–16/24
+   zurückgestellt — auch bei jedem frühen `return` (GPU fehlt, Vorbedingung nicht erreicht),
+   nicht nur beim regulären Durchlauf.
+
+**Die Klasse hinter allen drei Funden: der Treiber ETABLIERT Modi (`setEngine`), aber ERBT
+Modelle/Cache-Zustand aus `data.json`, statt sie ebenso zu etablieren.** Das ist kein
+Einzelfall — es ist beim dritten Mal an derselben Stelle (Punkt 23 am 2026-08-24, Punkt 17 und
+13–15 am 2026-08-25) aufgetreten, immer mit demselben Symptom: ein zufälliger Vault-Vorwert
+lässt einen Punkt eine falsche Ursache messen oder eine harmlose Kombination als Defekt
+melden. **Wer einen neuen Punkt schreibt, der von `builtinModel`, `engine`, Cache-Inhalt oder
+einem Download-/Nicht-Download-Zustand abhängt, muss diesen Zustand selbst herstellen — nicht
+annehmen, dass ein vorheriger Punkt ihn schon passend hinterlassen hat.** Ein Blick in
+`scripts/gui-smoke.ts` zeigt das Muster an den Stellen, die es schon richtig machen:
+`runModelStageChecks()` und `runSdxlContentCheck()` merken den Ausgangswert vor einem Block
+und stellen ihn in einem `try`/`finally` wieder her, unabhängig vom Ausgang.
+
+Kein neuer Lauf ist an dieser Stelle festgehalten — alle drei Fixes wurden gegen Lesen + `npm
+run gate` verifiziert, nicht gegen einen echten Download (der reale Beweislauf folgt separat
+und trägt dann seinen eigenen Log-Eintrag oben in diesem Abschnitt).
 
 ## Was der Treiber am Wirt verändert (und zurücksetzt)
 
