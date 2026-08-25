@@ -5,6 +5,7 @@ import { presetActive, togglePresetInPrompt } from "../core/presets";
 import { t } from "../vendor/kit/i18n";
 import { buildViewModel } from "../core/viewmodel";
 import { CFG, DENOISING, SIZES, STEPS, type SizeOption } from "../core/generation";
+import type { BuiltinModelId } from "../core/model-manifest";
 import type { HistoryEntry } from "../core/settings";
 import type { HubPanel, TabId } from "./hub";
 import type { PanelRecipe, ViewHost } from "./view";
@@ -21,6 +22,13 @@ export class GeneratePanel implements HubPanel<TabId> {
   private modelInfoEl!: HTMLElement;
   private sizeRowEl!: HTMLElement; // Container in der controls-Zeile
   private sizeEl: HTMLSelectElement | null = null;
+  /** Optionssignatur des zuletzt gezeichneten Groessen-Dropdowns — Rebuild nur bei
+   *  tatsaechlicher Aenderung (Modellwechsel builtin↔builtin, Modus-Wechsel). */
+  private renderedSizeIds = "";
+  private modelPickEl!: HTMLSelectElement;
+  /** Optionssignatur des zuletzt gezeichneten Modell-Dropdowns — ein select verliert bei
+   *  jedem Neuzeichnen seine Auswahl, deshalb nur bei tatsaechlicher Aenderung neu bauen. */
+  private renderedModelIds = "";
   private promptEl!: HTMLTextAreaElement;
   private negativePromptEl!: HTMLTextAreaElement;
   private stepsEl!: HTMLInputElement;
@@ -100,6 +108,19 @@ export class GeneratePanel implements HubPanel<TabId> {
 
     const controls = root.createDiv({ cls: "lig-row" });
     this.sizeRowEl = controls.createSpan({ cls: "lig-size-slot" });
+    // Modell-Dropdown (Task 12, Spec 0.9 §6.2): NUR geladene Modelle als Optionen — ein
+    // Panel-Klick darf nie einen Download ausloesen (vm.modelOptions filtert das bereits vor).
+    this.modelPickEl = controls.createEl("select", { cls: "dropdown lig-model-pick" });
+    this.modelPickEl.addEventListener("change", () => {
+      // KEIN this.refresh() direkt danach (anders als bei den uebrigen Controls hier):
+      // host.setBuiltinModel() ist asynchron unter der Haube (main.ts) und ruft selbst
+      // refreshViews() nach Abschluss. Ein sofortiges refresh() wuerde die Anzeige VOR dem
+      // Abschluss auf state.builtinModel (noch der alte Wert) zuruecksetzen — sichtbares
+      // Zurueckspringen bei jedem normalen Wechsel. Einzige Kehrseite: lehnt der Wechsel ab
+      // (isBusy(), selten — waehrend eines laufenden Bildes), bleibt die Anzeige bis zum
+      // naechsten ANDEREN Refresh optimistisch auf der geklickten Option stehen.
+      this.host.setBuiltinModel(this.modelPickEl.value as BuiltinModelId);
+    });
     controls.createSpan({ text: t("generate.steps"), cls: "lig-label" });
     const startSteps = String(this.host.getSettings().defaultSteps);
     this.stepsEl = controls.createEl("input", {
@@ -209,7 +230,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.statusIconEl = status.createSpan({ cls: "lig-status-icon" });
     this.statusTextEl = status.createSpan({ cls: "lig-status-text" });
 
-    this.buildSizeDropdown();
+    this.buildSizeDropdown(SIZES);
     this.refresh();
   }
 
@@ -249,15 +270,22 @@ export class GeneratePanel implements HubPanel<TabId> {
     }
   }
 
-  /** Größen-Dropdown einmalig aus der generischen SIZES-Konstante aufbauen (kein
-   *  Modellbezug mehr — der Server-App-seitige Modellwechsel kennt keine Katalog-Größen). */
-  private buildSizeDropdown(): void {
+  /** Größen-Dropdown aus den gegebenen Optionen aufbauen — builtin: `vm.controls.sizes`
+   *  (Modellkatalog, z. B. nur 512² bei SD-Turbo, 512²/1024² bei SDXL-Turbo); server: die
+   *  generische SIZES-Konstante (der Server-App-seitige Modellwechsel kennt keine
+   *  Katalog-Größen). Erhaelt die bisherige Auswahl, wenn sie in den neuen Optionen noch
+   *  vorkommt — sonst faellt sie auf die erste Option zurueck (wie applyRecipe()). */
+  private buildSizeDropdown(sizes: readonly SizeOption[]): void {
+    const vorher = this.sizeEl?.value ?? null;
     this.sizeRowEl.empty();
     this.sizeRowEl.createSpan({ text: t("generate.size"), cls: "lig-label" });
     this.sizeEl = this.sizeRowEl.createEl("select", { cls: "dropdown lig-size" });
-    for (const s of SIZES)
+    for (const s of sizes)
       this.sizeEl.createEl("option", { text: `${s.width} × ${s.height}`, attr: { value: `${s.width}x${s.height}` } });
     this.sizeEl.addEventListener("change", () => this.refresh());
+    const first = sizes[0]!;
+    const stillValid = vorher !== null && sizes.some((s) => `${s.width}x${s.height}` === vorher);
+    this.sizeEl.value = stillValid && vorher !== null ? vorher : `${first.width}x${first.height}`;
   }
 
   /** Aktive Größe: Dropdown-Wert (der Dropdown existiert nach mount() immer). */
@@ -326,6 +354,28 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.cfgEl.toggleClass("is-hidden", !vm.controls.cfg);
     this.cfgValueEl.toggleClass("is-hidden", !vm.controls.cfg);
     this.sizeRowEl.toggleClass("is-hidden", !vm.controls.size);
+    // Optionen NUR aus dem Modellkatalog (builtin) oder der generischen Konstante (server) —
+    // nicht aus dem Modellnamen ableiten (Kommentar an buildSizeDropdown()).
+    const sizeOptions = vm.controls.sizes ?? SIZES;
+    const sizeIds = sizeOptions.map((s) => `${s.width}x${s.height}`).join(",");
+    if (sizeIds !== this.renderedSizeIds) {
+      this.renderedSizeIds = sizeIds;
+      const vorherSize = this.sizeEl?.value ?? null;
+      this.buildSizeDropdown(sizeOptions);
+      if (this.sizeEl!.value !== vorherSize) this.host.setRecipe(this.currentRecipe());
+    }
+    // Modell-Dropdown (Task 12): NUR bei sichtbarem Picker sind die Optionen ueberhaupt
+    // relevant, aber toggleClass laeuft immer — dieselbe Regel wie bei den anderen Zeilen.
+    this.modelPickEl.toggleClass("is-hidden", !vm.controls.modelPicker);
+    const modelIds = vm.modelOptions.map((o) => o.id).join(",");
+    if (modelIds !== this.renderedModelIds) {
+      this.renderedModelIds = modelIds;
+      this.modelPickEl.empty();
+      for (const o of vm.modelOptions) this.modelPickEl.createEl("option", { text: o.label, attr: { value: o.id } });
+    }
+    // vm hat kein eigenes builtinModel-Feld (nur modelLabel/modelOptions) — die Auswahl kommt
+    // aus dem State, nicht dem ViewModel (Divergenz vom Brief-Snippet, siehe Taskbericht).
+    this.modelPickEl.value = state.builtinModel;
     // Zwei getrennte Fragen (Spec §3): kann das BACKEND ein Ausgangsbild (ganze Zeile), und
     // gibt es ueberhaupt eine Vorlage zu aendern (nur der Regler)?
     this.initRowEl.toggleClass("is-hidden", !vm.controls.initImage);

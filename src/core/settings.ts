@@ -2,7 +2,7 @@
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
-import { DEFAULT_ASSET_BASE_URL } from "./model-manifest";
+import { DEFAULT_ASSET_BASE_URL, type BuiltinModelId } from "./model-manifest";
 import {
   arrayOf,
   arrayThen,
@@ -87,6 +87,13 @@ export interface LigSettings {
    *  Wegfall (2026-07-20) liest den Wert kein Codepfad mehr; das Feld bleibt, damit
    *  gespeicherte Konfigurationen ohne Migration laden. */
   sectionsCollapsed: Record<string, boolean>;
+  /** Welche eingebaute Modellstufe die Engine laedt (Spec 0.9 §6.1): SD-Turbo (Default,
+   *  512 px, ~2,5 GB) oder SDXL-Turbo (groesser, hoehere Aufloesung). Nur relevant im
+   *  builtin-Modus; bindet nicht in die Provider-API. */
+  builtinModel: BuiltinModelId;
+  /** Ob die Settings ueberhaupt eine Modellwahl anzeigen (Spec 0.9 §6.1). Default aus:
+   *  bis zur zweiten Stufe gab es keine Wahl zu treffen. */
+  showModelPicker: boolean;
 }
 
 export const DEFAULT_PRESETS: StylePreset[] = [
@@ -111,6 +118,8 @@ export const DEFAULT_SETTINGS: LigSettings = {
   mfluxPath: "",
   modelsDir: "",
   sectionsCollapsed: {},
+  builtinModel: "sd-turbo",
+  showModelPicker: false,
 };
 
 /** Filter + Backfill der Historie — Migration 0.3→0.4 (width/height) und 0.4→0.5
@@ -195,4 +204,6 @@ export const SETTINGS_SCHEMA: SettingsSchema<LigSettings> = {
   ),
   history: arrayThen<HistoryEntry>(migrateHistory),
   historyView: oneOf<LigSettings["historyView"]>(["recent", "grouped"]),
+  builtinModel: oneOf<BuiltinModelId>(["sd-turbo", "sdxl-turbo"]),
+  showModelPicker: check<boolean>((v) => typeof v === "boolean"),
 };

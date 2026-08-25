@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Session } from "../src/core/engine";
-import { BUILTIN_MODEL, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
-import { LocalEngineBackend, type LocalEngineDeps } from "../src/obsidian/local-engine";
+import { BUILTIN_MODELS, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
+import { LocalEngineBackend, SessionBuildTimeout, SESSION_BUILD_TIMEOUT_MS, type LocalEngineDeps } from "../src/obsidian/local-engine";
 import type { ModelStore } from "../src/obsidian/model-store";
 
 // Fake-Sessions wie in tests/engine.test.ts — fp32-IO (unsere Konversion), int64-ids.
@@ -19,7 +19,7 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
   const state = { released: 0 };
   const store = {
     getBuffer: async (f: AssetFile) => { log.push(`buffer:${f.key}`); return new ArrayBuffer(8); },
-    getText: async (f: AssetFile) => { log.push(`text:${f.key}`); return f.key === "vocab" ? JSON.stringify({ "cat</w>": 1 }) : "#version\n"; },
+    getText: async (f: AssetFile) => { log.push(`text:${f.key}`); return f.key.endsWith("/vocab") ? JSON.stringify({ "cat</w>": 1 }) : "#version\n"; },
   } as unknown as ModelStore;
   const deps: LocalEngineDeps & { released: number } = {
     store,
@@ -35,6 +35,11 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
     },
     checkGpu: async () => "ok",
     encodePng: (rgba, w, h) => `data:image/png;base64,${w}x${h}:${rgba.length}`,
+    // Node-Umgebung hat kein `window` — der Produktions-Default in local-engine.ts (`REAL_TIMERS`)
+    // ruft `window.setTimeout`. Hier bewusst die globalen Timer statt `window.*`, damit alle
+    // bestehenden Tests (die `timers` nicht selbst setzen) nicht an einem ReferenceError
+    // scheitern, sobald `loadPart()` seinen Wachhund aufzieht.
+    timers: { setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number, clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout) },
     get released() { return state.released; },
   };
   return deps;
@@ -43,17 +48,21 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
 const req = { prompt: "cat", negativePrompt: "", width: 512, height: 512, steps: 2, seed: 7, cfg: 1,
   initImageData: null, denoising: null };
 
+function reqOf(prompt: string): typeof req {
+  return { ...req, prompt };
+}
+
 describe("LocalEngineBackend", () => {
   it("erster generate lädt WASM, drei Sessions und den Tokenizer genau einmal — der zweite nicht mehr", async () => {
     const log: string[] = [];
-    const be = new LocalEngineBackend(makeDeps(log));
+    const be = new LocalEngineBackend(makeDeps(log), BUILTIN_MODELS["sd-turbo"]);
     const phases: string[] = [];
     be.onPhase = (p, s, t) => phases.push(`${p}${s !== undefined ? `:${s}/${t}` : ""}`);
     await be.generate(req);
     expect(log.filter((l) => l === "initRuntime")).toHaveLength(1);
     expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
     expect(log).toContain(`buffer:${RUNTIME_WASM.key}`);
-    expect(log).toContain("text:vocab");
+    expect(log).toContain("text:sd-turbo/vocab");
     expect(phases[0]).toBe("loading-model");
     expect(be.loaded).toBe(true);
     const before = log.length;
@@ -63,7 +72,7 @@ describe("LocalEngineBackend", () => {
   });
 
   it("liefert Base64 ohne data:-Präfix und meldet generating-Schritte 1..steps", async () => {
-    const be = new LocalEngineBackend(makeDeps([]));
+    const be = new LocalEngineBackend(makeDeps([]), BUILTIN_MODELS["sd-turbo"]);
     const steps: string[] = [];
     be.onPhase = (p, s, t) => { if (p === "generating") steps.push(`${s}/${t}`); };
     const png = await be.generate(req);
@@ -73,18 +82,87 @@ describe("LocalEngineBackend", () => {
   });
 
   it("Steps werden auf den Modellbereich geklemmt, Größe ist immer 512 (Rezept-Ehrlichkeit)", async () => {
-    const be = new LocalEngineBackend(makeDeps([]));
+    const be = new LocalEngineBackend(makeDeps([]), BUILTIN_MODELS["sd-turbo"]);
     const steps: string[] = [];
     be.onPhase = (p, s, t) => { if (p === "generating") steps.push(`${s}/${t}`); };
-    await be.generate({ ...req, steps: 20, width: 1024, height: 768 });
-    expect(steps).toHaveLength(BUILTIN_MODEL.steps.max);
-    expect(steps[steps.length - 1]).toBe(`${BUILTIN_MODEL.steps.max}/${BUILTIN_MODEL.steps.max}`);
+    const png = await be.generate({ ...req, steps: 20, width: 1024, height: 768 });
+    expect(steps).toHaveLength(BUILTIN_MODELS["sd-turbo"].steps.max);
+    expect(steps[steps.length - 1]).toBe(`${BUILTIN_MODELS["sd-turbo"].steps.max}/${BUILTIN_MODELS["sd-turbo"].steps.max}`);
+    // Die eigentliche Zusage im Titel: SD-Turbo kann nur 512² — eine Anfrage mit 1024×768
+    // (kein gueltiger Eintrag in model.sizes) faellt auf die einzige erlaubte Groesse zurueck,
+    // nicht auf einen ungeprueften Wert aus der Anfrage. Vorher pruefte dieser Test nur die
+    // Steps-Klemmung und liess das Versprechen im eigenen Namen unbelegt (Final-Review-Fund C1).
+    expect(png).toBe(`512x512:${512 * 512 * 4}`);
+  });
+
+  // C1 (Final-Review, 2026-08-24): local-engine.ts baute den Auftrag an die Engine bisher als
+  // `{ prompt, steps, seed }` — `req.width`/`req.height` wurden nie uebergeben. SdxlTurboEngine
+  // faellt dann IMMER auf `opts.size` zurueck (`model.sizes[0]!.width` = 512), egal was Panel,
+  // Notiz, Dateiname oder Provider-API als Groesse behaupteten. Dieser Test laesst die ECHTE
+  // SdxlTurboEngine ueber vier voll ausgestattete Fake-Sessions laufen (Encoder liefern
+  // hidden_states.N + text_embeds, wie am echten Modell gemessen) und prueft die
+  // zurueckgegebene Groesse — decodeLatents() setzt `width`/`height` direkt aus dem `size`-
+  // Parameter, den `run()` uebergibt, nicht aus den (hier bedeutungslosen) VAE-Fake-Dims.
+  // Gegen den Stand VOR diesem Fix schlaegt der Test fehl: `engine.generate()` bekam gar kein
+  // `size`, SdxlTurboEngine haette 512×512 statt der angeforderten 1024×1024 geliefert.
+  it("uebergibt die angeforderte Groesse an die Engine (SDXL-Turbo, C1-Regression)", async () => {
+    const deps = makeDeps([]);
+    const ROLE_BYTES = { textEncoder: 11, textEncoder2: 12, unet: 13, vaeDecoder: 14 } as const;
+    const model = BUILTIN_MODELS["sdxl-turbo"];
+    if (model.kind !== "sdxl") throw new Error("unreachable: sdxl-turbo ist immer kind sdxl");
+    deps.store = {
+      getBuffer: async (f: AssetFile) => {
+        if (f.key === model.parts.textEncoder.file.key) return new ArrayBuffer(ROLE_BYTES.textEncoder);
+        if (f.key === model.parts.textEncoder2.file.key) return new ArrayBuffer(ROLE_BYTES.textEncoder2);
+        if (f.key === model.parts.unet.file.key) return new ArrayBuffer(ROLE_BYTES.unet);
+        if (f.key === model.parts.vaeDecoder.file.key) return new ArrayBuffer(ROLE_BYTES.vaeDecoder);
+        return new ArrayBuffer(1); // External-Data-Buckets: Inhalt hier irrelevant
+      },
+      getText: async (f: AssetFile) =>
+        f.key.endsWith("/vocab") || f.key.endsWith("/vocab_2") ? JSON.stringify({ "hund</w>": 1 }) : "#version\n",
+    } as unknown as ModelStore;
+    function hiddenOutputs(count: number, dim: number): Record<string, unknown> {
+      const out: Record<string, unknown> = {};
+      for (let i = 0; i < count; i++) out[`hidden_states.${i}`] = [1, 77, dim];
+      return out;
+    }
+    function multiSession(outputs: Record<string, unknown>): Session {
+      const outputNames = Object.keys(outputs);
+      return {
+        inputNames: [],
+        outputNames,
+        inputTypes: {},
+        run: async () => {
+          const result: Record<string, { data: Float32Array; dims: number[] }> = {};
+          for (const [name, dims] of Object.entries(outputs)) {
+            const d = dims as number[];
+            result[name] = { data: new Float32Array(d.reduce((a, b) => a * b, 1)).fill(1), dims: d };
+          }
+          return result;
+        },
+        release: async () => {},
+      };
+    }
+    const byRole: Record<string, Session> = {
+      textEncoder: multiSession(hiddenOutputs(13, 768)),
+      textEncoder2: multiSession({ ...hiddenOutputs(33, 1280), text_embeds: [1, 1280] }),
+      unet: multiSession({ out_sample: [1, 4, 4, 4] }),
+      vaeDecoder: multiSession({ sample: [1, 3, 8, 8] }),
+    };
+    deps.createSession = async (buf) => {
+      const role = Object.entries(ROLE_BYTES).find(([, len]) => len === buf.byteLength)?.[0];
+      const s = role ? byRole[role]! : byRole.vaeDecoder!; // Bucket-Aufrufe (unet.data.*) fallen hier nie an
+      return s;
+    };
+    const be = new LocalEngineBackend(deps, model);
+    const png = await be.generate({ ...req, width: 1024, height: 1024 });
+    expect(png).toBe(`1024x1024:${1024 * 1024 * 4}`);
   });
 
   it("dispose gibt die Sessions frei; danach lädt generate neu", async () => {
     const log: string[] = [];
     const deps = makeDeps(log);
-    const be = new LocalEngineBackend(deps);
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
     await be.generate(req);
     await be.dispose();
     expect(deps.released).toBe(3);
@@ -109,7 +187,7 @@ describe("LocalEngineBackend", () => {
         release: async () => { log.push(`release:${tag}`); await s.release(); },
       };
     };
-    const be = new LocalEngineBackend(deps);
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
     const gen = be.generate(req);
     await new Promise((r) => setTimeout(r, 15)); // mitten im Lauf
     const disposeDone = be.dispose();
@@ -125,7 +203,7 @@ describe("LocalEngineBackend", () => {
 
   it("zwei parallele generate-Aufrufe teilen sich das Laden (kein doppelter Session-Aufbau)", async () => {
     const log: string[] = [];
-    const be = new LocalEngineBackend(makeDeps(log));
+    const be = new LocalEngineBackend(makeDeps(log), BUILTIN_MODELS["sd-turbo"]);
     const p1 = be.generate(req);
     const p2 = be.generate({ ...req, seed: 8 }).catch((e: Error) => e.message);
     await p1;
@@ -133,5 +211,54 @@ describe("LocalEngineBackend", () => {
     // Die pure Engine ist single-flight („engine is busy"); der Backend-Loader aber nur einmal.
     expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
     expect(typeof r2).toBe("string");
+  });
+
+  it("uebergibt Bucket-Puffer als externalData mit dem location-Namen", async () => {
+    const seen: { path: string; bytes: number }[] = [];
+    const deps = makeDeps([]);
+    deps.createSession = async (buf, ext) => {
+      for (const e of ext ?? []) seen.push({ path: e.path, bytes: e.data.byteLength });
+      return fakeSession(["sample"], "out_sample", [1, 4, 64, 64], {});
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sdxl-turbo"]);
+    await be.generate(reqOf("hund")).catch(() => undefined);
+    expect(seen.map((s) => s.path)).toEqual(
+      BUILTIN_MODELS["sdxl-turbo"].parts.unet.data.map((d) => d.path.split("/").pop()),
+    );
+  });
+
+  it("monolithische Modelle bekommen kein externalData", async () => {
+    let ext: unknown = "ungesetzt";
+    const deps = makeDeps([]);
+    deps.createSession = async (_buf, e) => { ext = e; return fakeSession(["sample"], "out_sample", [1, 4, 64, 64], {}); };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+    await be.generate(reqOf("katze")).catch(() => undefined);
+    expect(ext === undefined || (Array.isArray(ext) && ext.length === 0)).toBe(true);
+  });
+
+  // Spec §8 Punkt 2 — der Wachhund, den es im Code-Stand vor diesem Fix nicht gab (verloren
+  // ueber zwei Engine-Umbauten). Der Punkt dieses Tests: ein Wachhund, den niemand hat feuern
+  // sehen, ist ein Wachhund, von dem niemand weiss, ob er funktioniert. Echte 5 Minuten waeren
+  // hier unbrauchbar — `timers` ist deshalb wie `StoreDeps.timer` injiziert, mit einer winzigen,
+  // aber ECHTEN Frist (kein Fake-Timer-Mock), damit der Test dieselbe `withTimeout`-Race
+  // durchlaeuft, die auch in Obsidian laeuft.
+  it("meldet SessionBuildTimeout, wenn createSession niemals aufloest oder verwirft", async () => {
+    const deps = makeDeps([]);
+    deps.createSession = () => new Promise<Session>(() => { /* haengt absichtlich fuer immer */ });
+    // Deadline fuer DIESEN Test winzig halten — nicht die Produktions-Konstante aendern:
+    // loadPart() ruft `withTimeout(..., SESSION_BUILD_TIMEOUT_MS, this.timers)`, das die
+    // angefragten 5 Minuten an `timers.setTimeout(fn, ms)` weiterreicht. Dieser Fake laesst die
+    // Race real nach 20 ms feuern (statt echte 5 Minuten abzuwarten), zeichnet das angefragte
+    // `ms` aber AUF — Review-Fund: ein Fake, der `ms` stillschweigend ignoriert, bliebe auch
+    // gruen, wenn `SESSION_BUILD_TIMEOUT_MS` durch einen Tippfehler zu z.B. 5 statt 300000
+    // wuerde. Die Assertion unten prueft die tatsaechlich angefragte Frist gegen die Konstante.
+    const requestedMs: number[] = [];
+    deps.timers = {
+      setTimeout: (fn, ms) => { requestedMs.push(ms); return setTimeout(fn, 20) as unknown as number; },
+      clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+    await expect(be.generate(reqOf("hund"))).rejects.toThrow(SessionBuildTimeout);
+    expect(requestedMs).toContain(SESSION_BUILD_TIMEOUT_MS);
   });
 });

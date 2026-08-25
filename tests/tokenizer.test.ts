@@ -41,4 +41,14 @@ describe("CLIP-BPE-Tokenizer", () => {
     const ids = tokenize("a", d, { maxLen: 5, bos: 100, eos: 101 });
     expect(Array.from(ids)).toEqual([100, 1, 101, 0, 0]);
   });
+  it("opts.pad überschreibt den Default und ist unabhängig von EOS (SDXL-Turbos primärer Encoder padded mit 49407, ungleich EOS)", () => {
+    // Gemessen an den HF-Configs 2026-08-23: sdxl-turbo/tokenizer (CLIP-L) padded mit
+    // <|endoftext|> = 49407 — ein Wert, der hier absichtlich vom eos-Parameter (101)
+    // abweicht, um zu belegen, dass pad wirklich EIGENSTÄNDIG ist und nicht heimlich auf
+    // eos zurückfällt (AGENTS.md: "Das Pad-Token ist pro Tokenizer verschieden — und die
+    // Abweichung sitzt beim ERSTEN").
+    const d: TokenizerData = { vocab: { "a</w>": 1 }, merges: [] };
+    const ids = tokenize("a", d, { maxLen: 5, bos: 100, eos: 101, pad: 49407 });
+    expect(Array.from(ids)).toEqual([100, 1, 101, 49407, 49407]);
+  });
 });

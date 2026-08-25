@@ -5,7 +5,7 @@
 import { f16ArrayToF32, f32ArrayToF16 } from "./pipeline/f16";
 import { chwToRgba } from "./pipeline/image";
 import { gaussianArray } from "./pipeline/prng";
-import { makeSchedule, scaleInput, schedulerStep } from "./pipeline/scheduler";
+import { makeSchedule, scaleInput, schedulerStep, type Schedule } from "./pipeline/scheduler";
 import { tokenize, type TokenizerData } from "./pipeline/tokenizer";
 
 export interface OrtValue {
@@ -45,6 +45,11 @@ export interface GenerateRequest {
   prompt: string;
   steps: number;
   seed: number;
+  /** Kantenlänge in Pixeln. OPTIONAL — SdTurboEngine ignoriert es (immer 512),
+   *  SdxlTurboEngine liest `req.size ?? opts.size` (Spec 0.9 §5.2). Pflicht hätte
+   *  SdTurboEngine und alle bestehenden Aufrufer geändert, gegen die Zusage, dass
+   *  SD-Turbo unangetastet bleibt (Controller-Ruling Task 9). */
+  size?: number;
 }
 
 export interface GenerateResult {
@@ -56,25 +61,33 @@ export interface GenerateResult {
 
 export type ProgressFn = (step: number, total: number) => void;
 
+/** Gemeinsame Schnittstelle beider eingebauter Pipelines (SdTurboEngine, SdxlTurboEngine) —
+ *  `local-engine.ts` routet über `model.kind`, ohne den konkreten Typ zu kennen. */
+export interface BuiltinEngine {
+  readonly busy: boolean;
+  generate(req: GenerateRequest, onProgress?: ProgressFn): Promise<GenerateResult>;
+  dispose(): Promise<void>;
+}
+
 const LATENT = { c: 4, h: 64, w: 64 } as const;
 const IMAGE_SIZE = 512;
 const VAE_SCALING = 0.18215;
 
-function toF32(v: OrtValue): Float32Array {
+export function toF32(v: OrtValue): Float32Array {
   if (v.data instanceof Uint16Array) return f16ArrayToF32(v.data);
   if (v.data instanceof Float32Array) return v.data;
   throw new Error(`unexpected tensor dtype for ${v.dims.join("x")}`);
 }
 
 // Float-Feed passend zum deklarierten Eingabetyp der Session bauen.
-function floatFeed(session: Session, name: string, f32: Float32Array, dims: readonly number[]): OrtValue {
+export function floatFeed(session: Session, name: string, f32: Float32Array, dims: readonly number[]): OrtValue {
   return session.inputTypes[name] === "float16"
     ? { data: f32ArrayToF16(f32), dims }
     : { data: f32, dims };
 }
 
 // Skalarer Timestep im deklarierten Typ (int64 | float32 | float16) und Rang (0-d oder [1]).
-function timestepFeed(session: Session, name: string, t: number): OrtValue {
+export function timestepFeed(session: Session, name: string, t: number): OrtValue {
   const type = session.inputTypes[name] ?? "int64";
   const dims: number[] = session.inputShapes?.[name]?.length === 0 ? [] : [1];
   if (type === "float32") return { data: new Float32Array([t]), dims };
@@ -83,20 +96,76 @@ function timestepFeed(session: Session, name: string, t: number): OrtValue {
 }
 
 // Token-IDs im deklarierten Typ (int32 | int64).
-function idsFeed(session: Session, name: string, ids: Int32Array): OrtValue {
+export function idsFeed(session: Session, name: string, ids: Int32Array): OrtValue {
   return session.inputTypes[name] === "int64"
     ? { data: BigInt64Array.from(ids, (x) => BigInt(x)), dims: [1, ids.length] }
     : { data: new Int32Array(ids), dims: [1, ids.length] };
 }
 
-function firstOutput(session: Session, outputs: Record<string, OrtValue>): OrtValue {
+export function firstOutput(session: Session, outputs: Record<string, OrtValue>): OrtValue {
   const name = session.outputNames[0];
   const out = name !== undefined ? outputs[name] : undefined;
   if (!out) throw new Error("session returned no output");
   return out;
 }
 
-export class SdTurboEngine {
+// UNet-Schleife (Euler-Ancestral, Spec §5) — geteilt zwischen SdTurboEngine und
+// SdxlTurboEngine (Review Task 9: die Schleife war ein Verbatim-Duplikat bis auf
+// Latent-Dims und zwei Zusatz-Feeds). `extraFeeds` traegt alles, was ein Encoder-Setup
+// dem UNet zusaetzlich zu `sample`/`timestep` gibt — SD-Turbo nur `encoder_hidden_states`,
+// SDXL zusaetzlich `text_embeds`/`time_ids`. Reine Latents-Rueckgabe (kein VAE-Decode) —
+// dafuer ist `decodeLatents` zustaendig.
+export async function runDiffusion(
+  unet: Session,
+  schedule: Schedule,
+  seed: number,
+  latentDims: readonly number[],
+  extraFeeds: Record<string, OrtValue>,
+  onProgress?: ProgressFn,
+): Promise<Float32Array> {
+  const n = latentDims.reduce((a, b) => a * b, 1);
+  let latents = gaussianArray(seed, n);
+  for (let i = 0; i < n; i++) latents[i] = latents[i]! * schedule.initNoiseSigma;
+
+  for (let i = 0; i < schedule.timesteps.length; i++) {
+    const sigma = schedule.sigmas[i]!;
+    const scaled = scaleInput(latents, sigma);
+    const unetOut = await unet.run({
+      sample: floatFeed(unet, "sample", scaled, latentDims),
+      timestep: timestepFeed(unet, "timestep", schedule.timesteps[i]!),
+      ...extraFeeds,
+    });
+    const noisePred = toF32(firstOutput(unet, unetOut));
+    const stepNoise = gaussianArray(seed + 1000 + i, n); // Ancestral-Noise, seed-abgeleitet
+    latents = schedulerStep(noisePred, latents, i, schedule.sigmas, stepNoise);
+    onProgress?.(i + 1, schedule.timesteps.length);
+  }
+  return latents;
+}
+
+// VAE-Rueckskalierung + Decode + CHW→RGBA — geteilt zwischen SdTurboEngine und
+// SdxlTurboEngine (Review Task 9), Skalierungskonstante und Zielgroesse sind Parameter
+// statt Modul-Konstanten, damit SDXL (0.13025, 512/1024) SD-Turbo (0.18215, 512) nicht
+// anfasst.
+export async function decodeLatents(
+  vaeDecoder: Session,
+  latents: Float32Array,
+  latentDims: readonly number[],
+  vaeScaling: number,
+  size: number,
+  seed: number,
+): Promise<GenerateResult> {
+  const n = latentDims.reduce((a, b) => a * b, 1);
+  const scaledLatents = new Float32Array(n);
+  for (let i = 0; i < n; i++) scaledLatents[i] = latents[i]! / vaeScaling;
+  const vaeOut = await vaeDecoder.run({
+    latent_sample: floatFeed(vaeDecoder, "latent_sample", scaledLatents, latentDims),
+  });
+  const imageChw = toF32(firstOutput(vaeDecoder, vaeOut));
+  return { rgba: chwToRgba(imageChw, size, size), width: size, height: size, seed };
+}
+
+export class SdTurboEngine implements BuiltinEngine {
   private _busy = false;
   private _disposed = false;
 
@@ -136,32 +205,17 @@ export class SdTurboEngine {
       // zurück nach f16 — je nachdem, was das UNet deklariert.
       const hiddenF32 = toF32(hidden);
 
-      const n = LATENT.c * LATENT.h * LATENT.w;
+      const latentDims = [1, LATENT.c, LATENT.h, LATENT.w] as const;
       const schedule = makeSchedule(req.steps);
-      let latents = gaussianArray(req.seed, n);
-      for (let i = 0; i < n; i++) latents[i] = latents[i]! * schedule.initNoiseSigma;
-
-      for (let i = 0; i < schedule.timesteps.length; i++) {
-        const sigma = schedule.sigmas[i]!;
-        const scaled = scaleInput(latents, sigma);
-        const unetOut = await this.sessions.unet.run({
-          sample: floatFeed(this.sessions.unet, "sample", scaled, [1, LATENT.c, LATENT.h, LATENT.w]),
-          timestep: timestepFeed(this.sessions.unet, "timestep", schedule.timesteps[i]!),
-          encoder_hidden_states: floatFeed(this.sessions.unet, "encoder_hidden_states", hiddenF32, hidden.dims),
-        });
-        const noisePred = toF32(firstOutput(this.sessions.unet, unetOut));
-        const stepNoise = gaussianArray(req.seed + 1000 + i, n); // Ancestral-Noise, seed-abgeleitet
-        latents = schedulerStep(noisePred, latents, i, schedule.sigmas, stepNoise);
-        onProgress?.(i + 1, schedule.timesteps.length);
-      }
-
-      const scaledLatents = new Float32Array(n);
-      for (let i = 0; i < n; i++) scaledLatents[i] = latents[i]! / VAE_SCALING;
-      const vaeOut = await this.sessions.vaeDecoder.run({
-        latent_sample: floatFeed(this.sessions.vaeDecoder, "latent_sample", scaledLatents, [1, LATENT.c, LATENT.h, LATENT.w]),
-      });
-      const imageChw = toF32(firstOutput(this.sessions.vaeDecoder, vaeOut));
-      return { rgba: chwToRgba(imageChw, IMAGE_SIZE, IMAGE_SIZE), width: IMAGE_SIZE, height: IMAGE_SIZE, seed: req.seed };
+      const latents = await runDiffusion(
+        this.sessions.unet,
+        schedule,
+        req.seed,
+        latentDims,
+        { encoder_hidden_states: floatFeed(this.sessions.unet, "encoder_hidden_states", hiddenF32, hidden.dims) },
+        onProgress,
+      );
+      return await decodeLatents(this.sessions.vaeDecoder, latents, latentDims, VAE_SCALING, IMAGE_SIZE, req.seed);
     } finally {
       this._busy = false;
     }

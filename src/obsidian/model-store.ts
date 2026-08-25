@@ -12,7 +12,7 @@
 // einem ReadableStream; XHR hielte die ganze Datei im Puffer. Globales `fetch` ist gebannt
 // (no-restricted-globals) und bleibt es. Der Store-Linter (npm run lint) hat 2026-08-19 bestätigt:
 // Member-Access ist sauber.
-import { assetUrl, cacheKey, type AssetFile, type AssetKey } from "../core/model-manifest";
+import { assetUrl, cacheKey, legacyCacheKey, type AssetFile, type AssetKey } from "../core/model-manifest";
 import { streamIntoCache, type CacheLike } from "../vendor/kit/cache-download";
 import { Sha256 } from "../vendor/kit/sha256";
 
@@ -167,5 +167,37 @@ export class ModelStore {
   async deleteAll(files: readonly AssetFile[]): Promise<void> {
     const cache = await this.deps.openCache();
     for (const f of files) await cache.delete(cacheKey(f));
+  }
+
+  /** Einmalige Cache-zu-Cache-Migration bestehender SD-Turbo-Downloads auf die
+   *  modell-qualifizierten Schluessel (Ruling Task 5 aenderte `cacheKey()` — C2-Fix,
+   *  Final-Review 2026-08-24). Ohne sie faende `isComplete()` die ~2,5 GB jeder
+   *  Bestandsinstallation nie wieder (`cachedKeys()` prueft nur noch den NEUEN Schluessel),
+   *  das Panel boete einen unnoetigen 2,5-GB-Neudownload an, und die alten Bytes blieben fuer
+   *  immer verwaist im Cache (`deleteAll()` kennt ebenfalls nur die neuen Schluessel).
+   *
+   *  Reine Cache-zu-Cache-Operation — `cache.match`/`put`/`delete`, KEIN `fetchFn`-Aufruf, kein
+   *  Byte ueber das Netz. Das haelt die strukturelle Zusage ein, dass `ModelStore.download()`
+   *  (aufgerufen einzig von `startDownload()`) der einzige Ladepfad bleibt: `getBuffer()`/
+   *  `getText()` gehen weiterhin ueber `matchOrThrow()`, das bei einem Fehltreffer wirft statt
+   *  zu laden — diese Methode aendert nur, UNTER WELCHEM SCHLUESSEL ein bereits vorhandener
+   *  Eintrag zu finden ist.
+   *
+   *  Idempotent: ein zweiter Aufruf findet unter dem neuen Schluessel bereits einen Treffer
+   *  (`if (await cache.match(newKey)) continue`) und tut nichts mehr. Fuer Dateien ohne
+   *  Modell-Praefix (aktuell nur `ort_wasm`) ist `legacyCacheKey(f) === cacheKey(f)` — der
+   *  erste Guard ueberspringt sie. */
+  async migrateLegacyKeys(files: readonly AssetFile[]): Promise<void> {
+    const cache = await this.deps.openCache();
+    for (const f of files) {
+      const newKey = cacheKey(f);
+      const oldKey = legacyCacheKey(f);
+      if (oldKey === newKey) continue; // kein Modell-Praefix betroffen — nichts zu migrieren
+      if (await cache.match(newKey)) continue; // schon migriert oder frisch heruntergeladen
+      const res = await cache.match(oldKey);
+      if (!res) continue; // nie heruntergeladen — nichts zu migrieren
+      await cache.put(newKey, res);
+      await cache.delete(oldKey);
+    }
   }
 }

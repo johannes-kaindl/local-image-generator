@@ -9,7 +9,18 @@ import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
-import { BUILTIN_MODEL, allAssets } from "./core/model-manifest";
+import { isOutOfMemoryError } from "./core/engine-errors";
+import {
+  assetsFor,
+  BUILTIN_MODELS,
+  DEFAULT_BUILTIN_MODEL_ID,
+  modelById,
+  RUNTIME_WASM,
+  totalBytes,
+  type AssetFile,
+  type BuiltinModel,
+  type BuiltinModelId,
+} from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
@@ -21,11 +32,11 @@ import {
   type ImageGenerationApi,
 } from "./core/plugin-api";
 import { parseOptionsModel, ProgressPoller, A1111Client, type ImageBackend } from "./core/txt2img";
-import type { EngineState, GenParams, PanelState, ServerState } from "./core/viewmodel";
+import { formatBytes, type EngineState, type GenParams, type PanelState, type ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
-import { LocalEngineBackend } from "./obsidian/local-engine";
+import { LocalEngineBackend, SessionBuildTimeout } from "./obsidian/local-engine";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
 import { base64OfDataUrl, dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
@@ -58,12 +69,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   private localEngine: LocalEngineBackend | null = null;
   private downloadAbort: AbortController | null = null;
   onEngineStateChanged: (() => void) | null = null;
-  // `mode` fehlt hier bewusst: es IST settings.engine und wird in getPanelState() abgeleitet
+  // `mode`, `builtinModel`, `showModelPicker` fehlen hier bewusst: sie SIND settings.engine /
+  // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
-  private state: Omit<PanelState, "mode"> = {
+  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> = {
     initImage: null,
     denoising: null,
+    downloadedModels: [],
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
     run: { kind: "idle" },
@@ -88,6 +101,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Closure ueber `this`, keine braucht die geladenen Settings zum Bauzeitpunkt.
     this.api = createImageGenerationApi({
       getMode: () => this.settings.engine,
+      builtinModel: () => this.settings.builtinModel,
       readiness: () => this.apiReadiness(),
       isBusy: () => this.isBusy(),
       harden: (input) => hardenParams(input, this.hardenContext()),
@@ -123,8 +137,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const host: ViewHost = {
       getPanelState: () => {
         this.state.editorActive = this.app.workspace.getActiveViewOfType(MarkdownView)?.editor !== undefined;
-        // Die einzige Stelle, an der `mode` entsteht — abgeleitet, nicht gespiegelt.
-        return { ...this.state, mode: this.settings.engine };
+        // Die einzige Stelle, an der `mode`/`builtinModel`/`showModelPicker` entstehen —
+        // abgeleitet, nicht gespiegelt.
+        return {
+          ...this.state,
+          mode: this.settings.engine,
+          builtinModel: this.settings.builtinModel,
+          showModelPicker: this.settings.showModelPicker,
+        };
       },
       getSettings: () => this.settings,
       setPrompt: (p) => {
@@ -153,6 +173,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       recheckServer: () => void this.checkServer(),
       downloadModel: () => void this.startDownload(),
       cancelDownload: () => this.cancelDownload(),
+      setBuiltinModel: (id) => void this.setBuiltinModel(id),
       saveImage: (mode) => void this.saveImage(mode),
       openSettings: () => {
         const setting = (this.app as unknown as { setting: { open(): void; openTabById(id: string): void } }).setting;
@@ -211,6 +232,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.addRibbonIcon("image-plus", t("view.title"), () => void this.activateView());
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
+    // Cache-Migration (C2-Fix, Final-Review 2026-08-24) VOR dem ersten isComplete()-Blick:
+    // Ruling Task 5 qualifizierte die Cache-Schluessel modell-spezifisch — eine Bestands-
+    // installation traegt ihre ~2,5 GB SD-Turbo noch unter dem alten, flachen Schluessel.
+    // Awaited, damit refreshEngineState() gleich danach den migrierten Stand sieht statt eine
+    // Race gegen die eigene Migration zu laufen und einen 2,5-GB-Neudownload anzubieten.
+    await this.modelStore.migrateLegacyKeys(assetsFor("sd-turbo"));
     if (this.settings.engine === "builtin") void this.refreshEngineState();
     else void this.checkServer();
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
@@ -266,8 +293,27 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   private currentModelName(): string {
     return this.settings.engine === "builtin"
-      ? BUILTIN_MODEL.id
+      ? this.settings.builtinModel
       : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
+  }
+
+  /** Das gewaehlte eingebaute Modell (settings.builtinModel) — abgeleitet, keine zweite
+   *  Kopie. Oeffentlich: der Settings-Tab (Task 11) zeigt Name/Groesse/Lizenz darueber an. */
+  activeModel(): BuiltinModel {
+    return modelById(this.settings.builtinModel);
+  }
+
+  /** Alle Dateien des gewaehlten Modells inkl. Runtime-WASM — der Cache-/Download-Umfang fuer
+   *  refreshEngineState()/startDownload(). removeModel() nutzt bewusst NUR assetsFor(id): die
+   *  Runtime gehoert keinem Modell allein und darf beim Loeschen eines Modells nicht mit weg. */
+  private activeFiles(): AssetFile[] {
+    return [...assetsFor(this.settings.builtinModel), RUNTIME_WASM];
+  }
+
+  /** Welche eingebauten Modelle vollstaendig im Cache liegen — fuer den Settings-Tab (Task 11),
+   *  der pro Modell Download/Loeschen anbietet. */
+  get downloadedModels(): BuiltinModelId[] {
+    return this.state.downloadedModels;
   }
 
   /** Der EINE Kontext, unter dem gehaertet wird — Panel wie Provider-API. Zwei Kontexte
@@ -278,6 +324,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       mode: this.settings.engine,
       defaultSteps: this.settings.defaultSteps,
       model: this.currentModelName(),
+      builtinModel: this.settings.builtinModel,
       now: new Date(),
       randomSeed: () => Math.floor(Math.random() * 2 ** 31),
     };
@@ -395,17 +442,41 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.setEngineState({ kind: "gpu-missing", reason: gpu });
       return;
     }
-    const complete = await this.modelStore.isComplete(allAssets()).catch(() => false);
+    const complete = await this.modelStore.isComplete(this.activeFiles()).catch(() => false);
     if (this.unloaded) return;
+    // Welche Modelle ueberhaupt im Cache liegen — unabhaengig vom aktiven, fuer den
+    // Settings-Tab (Task 11). Ohne RUNTIME_WASM: die zaehlt nicht als Teil eines Modells.
+    const geladen: BuiltinModelId[] = [];
+    for (const id of Object.keys(BUILTIN_MODELS) as BuiltinModelId[]) {
+      if (await this.modelStore.isComplete(assetsFor(id)).catch(() => false)) geladen.push(id);
+    }
+    if (this.unloaded) return;
+    this.state.downloadedModels = geladen;
     this.setEngineState({ kind: complete ? "ready" : "not-downloaded" });
   }
 
-  /** Opt-in-Download aller fehlenden Assets (Spec 0.6 §4: ohne Klick fließt kein Byte). */
+  /** Opt-in-Download aller fehlenden Assets des GEWAEHLTEN Modells (Spec 0.6 §4: ohne Klick
+   *  fließt kein Byte). Vor dem grossen SDXL-Turbo-Download fragt zusaetzlich ein
+   *  Bestaetigungsdialog (Task 12) — SD-Turbo (Default) bleibt ohne Rueckfrage, wie bisher.
+   *  Abbrechen (Knopf, Escape, Klick daneben) laedt kein Byte: confirmAction() loest bei
+   *  jedem dieser drei Wege mit `false` auf. */
   async startDownload(): Promise<void> {
     if (this.downloadAbort) return;
+    const m = this.activeModel();
+    if (m.id !== DEFAULT_BUILTIN_MODEL_ID) {
+      const bytes = totalBytes(this.activeFiles());
+      const ok = await confirmAction(this.app, {
+        title: t("confirm.bigModel.title", m.label),
+        message: t("confirm.bigModel.body", formatBytes(bytes)),
+        confirmLabel: t("confirm.bigModel.cta"),
+        cancelLabel: t("modal.cancel"),
+        warning: false,
+      });
+      if (!ok) return; // kein Byte
+    }
     const ac = new AbortController();
     this.downloadAbort = ac;
-    const files = allAssets();
+    const files = this.activeFiles();
     try {
       await this.modelStore.download(
         files,
@@ -444,8 +515,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.downloadAbort?.abort();
   }
 
-  /** Alle Assets aus dem Cache entfernen (Settings, nach Bestätigung); GPU-Sessions dazu frei. */
-  async removeModel(): Promise<boolean> {
+  /** Assets EINES Modells aus dem Cache entfernen (Settings, nach Bestätigung); GPU-Sessions
+   *  dazu frei. Default = das gewaehlte Modell (Ruf ohne Argument, wie der bestehende
+   *  Settings-Knopf ihn nutzt). Loescht bewusst OHNE RUNTIME_WASM — die gehoert keinem Modell
+   *  allein und darf dem jeweils anderen Modell nicht unter den Fuessen weggezogen werden. */
+  async removeModel(id: BuiltinModelId = this.settings.builtinModel): Promise<boolean> {
     if (this.isBusy()) {
       new Notice(t("notice.busy"));
       return false;
@@ -454,22 +528,46 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const e = this.localEngine;
     this.localEngine = null;
     await e?.dispose();
-    await this.modelStore.deleteAll(allAssets());
+    await this.modelStore.deleteAll(assetsFor(id));
     await this.refreshEngineState();
     return true;
   }
 
   private ensureLocalEngine(): LocalEngineBackend {
     if (this.localEngine) return this.localEngine;
-    const be = new LocalEngineBackend({
-      store: this.modelStore,
-      createSession: createOrtSession,
-      initRuntime: initOrt,
-      checkGpu,
-      encodePng: rgbaToDataUrl,
-    });
+    const be = new LocalEngineBackend(
+      {
+        store: this.modelStore,
+        createSession: createOrtSession,
+        initRuntime: initOrt,
+        checkGpu,
+        encodePng: rgbaToDataUrl,
+      },
+      this.activeModel(),
+    );
     this.localEngine = be;
     return be;
+  }
+
+  /** Modell wechseln (Settings, Task 10): dieselbe Sperre wie setEngine() — ein Wechsel darf
+   *  die GPU-Sessions nicht unter einem laufenden Panel- ODER API-Lauf wegziehen (isBusy()
+   *  deckt beide). Schaltet NICHT automatisch zurueck, wenn das neue Modell fehlt: das
+   *  Panel zeigt dann seinen Download-Aufruf (Spec §4, „ohne Klick fließt kein Byte" gilt
+   *  auch hier — dieser Wechsel selbst laedt nichts). */
+  async setBuiltinModel(id: BuiltinModelId): Promise<void> {
+    if (this.isBusy()) {
+      new Notice(t("notice.busy"));
+      return;
+    }
+    if (id === this.settings.builtinModel) return;
+    this.cancelDownload();
+    const e = this.localEngine;
+    this.localEngine = null;
+    await e?.dispose();
+    this.settings.builtinModel = id;
+    await this.saveSettings();
+    await this.refreshEngineState();
+    this.refreshViews();
   }
 
   async saveSettings(): Promise<void> {
@@ -627,7 +725,20 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // Fehler ohnehin als Rueckgabewert und meldet ihn seinem Nutzer selbst; unsere
       // Statuszeile gehoert dem eigenen Klick. (Ruling 2026-08-23, Task „Folgearbeit aus dem
       // Provider-API-Abschlussreview" — Alternative war ein dritter i18n-Key.)
-      this.state.run = external ? { kind: "idle" } : { kind: "error", message: msg };
+      // Spec §8 Punkt 1: ein Session-Aufbau, der an knappem Speicher scheitert, bekommt einen
+      // lesbaren Satz statt der rohen ORT-Fehlermeldung — nur im eingebauten Modus, nur bei
+      // erkanntem Signal (`isOutOfMemoryError`, src/core/engine-errors.ts). Erkennt sie nichts,
+      // bleibt die rohe Meldung stehen — lesbar, nur nicht freundlich; nie ein Ewig-Spinner,
+      // weil dieser catch-Zweig ohnehin greift, sobald `createOrtSession` wirft/verwirft.
+      // Spec §8 Punkt 2: haengt `createSession` laenger als `SESSION_BUILD_TIMEOUT_MS`, wirft
+      // `local-engine.ts`s Wachhund `SessionBuildTimeout` — eigener Satz statt „nicht genug
+      // Speicher", weil ein Timeout ein anderer Befund ist (koennte auch ein haengender
+      // Treiber sein, nicht nur GPU-Speicher).
+      const displayMsg =
+        builtin && e instanceof SessionBuildTimeout ? t("status.sessionTimeout")
+        : builtin && isOutOfMemoryError(e) ? t("status.outOfMemory")
+        : msg;
+      this.state.run = external ? { kind: "idle" } : { kind: "error", message: displayMsg };
       // Fehlschlag kann Erreichbarkeits-Ursache haben → Serverstatus neu prüfen (fire-and-forget).
       if (!builtin) void this.checkServer();
       return { ok: false, message: msg };

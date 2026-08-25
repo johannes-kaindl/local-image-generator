@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
 import { buildViewModel, formatBytes, formatElapsed, type GenParams, type PanelState } from "../src/core/viewmodel";
+import { assetsFor, RUNTIME_WASM, totalBytes } from "../src/core/model-manifest";
 
 beforeEach(() => {
   registerI18n();
@@ -25,6 +26,9 @@ const baseParams: GenParams = {
 const base: PanelState = {
   initImage: null,
   denoising: null,
+  downloadedModels: [],
+  builtinModel: "sd-turbo",
+  showModelPicker: false,
   mode: "server",
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
@@ -39,6 +43,9 @@ const base: PanelState = {
   width: 512,
   height: 512,
 };
+
+/** Basis + Overrides — spart das Ausschreiben aller PanelState-Felder in jedem Test. */
+const stateOf = (overrides: Partial<PanelState>): PanelState => ({ ...base, ...overrides });
 
 describe("buildViewModel — server state", () => {
   it("unconfigured: Fehler-Status, Empty mit Settings-CTA, Generate disabled", () => {
@@ -190,13 +197,15 @@ describe("buildViewModel — builtin engine (0.6)", () => {
 
   it("server-Modus: alle Regler sichtbar, Steps 1–50", () => {
     expect(buildViewModel(base).controls).toEqual({
-      negative: true, cfg: true, size: true, initImage: true, denoising: false, stepsMin: 1, stepsMax: 50,
+      negative: true, cfg: true, size: true, sizes: null, initImage: true, denoising: false,
+      modelPicker: false, stepsMin: 1, stepsMax: 50,
     });
   });
   it("builtin/not-downloaded: Regler reduziert, CTA download, Generate gesperrt — der Server-Zustand ist egal", () => {
     const vm = buildViewModel(builtin);
     expect(vm.controls).toEqual({
-      negative: false, cfg: false, size: false, initImage: false, denoising: false, stepsMin: 1, stepsMax: 4,
+      negative: false, cfg: false, size: false, sizes: [{ width: 512, height: 512 }], initImage: false,
+      denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 4,
     });
     expect(vm.empty?.ctaAction).toBe("download");
     expect(vm.status.cls).toBe("is-error");
@@ -256,6 +265,36 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     const img = { dataUrl: "d", params: { ...baseParams, cfg: 1, model: "sd-turbo" } };
     expect(buildViewModel({ ...builtin, engine: { kind: "ready" }, image: img }).generateEnabled).toBe(false);
     expect(buildViewModel({ ...builtin, engine: { kind: "ready" }, image: img, seed: 2 }).generateEnabled).toBe(true);
+  });
+  // Regression: recipeUnchanged verglich frueher IMMER gegen das feste Default-Modell
+  // (BUILTIN_MODEL.id === "sd-turbo") statt gegen das GEWAEHLTE (state.builtinModel) — mit
+  // sdxl-turbo aktiv waere Generate nach einem unveraenderten Rezept nie gesperrt gewesen.
+  it("recipeUnchanged sperrt auch mit sdxl-turbo als gewaehltem Modell, nicht nur mit dem Default", () => {
+    const sdxlState = { ...builtin, builtinModel: "sdxl-turbo" as const, engine: { kind: "ready" as const } };
+    const matchingImg = { dataUrl: "d", params: { ...baseParams, cfg: 1, model: "sdxl-turbo" } };
+    const staleImg = { dataUrl: "d", params: { ...baseParams, cfg: 1, model: "sd-turbo" } };
+    expect(buildViewModel({ ...sdxlState, image: matchingImg }).generateEnabled).toBe(false);
+    expect(buildViewModel({ ...sdxlState, image: staleImg }).generateEnabled).toBe(true);
+  });
+  // Review-Befund (14a-Fixrunde): engineEmpty() rechnete die "not-downloaded"-Groesse ueber
+  // allAssets() — das ist per Definition IMMER das Default-Modell (sd-turbo). Mit sdxl-turbo
+  // gewaehlt und nicht gecacht zeigte Panel und Download-Knopf 2,5 GB und luden tatsaechlich
+  // 6,4 GB. Der Name war zusaetzlich als Literal "SD-Turbo" im String hartkodiert.
+  it("builtin/not-downloaded nennt Name UND Groesse des GEWAEHLTEN Modells, nicht des Default", () => {
+    const sdTurboSize = formatBytes(totalBytes([...assetsFor("sd-turbo"), RUNTIME_WASM]));
+    const sdxlTurboSize = formatBytes(totalBytes([...assetsFor("sdxl-turbo"), RUNTIME_WASM]));
+    expect(sdxlTurboSize).not.toBe(sdTurboSize); // die Faelle muessen sich ueberhaupt unterscheiden
+
+    const sdVm = buildViewModel({ ...builtin, builtinModel: "sd-turbo" });
+    expect(sdVm.empty?.text).toContain("SD-Turbo");
+    expect(sdVm.empty?.text).toContain(sdTurboSize);
+    expect(sdVm.empty?.ctaLabel).toContain(sdTurboSize);
+
+    const sdxlVm = buildViewModel({ ...builtin, builtinModel: "sdxl-turbo" });
+    expect(sdxlVm.empty?.text).toContain("SDXL-Turbo");
+    expect(sdxlVm.empty?.text).toContain(sdxlTurboSize);
+    expect(sdxlVm.empty?.ctaLabel).toContain(sdxlTurboSize);
+    expect(sdxlVm.empty?.text).not.toContain(sdTurboSize);
   });
   it("formatBytes", () => {
     expect(formatBytes(812e6)).toBe("812 MB");
@@ -328,5 +367,47 @@ describe("generateEnabled kennt img2img", () => {
     const stand: PanelState = { ...fertig, image: { dataUrl: "data:,", params: gerechnet },
                                 initImage: null, denoising: null };
     expect(buildViewModel(stand).generateEnabled).toBe(true);
+  });
+});
+
+describe("Modell-Picker im Panel (Spec 0.9 §6.2)", () => {
+  const basis = { ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" as const };
+
+  it("unsichtbar, wenn der Toggle aus ist — auch bei zwei geladenen Modellen", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: false, downloadedModels: ["sd-turbo", "sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(false);
+  });
+
+  it("unsichtbar, wenn nur ein Modell geladen ist — auch mit Toggle an", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: true, downloadedModels: ["sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(false);
+  });
+
+  it("sichtbar erst, wenn beide Bedingungen erfuellt sind", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: true, downloadedModels: ["sd-turbo", "sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(true);
+    expect(vm.modelOptions.map((o) => o.id)).toEqual(["sd-turbo", "sdxl-turbo"]);
+  });
+
+  it("listet NUR geladene Modelle — ein Panel-Klick darf nie einen Download ausloesen", () => {
+    const vm = buildViewModel({ ...basis, showModelPicker: true, downloadedModels: ["sdxl-turbo"] });
+    expect(vm.modelOptions.every((o) => o.id === "sdxl-turbo")).toBe(true);
+  });
+
+  it("im Server-Modus gibt es keinen Picker", () => {
+    const vm = buildViewModel({ ...stateOf({ mode: "server" }), showModelPicker: true, downloadedModels: ["sd-turbo", "sdxl-turbo"] });
+    expect(vm.controls.modelPicker).toBe(false);
+  });
+});
+
+describe("Groessen-Zeile (Spec 0.9 §6.3)", () => {
+  it("bei sd-turbo weg, bei sdxl-turbo da", () => {
+    expect(buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sd-turbo" }).controls.size).toBe(false);
+    expect(buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" }).controls.size).toBe(true);
+  });
+
+  it("die Sichtbarkeit haengt an sizes.length, nicht am Modellnamen", () => {
+    const vm = buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" });
+    expect(vm.controls.sizes).toHaveLength(2);
   });
 });

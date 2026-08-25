@@ -2,7 +2,8 @@
 // Plugin anderen Obsidian-Plugins als `app.plugins.plugins["local-image-generator"].api`
 // anbietet. Pure Fassade ueber injizierte Abhaengigkeiten (Muster: vault-rag/src/plugin_api.ts,
 // LocalEngineDeps) — testbar ohne Obsidian, keine eigene Entscheidung ausser Uebersetzung.
-import { backendCapabilities } from "./generation";
+import { backendCapabilities, type SizeOption } from "./generation";
+import type { BuiltinModelId } from "./model-manifest";
 import type { HardenInput } from "./params";
 import type { GenParams } from "./viewmodel";
 import type { EngineChoice } from "./settings";
@@ -82,12 +83,20 @@ export interface ApiStatus {
     fixedSize: { width: number; height: number } | null;
     /** Kann dieses Backend von einer Vorlage aus weiterrechnen (img2img)? */
     initImage: boolean;
+    /** Die Groessen, aus denen ueberhaupt gewaehlt werden darf. `null` = freie Wahl
+     *  (Server-Modus). Im builtin-Modus die `sizes`-Liste des AKTIVEN Modells — bei SD-Turbo
+     *  ein Eintrag (deckt sich mit `fixedSize`), bei SDXL-Turbo zwei (`fixedSize` ist dann
+     *  null, weil keine der beiden Größen allein die Zusage traegt). */
+    sizes: readonly SizeOption[] | null;
   };
 }
-// Konkret: builtin → { negativePrompt: false, cfg: false, maxSteps: BUILTIN_MODEL.steps.max (4),
-//                      fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size } (512x512) }
-//          server  → { negativePrompt: true,  cfg: true,  maxSteps: STEPS.max (50),
-//                      fixedSize: null }
+// Konkret (builtin haengt vom AKTIVEN Modell ab, deps.builtinModel()):
+//   sd-turbo   → { negativePrompt: false, cfg: false, maxSteps: 4,
+//                  fixedSize: { width: 512, height: 512 }, sizes: [512x512] }
+//   sdxl-turbo → { negativePrompt: false, cfg: false, maxSteps: 4,
+//                  fixedSize: null, sizes: [512x512, 1024x1024] }
+//   server     → { negativePrompt: true, cfg: true, maxSteps: STEPS.max (50),
+//                  fixedSize: null, sizes: null }
 // Die Werte stammen aus denselben Konstanten, die das Panel benutzt (core/generation.ts,
 // core/model-manifest.ts) — nicht aus einer zweiten Liste, die auseinanderlaufen kann.
 
@@ -114,6 +123,10 @@ export interface ImageGenerationApi {
  *  testbar ist (Muster: LocalEngineDeps). */
 export interface ApiDeps {
   getMode(): EngineChoice;
+  /** Welches eingebaute Modell aktiv ist (`settings.builtinModel`) — `backendCapabilities`
+   *  braucht es, um zwischen SD-Turbos einer Größe und SDXL-Turbos zweien zu unterscheiden.
+   *  Im Server-Modus ungenutzt (der Server waehlt selbst). */
+  builtinModel(): BuiltinModelId;
   /** Netzfreie Bereitschaft. `main.ts` leitet sie aus state.engine/state.server ab —
    *  status() macht selbst KEINEN Netzaufruf.
    *  Als Union, nicht als flaches Objekt: `{ ready: false }` OHNE Grund waere ein Zustand,
@@ -170,7 +183,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
     apiVersion: IMAGE_GENERATION_API_VERSION,
 
     status(): ApiStatus {
-      const caps = backendCapabilities(deps.getMode());
+      const caps = backendCapabilities(deps.getMode(), deps.builtinModel());
       const r = deps.readiness();
       // busy schlaegt jede andere Bereitschaft: das Backend mag geladen sein, aber es
       // rechnet gerade — ein Konsument, der jetzt anfragt, bekaeme eine Absage.
@@ -186,6 +199,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
           maxSteps: caps.maxSteps,
           fixedSize: caps.fixedSize,
           initImage: caps.initImage,
+          sizes: caps.sizes,
         },
       };
     },

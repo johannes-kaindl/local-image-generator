@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
-import { BUILTIN_MODEL } from "../src/core/model-manifest";
+import { BUILTIN_MODELS } from "../src/core/model-manifest";
 
 describe("generation constants (Spec §4)", () => {
   it("SIZES enthält 7 Einträge", () => {
@@ -34,25 +34,58 @@ describe("generation constants (Spec §4)", () => {
 
 describe("backendCapabilities", () => {
   it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt", () => {
-    expect(backendCapabilities("builtin")).toEqual({
+    expect(backendCapabilities("builtin", "sd-turbo")).toEqual({
       negativePrompt: false,
       cfg: false,
       initImage: false,
-      minSteps: BUILTIN_MODEL.steps.min,
-      maxSteps: BUILTIN_MODEL.steps.max,
-      fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
+      minSteps: BUILTIN_MODELS["sd-turbo"].steps.min,
+      maxSteps: BUILTIN_MODELS["sd-turbo"].steps.max,
+      fixedSize: BUILTIN_MODELS["sd-turbo"].sizes[0],
+      sizes: BUILTIN_MODELS["sd-turbo"].sizes,
     });
   });
-  it("server kann alles, was das Panel anbietet", () => {
-    expect(backendCapabilities("server")).toEqual({
-      negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null,
+  it("server kann alles, was das Panel anbietet (Modellargument ist Pflicht, aber im Server-Zweig unbeachtet)", () => {
+    expect(backendCapabilities("server", "sd-turbo")).toEqual({
+      negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max,
+      fixedSize: null, sizes: null,
     });
+  });
+});
+
+describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
+  it("sd-turbo: eine feste Groesse, sizes hat einen Eintrag", () => {
+    const c = backendCapabilities("builtin", "sd-turbo");
+    expect(c.fixedSize).toEqual({ width: 512, height: 512 });
+    expect(c.sizes).toEqual([{ width: 512, height: 512 }]);
+    expect(c.maxSteps).toBe(4);
+  });
+
+  it("sdxl-turbo: fixedSize null, aber zwei erlaubte Groessen", () => {
+    const c = backendCapabilities("builtin", "sdxl-turbo");
+    expect(c.fixedSize).toBeNull();
+    expect(c.sizes).toEqual([{ width: 512, height: 512 }, { width: 1024, height: 1024 }]);
+  });
+
+  it("beide builtin-Modelle bleiben ohne Negativ-Prompt, CFG und img2img", () => {
+    for (const id of ["sd-turbo", "sdxl-turbo"] as const) {
+      const c = backendCapabilities("builtin", id);
+      expect(c.negativePrompt).toBe(false);
+      expect(c.cfg).toBe(false);
+      expect(c.initImage).toBe(false);
+    }
+  });
+
+  it("Server bleibt unveraendert: freie Wahl, sizes null", () => {
+    const c = backendCapabilities("server", "sd-turbo");
+    expect(c.fixedSize).toBeNull();
+    expect(c.sizes).toBeNull();
+    expect(c.maxSteps).toBe(50);
   });
 });
 
 describe("img2img-Faehigkeit", () => {
   it("nur der Server-Modus kann ein Ausgangsbild", () => {
-    expect(backendCapabilities("server").initImage).toBe(true);
-    expect(backendCapabilities("builtin").initImage).toBe(false);
+    expect(backendCapabilities("server", "sd-turbo").initImage).toBe(true);
+    expect(backendCapabilities("builtin", "sd-turbo").initImage).toBe(false);
   });
 });

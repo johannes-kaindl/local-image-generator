@@ -5,7 +5,8 @@
 // Key-Namespaces: cmd.* (Commands) · view.* (View-Titel/Tabs) · generate.* (Generate-Panel) ·
 // status.* (Statuszeile) · empty.* (Leerzustände) · notice.* (new Notice(...)) ·
 // settings.<gruppe>.* (Settings-Tab) · history.* (History-Panel) · modal.* (confirmAction) ·
-// picker.* (Vorlagenbild-Auswahl).
+// picker.* (Vorlagenbild-Auswahl) · confirm.* (Bestaetigungsdialoge ausserhalb von modal.*,
+// z. B. vor einem grossen Modell-Download).
 import { defineStrings } from "../vendor/kit/i18n";
 
 export const EN: Record<string, string> = {
@@ -66,8 +67,10 @@ export const EN: Record<string, string> = {
   "status.downloading": "Downloading {0} · {1} / {2} (file {3} of {4})",
   "status.verifying": "Verifying {0}…",
   "status.loadingModel": "Loading model into GPU… ({0})",
+  "status.outOfMemory": "Not enough memory for this model — free up GPU memory or switch to a server backend.",
+  "status.sessionTimeout": "Loading the model into the GPU is taking unusually long or got stuck silently. Click Generate to try again.",
   "empty.gpuMissing": "The built-in engine needs WebGPU with shader-f16. This Obsidian does not offer it — switch to a local image server in the settings.",
-  "empty.notDownloaded": "The built-in model (SD-Turbo, {0}) is not downloaded yet. Nothing is downloaded before you click.",
+  "empty.notDownloaded": "The built-in model ({0}, {1}) is not downloaded yet. Nothing is downloaded before you click.",
   "empty.downloadCta": "Download model ({0})",
   "empty.downloading": "Downloading the model. You can cancel; finished files are kept.",
   "empty.cancelCta": "Cancel download",
@@ -98,8 +101,8 @@ export const EN: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Built-in: SD-Turbo runs on your GPU inside Obsidian (model downloaded once on request, {0}). Server: a local Draw Things / A1111-compatible server with its own models and full controls.",
-  "settings.engine.builtin": "Built-in (SD-Turbo)",
+  "settings.engine.desc": "Built-in: an image model runs on your GPU inside Obsidian (downloaded once on request — see the model row below for which one and its size). Server: a local Draw Things / A1111-compatible server with its own models and full controls.",
+  "settings.engine.builtin": "Built-in (on your GPU)",
   "settings.engine.server": "Server (Draw Things / A1111)",
   "settings.model.name": "{0} model ({1})",
   "settings.model.desc": "{0} · {1}. Downloaded only when you click, verified by checksum, stored outside your vault.",
@@ -109,6 +112,13 @@ export const EN: Record<string, string> = {
   "settings.model.removeConfirm": "Remove the downloaded model ({0}) from this device? You can download it again any time.",
   "settings.model.removed": "Model removed.",
   "settings.model.ready": "Ready",
+  "settings.builtinModel.name": "Model",
+  "settings.builtinModel.desc": "Which built-in model this engine uses. Switching downloads nothing by itself — the download/remove row below follows the choice.",
+  "settings.showModelPicker.name": "Show model picker in the panel",
+  "settings.showModelPicker.desc": "Let the model also be switched from the Generate panel. Only shown once more than one built-in model is downloaded.",
+  "confirm.bigModel.title": "Download {0}?",
+  "confirm.bigModel.body": "Download {0}. Loading it onto the GPU for the first image briefly needs roughly double that — about 13 GB. On devices with 16 GB of memory that can get tight. Cancel downloads nothing.",
+  "confirm.bigModel.cta": "Download",
   "settings.advanced.heading": "Advanced",
   "settings.assetBaseUrl.name": "Download source",
   "settings.assetBaseUrl.desc": "Base URL of the model files. Default is the plugin's model repository; change it for a mirror or a local server. Downloaded files stay valid regardless of the URL.",
@@ -202,8 +212,10 @@ export const DE: Record<string, string> = {
   "status.downloading": "Lade {0} · {1} / {2} (Datei {3} von {4})",
   "status.verifying": "Prüfe {0}…",
   "status.loadingModel": "Lade Modell in die GPU… ({0})",
+  "status.outOfMemory": "Nicht genug Speicher für dieses Modell — GPU-Speicher freigeben oder auf einen Server umsteigen.",
+  "status.sessionTimeout": "Das Laden des Modells auf die GPU dauert ungewöhnlich lange oder ist lautlos hängen geblieben. Klicke auf Generieren, um es erneut zu versuchen.",
   "empty.gpuMissing": "Die eingebaute Engine braucht WebGPU mit shader-f16. Dieses Obsidian bietet das nicht — in den Einstellungen auf einen lokalen Bild-Server umstellen.",
-  "empty.notDownloaded": "Das eingebaute Modell (SD-Turbo, {0}) ist noch nicht heruntergeladen. Ohne Klick wird nichts geladen.",
+  "empty.notDownloaded": "Das eingebaute Modell ({0}, {1}) ist noch nicht heruntergeladen. Ohne Klick wird nichts geladen.",
   "empty.downloadCta": "Modell herunterladen ({0})",
   "empty.downloading": "Das Modell wird geladen. Abbrechen ist möglich; fertige Dateien bleiben.",
   "empty.cancelCta": "Download abbrechen",
@@ -234,8 +246,8 @@ export const DE: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Eingebaut: SD-Turbo rechnet auf deiner GPU in Obsidian (Modell einmal auf Wunsch geladen, {0}). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern.",
-  "settings.engine.builtin": "Eingebaut (SD-Turbo)",
+  "settings.engine.desc": "Eingebaut: ein Bildmodell rechnet auf deiner GPU in Obsidian (einmal auf Wunsch geladen — welches und wie groß steht in der Modell-Zeile darunter). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern.",
+  "settings.engine.builtin": "Eingebaut (auf deiner GPU)",
   "settings.engine.server": "Server (Draw Things / A1111)",
   "settings.model.name": "{0}-Modell ({1})",
   "settings.model.desc": "{0} · {1}. Wird nur nach Klick geladen, per Prüfsumme geprüft, außerhalb des Vaults abgelegt.",
@@ -245,6 +257,13 @@ export const DE: Record<string, string> = {
   "settings.model.removeConfirm": "Das heruntergeladene Modell ({0}) von diesem Gerät entfernen? Du kannst es jederzeit erneut laden.",
   "settings.model.removed": "Modell entfernt.",
   "settings.model.ready": "Bereit",
+  "settings.builtinModel.name": "Modell",
+  "settings.builtinModel.desc": "Welches eingebaute Modell diese Engine nutzt. Der Wechsel selbst lädt nichts — die Download-/Entfernen-Zeile darunter folgt der Wahl.",
+  "settings.showModelPicker.name": "Modellwahl im Panel anzeigen",
+  "settings.showModelPicker.desc": "Erlaubt den Modellwechsel auch aus dem Generate-Panel. Erscheint erst, wenn mehr als ein eingebautes Modell heruntergeladen ist.",
+  "confirm.bigModel.title": "{0} herunterladen?",
+  "confirm.bigModel.body": "{0} herunterladen. Beim ersten Bild braucht das Laden ins GPU-Gedächtnis kurzzeitig etwa das Doppelte — rund 13 GB. Auf Geräten mit 16 GB Arbeitsspeicher kann das knapp werden. Abbrechen lädt nichts.",
+  "confirm.bigModel.cta": "Herunterladen",
   "settings.advanced.heading": "Erweitert",
   "settings.assetBaseUrl.name": "Download-Quelle",
   "settings.assetBaseUrl.desc": "Basis-URL der Modell-Dateien. Standard ist das Modell-Repository des Plugins; für einen Spiegel oder lokalen Server änderbar. Geladene Dateien bleiben unabhängig von der URL gültig.",

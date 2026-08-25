@@ -1,6 +1,6 @@
 // Generations-Grenzen (Spec §4) — ersetzen den Modell-Katalog (models.ts stirbt in Task 8):
 // der Server hält die Modelle, das Plugin bietet generische, ehrliche Regler.
-import { BUILTIN_MODEL } from "./model-manifest";
+import { modelById, type BuiltinModelId } from "./model-manifest";
 import type { EngineChoice } from "./settings";
 
 export interface SizeOption { width: number; height: number; }
@@ -35,19 +35,44 @@ export interface BackendCapabilities {
    *  kann es nicht — ihr fehlt der VAE-Encoder (Roadmap-Posten 4a). */
   initImage: boolean;
   /** Nicht-null heißt: das Backend kann NUR diese eine Größe (SD-Turbo ist auf 512²
-   *  destilliert). null heißt: der Aufrufer wählt. */
+   *  destilliert). null heißt: der Aufrufer wählt — entweder frei (Server) oder aus `sizes`
+   *  (ein builtin-Modell mit mehr als einer Größe, z. B. SDXL-Turbo). */
   fixedSize: { width: number; height: number } | null;
+  /** Die Größen, aus denen ueberhaupt gewaehlt werden darf. `null` heißt: freie Wahl
+   *  (Server-Modus). Ein builtin-Modell traegt hier immer seinen eigenen `sizes`-Katalog —
+   *  bei genau einem Eintrag deckt sich das mit `fixedSize`, bei mehreren (SDXL-Turbo) ist
+   *  `fixedSize` null und `sizes` sagt, woraus gewaehlt wird. */
+  sizes: readonly SizeOption[] | null;
 }
 
-export function backendCapabilities(mode: EngineChoice): BackendCapabilities {
-  return mode === "builtin"
-    ? {
-        negativePrompt: false,
-        cfg: false,
-        initImage: false,
-        minSteps: BUILTIN_MODEL.steps.min,
-        maxSteps: BUILTIN_MODEL.steps.max,
-        fixedSize: { width: BUILTIN_MODEL.size, height: BUILTIN_MODEL.size },
-      }
-    : { negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max, fixedSize: null };
+/** Was ein Backend ehrlich kann. Im builtin-Modus haengt das Ergebnis vom AKTIVEN Modell ab
+ *  (SD-Turbo: eine Größe, SDXL-Turbo: zwei) — `model` ist deshalb PFLICHT, kein Default mehr
+ *  (Final-Review-Fund, 2026-08-24): ein still auf `DEFAULT_BUILTIN_MODEL_ID` zurueckfallender
+ *  Aufruf ohne zweites Argument war genau der Mechanismus, der C1 (`local-engine.ts` rechnete
+ *  SDXL-Turbo-Anfragen still auf SD-Turbos 512²) im Vorfeld unsichtbar hielt — ein Test, der
+ *  nur "ohne Modellargument gilt der Default" belegte, waere nach C1 eine Rechtfertigung fuer
+ *  denselben Fehler gewesen. `HardenContext.builtinModel` ist schon seit Task 12 Pflichtfeld;
+ *  jeder Produktionsaufrufer uebergab bereits ein Modell. Der Server-Zweig bleibt vom Argument
+ *  unberuehrt: er kennt kein "Modell" in diesem Sinn, der Server waehlt selbst. */
+export function backendCapabilities(mode: EngineChoice, model: BuiltinModelId): BackendCapabilities {
+  if (mode !== "builtin") {
+    return {
+      negativePrompt: true, cfg: true, initImage: true,
+      minSteps: STEPS.min, maxSteps: STEPS.max,
+      fixedSize: null, sizes: null,
+    };
+  }
+  const m = modelById(model);
+  const only = m.sizes.length === 1 ? (m.sizes[0] ?? null) : null;
+  return {
+    negativePrompt: false,
+    cfg: false,
+    initImage: false,
+    minSteps: m.steps.min,
+    maxSteps: m.steps.max,
+    // fixedSize bleibt die v1-Zusage „genau diese eine Groesse". Bei zwei erlaubten Groessen
+    // gibt es keine solche — dann null (= waehl selbst), und `sizes` sagt, woraus.
+    fixedSize: only,
+    sizes: m.sizes,
+  };
 }

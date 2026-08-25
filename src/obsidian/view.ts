@@ -4,6 +4,7 @@
 import { ItemView, WorkspaceLeaf, type ViewStateResult } from "obsidian";
 import type { HistoryEntry, LigSettings } from "../core/settings";
 import { t } from "../vendor/kit/i18n";
+import type { BuiltinModelId } from "../core/model-manifest";
 import type { PanelState } from "../core/viewmodel";
 import { GeneratePanel } from "./generate-panel";
 import { HistoryPanel } from "./history-panel";
@@ -41,6 +42,9 @@ export interface ViewHost {
   /** Eingebaute Engine: Modell-Download aus dem Panel starten/abbrechen (Spec 0.6 §6). */
   downloadModel(): void;
   cancelDownload(): void;
+  /** Eingebautes Modell wechseln (Panel-Dropdown, Task 12) — nur unter geladenen Modellen
+   *  waehlbar (Spec 0.9 §6.2): ein Panel-Klick loest nie einen Download aus. */
+  setBuiltinModel(id: BuiltinModelId): void;
   saveImage(mode: "create" | "insert"): void;
   openSettings(): void;
   restoreRecipe(entry: HistoryEntry): void;

@@ -42,10 +42,18 @@ function dtypeOf(v: OrtValue): "float32" | "float16" | "int32" | "int64" {
   return "int64";
 }
 
-export async function createOrtSession(buf: ArrayBuffer): Promise<Session> {
+export async function createOrtSession(
+  buf: ArrayBuffer,
+  externalData?: readonly { path: string; data: ArrayBuffer }[],
+): Promise<Session> {
   if (!initialized) throw new Error("ort-host: initOrt() must run before the first session");
   const session = await ort.InferenceSession.create(buf, {
     executionProviders: ["webgpu"],
+    // `path` MUSS der location-String aus dem ONNX sein — der reine Dateiname, den
+    // tools/convert/split_external_data.py gesetzt hat, nicht der Cache- oder HF-Pfad.
+    ...(externalData && externalData.length > 0
+      ? { externalData: externalData.map((e) => ({ path: e.path, data: e.data })) }
+      : {}),
   });
   // Deklarierte Eingabetypen aus den Session-Metadaten ziehen (ORT ≥1.21) —
   // die Engine passt ihre Feed-Dtypes daran an (fp16-Gewichte ≠ fp16-Inputs).

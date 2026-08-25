@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { hardenParams } from "../src/core/params";
-import { BUILTIN_MODEL } from "../src/core/model-manifest";
+import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { CFG, DEFAULT_SIZE, DENOISING, STEPS } from "../src/core/generation";
 
-const ctx = (mode: "builtin" | "server") => ({
+const ctx = (mode: "builtin" | "server", builtinModel: keyof typeof BUILTIN_MODELS = "sd-turbo") => ({
   mode,
   defaultSteps: 20,
-  model: mode === "builtin" ? BUILTIN_MODEL.id : "someModel.safetensors",
+  model: mode === "builtin" ? BUILTIN_MODELS[builtinModel].id : "someModel.safetensors",
+  builtinModel: BUILTIN_MODELS[builtinModel].id,
   now: new Date("2026-08-22T22:15:00"),
   randomSeed: () => 4242,
 });
@@ -31,11 +32,27 @@ describe("hardenParams", () => {
     );
     expect(p.negativePrompt).toBe("");
     expect(p.cfg).toBe(1);
-    expect(p.width).toBe(BUILTIN_MODEL.size);
-    expect(p.height).toBe(BUILTIN_MODEL.size);
+    expect(p.width).toBe(BUILTIN_MODELS["sd-turbo"].sizes[0]?.width);
+    expect(p.height).toBe(BUILTIN_MODELS["sd-turbo"].sizes[0]?.height);
     // Steps werden auf das Backend-Maximum geklemmt, nicht abgelehnt: ein Konsument, der 30
     // schickt, bekommt ein Bild mit 4 Schritten und erfaehrt das im Rueckgabewert.
-    expect(p.steps).toBe(BUILTIN_MODEL.steps.max);
+    expect(p.steps).toBe(BUILTIN_MODELS["sd-turbo"].steps.max);
+  });
+
+  // Regression (Review-Fund Task 12): backendCapabilities(ctx.mode) OHNE Modellargument fiel
+  // auf ihren Default-Parameter (SD-Turbo, fixedSize 512x512) zurueck und ueberschrieb JEDE
+  // Groesse eines anderen builtin-Modells still — mit SDXL-Turbo aktiv waere 1024x1024 nie
+  // durchgekommen, obwohl Panel und Settings-Tab es korrekt anbieten. ctx.builtinModel ist
+  // deshalb ein Pflichtfeld; dieser Test haelt fest, dass 1024x1024 mit sdxl-turbo als
+  // gewaehltem Modell tatsaechlich haertungsfest ist.
+  it("laesst 1024x1024 unveraendert, wenn sdxl-turbo das gewaehlte Modell ist", () => {
+    const p = hardenParams(
+      { prompt: "a cat", width: 1024, height: 1024, seed: 7 },
+      ctx("builtin", "sdxl-turbo"),
+    );
+    expect(p.width).toBe(1024);
+    expect(p.height).toBe(1024);
+    expect(p.model).toBe("sdxl-turbo");
   });
 
   it("wuerfelt den Seed, wenn keiner mitkommt", () => {
@@ -73,7 +90,35 @@ describe("hardenParams", () => {
     // builtin-Maximums (4) — ein ungeklemmter Fallback wuerde hier 20 zurueckgeben
     // (clampInt gibt seinen Fallback ungeprueft zurueck).
     const s = hardenParams({ prompt: "x", steps: Number.NaN }, ctx("builtin")).steps;
-    expect(s).toBe(BUILTIN_MODEL.steps.max);
+    expect(s).toBe(BUILTIN_MODELS["sd-turbo"].steps.max);
+  });
+
+  // I2 (Final-Review, 2026-08-24): hardenParams klemmte bisher nur `caps.fixedSize` — das ist
+  // `null` fuer jedes Modell mit mehr als einer erlaubten Groesse (SDXL-Turbo). Eine Anfrage
+  // mit 700x700 (in keinem Katalogeintrag) lief bis hierher unveraendert durch, obwohl die
+  // Spec fuer v1-API-Konsumenten ausdruecklich zusagt: "so wie sie heute schon Steps klemmt".
+  // Ohne diesen Fix waere lig-Engine.pickSize() (local-engine.ts) der einzige verbliebene
+  // Schutz — und der faellt bei einem Fehltreffer auf sizes[0] zurueck, nicht auf den
+  // naechstgelegenen Eintrag, und ist Provider-API-Konsumenten (die nur GenParams sehen)
+  // unsichtbar: die Notiz haette 700x700 behauptet, gerechnet worden waeren 512x512.
+  it("klemmt eine unpassende Groesse auf die naechstgelegene erlaubte (SDXL-Turbo, I2-Fix)", () => {
+    const p = hardenParams({ prompt: "x", width: 700, height: 700 }, ctx("builtin", "sdxl-turbo"));
+    expect(p.width).toBe(512);
+    expect(p.height).toBe(512);
+  });
+
+  it("Gleichstand zwischen zwei erlaubten Groessen entscheidet die Katalog-Reihenfolge (erster Treffer gewinnt)", () => {
+    // 768 liegt exakt in der Mitte zwischen SDXL-Turbos 512 und 1024 — quadrierter Abstand ist
+    // fuer beide identisch. sizes = [512, 1024] (Katalog-Reihenfolge) → 512 gewinnt.
+    const p = hardenParams({ prompt: "x", width: 768, height: 768 }, ctx("builtin", "sdxl-turbo"));
+    expect(p.width).toBe(512);
+    expect(p.height).toBe(512);
+  });
+
+  it("laesst eine unpassende Groesse im Server-Modus unveraendert (freie Wahl, sizes === null)", () => {
+    const p = hardenParams({ prompt: "x", width: 700, height: 900 }, ctx("server"));
+    expect(p.width).toBe(700);
+    expect(p.height).toBe(900);
   });
 
   it("faengt NaN/Infinity in cfg, width, height und seed ab, statt sie durchzureichen", () => {
@@ -163,7 +208,8 @@ describe("eine Haertung, zwei Aufrufer", () => {
   // Das Panel uebergibt alle Reglerwerte, ein Fremdplugin oft nur den Prompt. Beide gehen
   // durch dieselbe Haertung — dieser Test haelt fest, dass der schmale Auftrag dieselben
   // Backend-Wahrheiten bekommt wie der volle, statt eigener Defaults.
-  const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODEL.id,
+  const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODELS["sd-turbo"].id,
+              builtinModel: BUILTIN_MODELS["sd-turbo"].id,
               now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
 
   it("der schmale Auftrag erbt dieselben Backend-Wahrheiten wie der volle", () => {

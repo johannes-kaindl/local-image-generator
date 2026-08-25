@@ -1,8 +1,8 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
-import { backendCapabilities } from "./generation";
-import { allAssets, BUILTIN_MODEL, totalBytes } from "./model-manifest";
+import { backendCapabilities, type SizeOption } from "./generation";
+import { assetsFor, modelById, RUNTIME_WASM, totalBytes, type BuiltinModelId } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -74,6 +74,16 @@ export interface PanelState {
    *  Vorschaubild UND den naechsten Lauf — die Bytes werden EINMAL gelesen, damit eine
    *  inzwischen geaenderte Datei das Rezept nicht unterlaeuft). null = txt2img. */
   initImage: { path: string; dataUrl: string } | null;
+  /** Welche eingebauten Modelle vollstaendig im Cache liegen — vom aktiven `mode` unabhaengig,
+   *  bezieht sich immer auf alle Eintraege in BUILTIN_MODELS (Task 10). */
+  downloadedModels: BuiltinModelId[];
+  /** Das gewaehlte eingebaute Modell (settings.builtinModel) — wie `mode` abgeleitet aus den
+   *  Settings, hier aber Teil des States selbst (kein Omit noetig: es lebt nur in Settings,
+   *  nicht doppelt in main.ts' internem State). */
+  builtinModel: BuiltinModelId;
+  /** Will der Nutzer den Modell-Picker ueberhaupt sehen (settings.showModelPicker)? Nur EINE
+   *  von zwei unabhaengigen Bedingungen — die zweite ist `downloadedModels.length > 1`. */
+  showModelPicker: boolean;
   engine: EngineState;
   server: ServerState;
   run: RunState;
@@ -102,16 +112,27 @@ export interface PanelViewModel {
     negative: boolean;
     cfg: boolean;
     size: boolean;
+    /** Die Groessen, aus denen bei sichtbarer Groessen-Zeile gewaehlt werden darf — null im
+     *  Server-Modus (freie Wahl). `size` haengt an `sizes.length`, nicht am Modellnamen: ein
+     *  drittes Modell mit nur einer Groesse braucht dafuer keine neue Fallunterscheidung. */
+    sizes: readonly SizeOption[] | null;
     /** Kann das BACKEND ein Ausgangsbild? Steuert die ganze Vorlagen-Zeile. */
     initImage: boolean;
     /** Gibt es ueberhaupt etwas zu aendern? Steuert nur den Denoise-Regler — eine zweite,
      *  unabhaengige Frage: ohne Vorlage bewirkt er nichts und waere eine Attrappe. */
     denoising: boolean;
+    /** Zwei unabhaengige Bedingungen wie beim Denoise-Regler: will der Nutzer den Picker
+     *  (showModelPicker), UND gibt es ueberhaupt mehr als ein GELADENES Modell zu wechseln.
+     *  Nur builtin — der Server waehlt sein Modell selbst. */
+    modelPicker: boolean;
     stepsMin: number;
     stepsMax: number;
   };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
+  /** Optionen fuer den Modell-Picker — NUR geladene Modelle (Spec 0.9 §6.2): ein Panel-Klick
+   *  darf nie einen Download ausloesen. Leer/irrelevant, wenn `controls.modelPicker` false ist. */
+  modelOptions: { id: BuiltinModelId; label: string }[];
 }
 
 /** Bytes als "812 MB" / "1.7 GB" — für Download-Fortschritt und Modell-Zeile. */
@@ -139,7 +160,7 @@ function recipeUnchanged(s: PanelState): boolean {
   const p = s.image?.params;
   const modelUnchanged =
     s.mode === "builtin"
-      ? p?.model === BUILTIN_MODEL.id
+      ? p?.model === s.builtinModel
       : s.server.kind === "ok" && s.server.modelName !== null && s.server.modelName === p?.model;
   return (
     p !== undefined &&
@@ -209,8 +230,17 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
   const e = s.engine;
   if (e.kind === "gpu-missing") return { text: t("empty.gpuMissing"), ctaLabel: t("empty.noServerCta"), ctaAction: "settings" };
   if (e.kind === "not-downloaded" || e.kind === "error") {
-    const size = formatBytes(totalBytes(allAssets()));
-    return { text: t("empty.notDownloaded", size), ctaLabel: t("empty.downloadCta", size), ctaAction: "download" };
+    // Review-Befund: `allAssets()` liefert IMMER das Default-Modell (sd-turbo) — mit
+    // SDXL-Turbo gewaehlt und nicht gecacht zeigte die Zeile dessen 2,5 GB, laed aber
+    // tatsaechlich 6,4 GB. `assetsFor(s.builtinModel)` traegt keine Runtime-WASM
+    // (Vertrag von assetsFor, siehe AGENTS.md), die haengt jeder Aufrufer selbst an.
+    const model = modelById(s.builtinModel);
+    const size = formatBytes(totalBytes([...assetsFor(s.builtinModel), RUNTIME_WASM]));
+    return {
+      text: t("empty.notDownloaded", model.label, size),
+      ctaLabel: t("empty.downloadCta", size),
+      ctaAction: "download",
+    };
   }
   if (e.kind === "downloading" || e.kind === "verifying")
     return { text: t("empty.downloading"), ctaLabel: t("empty.cancelCta"), ctaAction: "cancel-download" };
@@ -223,13 +253,13 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     || s.run.kind === "loading-model" || s.run.kind === "external";
   const builtin = s.mode === "builtin";
   const backendReady = builtin ? s.engine.kind === "ready" : s.server.kind === "ok";
-  const caps = backendCapabilities(s.mode);
+  const caps = backendCapabilities(s.mode, s.builtinModel);
 
   const status = builtin ? engineStatus(s) : serverStatus(s);
   const empty = builtin ? engineEmpty(s, busy) : serverEmpty(s, busy);
 
   const modelLabel = builtin
-    ? t("generate.modelBuiltin", BUILTIN_MODEL.label)
+    ? t("generate.modelBuiltin", modelById(s.builtinModel).label)
     : s.server.kind === "ok" && s.server.modelName !== null
       ? t("generate.modelInfo", s.server.modelName)
       : t("generate.modelInApp");
@@ -243,13 +273,18 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     controls: {
       negative: caps.negativePrompt,
       cfg: caps.cfg,
-      // „Größe wählbar" ist genau die Abwesenheit einer festen Größe.
-      size: caps.fixedSize === null,
+      // Sichtbar, sobald es etwas zu WAEHLEN gibt — nicht „ist es Modell X".
+      size: caps.sizes === null || caps.sizes.length > 1,
+      sizes: caps.sizes,
       initImage: caps.initImage,
       denoising: caps.initImage && s.initImage !== null,
+      // Zwei unabhaengige Bedingungen, wie beim Denoise-Regler: will der Nutzer ihn, UND
+      // gibt es mindestens zwei GELADENE Modelle zu wechseln.
+      modelPicker: builtin && s.showModelPicker && s.downloadedModels.length > 1,
       stepsMin: caps.minSteps,
       stepsMax: caps.maxSteps,
     },
     modelLabel,
+    modelOptions: s.downloadedModels.map((id) => ({ id, label: modelById(id).label })),
   };
 }
