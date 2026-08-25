@@ -251,6 +251,32 @@ nicht lesbare Zählerdatei nach einer der beiden Messungen zählt als ROT, nicht
 `mockAssetCounts()` gibt bei einem fehlenden ODER kaputten (torn write) Read `null` zurück,
 und ein `null ?? vorher`-Fallback hätte einen Messfehler in einen stillen Erfolg verwandelt.
 
+### § 2026-08-25 — Treiber-Defekte aus dem Release-Beweis von 0.9-dev
+
+Ein voller Lauf mit `builtinModel: "sdxl-turbo"` in der Vault-`data.json` kam 18/23 mit fünf
+roten/übersprungenen Punkten zurück. Gemessen, nicht vermutet: vier davon (14, und die
+Folge-Skips 15/16/24) gingen auf eine einzige Ursache zurück, ein fünfter (17, s. u.) war
+unabhängig. Beide Ursachen sind Treiber-Defekte, keine Produktregression.
+
+1. **Punkt 14s Download-Frist war fix und die Fehlermeldung falsch.** Die Konstante
+   `30 * 60_000` stammte aus der Zeit, in der SD-Turbo (~2,5 GB) das einzige eingebaute Modell
+   war; die Meldung bei Zeitüberschreitung sprach aber von „15 min" — nie angepasst, seit
+   irgendjemand die Frist zuletzt änderte. SDXL-Turbo ist mit ~6,4 GiB das 2,8-Fache, und ein
+   voller lokaler Download (inkl. SHA-256-Verifikation + Cache-API-Schreiben) lief in diesem
+   Lauf über die alten 30 min hinaus — der Mock-Server-Log zeigt alle 21 SDXL-Dateien
+   vollständig ausgeliefert, zweimal (ein zu spät fertiggewordener erster Versuch, ein zweiter
+   aus `runModelStageChecks`). Fix: `downloadDeadlineMs()` — ein Sockel (10 min, deckt
+   Verbindungsaufbau/Cache-API-Vorbereitung auch bei einem winzigen Modell) plus ein Aufschlag
+   je GB (8 min/GB), aus der Bytezahl des gerade AKTIVEN Modells berechnet, nicht mehr
+   hartcodiert. Kalibrierungspunkt: SD-Turbos ~2,5 GB ergeben ≈ 30 min (die alte Konstante,
+   also keine Regression für das kleinere Modell); SDXL-Turbo ergibt ≈ 61 min. Die
+   Fehlermeldung liest jetzt denselben Wert, den `pollUntil` auch bekommen hat — sie kann
+   nicht mehr von ihm abweichen.
+
+Kein neuer Lauf ist an dieser Stelle festgehalten — der Fix wurde gegen Lesen + `npm run
+gate` verifiziert, nicht gegen einen echten Download (der reale Beweislauf folgt separat und
+trägt dann seinen eigenen Log-Eintrag oben in diesem Abschnitt).
+
 ## Was der Treiber am Wirt verändert (und zurücksetzt)
 
 Alles davon wird vorher gemerkt und im `finally` zurückgeschrieben — auch nach einem Abbruch:

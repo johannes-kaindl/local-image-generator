@@ -157,6 +157,26 @@ async function pollUntil<T>(
 }
 
 /**
+ * Download-Frist für Punkt 14, PROPORTIONAL zur Bytezahl des Modells, das gerade geladen wird
+ * — nicht länger ein fixer Wert. Anlass: die Frist stammte aus der Zeit, in der SD-Turbo
+ * (~2,5 GB) das einzige eingebaute Modell war; SDXL-Turbo ist mit ~6,4 GiB (gemessen aus dem
+ * Manifest) das 2,8-fache, und ein voller lokaler Download (inkl. SHA-256-Verifikation +
+ * Cache-API-Schreiben) lief in genau diesem Lauf über die alten 30 min hinaus. Ein drittes,
+ * noch größeres Modell würde jede erneut fest verdrahtete Zahl wieder sprengen.
+ *
+ * Regel: ein Sockel für Verbindungsaufbau/Cache-API-Vorbereitung, die auch bei winzigen
+ * Modellen nicht unterschritten wird, plus ein Aufschlag je GB — SD-Turbos ~30 min (die
+ * bisherige Konstante) sind der Kalibrierungspunkt: 10 min Sockel + 8 min/GB × 2,5 GB ≈ 30 min.
+ * Für SDXL-Turbo ergibt dieselbe Formel 10 min + 8 min/GB × 6,4 GB ≈ 61 min.
+ */
+const DOWNLOAD_DEADLINE_FLOOR_MS = 10 * 60_000;
+const DOWNLOAD_DEADLINE_PER_GB_MS = 8 * 60_000;
+function downloadDeadlineMs(bytes: number): number {
+  const gb = bytes / 1_000_000_000;
+  return DOWNLOAD_DEADLINE_FLOOR_MS + Math.ceil(gb * DOWNLOAD_DEADLINE_PER_GB_MS);
+}
+
+/**
  * Miss den tatsächlichen INHALT eines Panel-Bildes statt nur seine Form. Anlass: Phase 1–3 des
  * SDXL-Turbo-Debuggings (2026-08-24) — ein rein schwarzes 1024×1024-PNG erfüllt jede
  * Form-Prüfung (gültige PNG-Datei, richtige Größe, Status „Bereit"), war aber zu 100 % NaN aus
@@ -335,6 +355,13 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
 
   // --- 14. Download über den Panel-Knopf -------------------------------------
   const t0 = Date.now();
+  // Frist proportional zum Modell, das gerade aktiv ist (settings.builtinModel steht seit
+  // Punkt 13 fest, wird hier aber nicht selbst gesetzt — geerbt aus data.json). Siehe
+  // downloadDeadlineMs() für die Herleitung.
+  const modelId14 = await cdp.evaluate<BuiltinModelId>(
+    `return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.builtinModel;`,
+  );
+  const downloadDeadline14 = downloadDeadlineMs(totalBytes([...assetsFor(modelId14), RUNTIME_WASM]));
   await clickReal(cdp, `document.querySelector(".lig-empty button")`);
   let sawProgress = false;
   const done14 = await pollUntil(
@@ -346,8 +373,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // „not-downloaded" ist der STARTzustand — als Ende zählt er erst nach gesehenem Fortschritt
     // (Abbruch). Gemessen 2026-08-19: ohne diese Bedingung endete der Prüfpunkt sofort rot.
     (e) => e.kind === "ready" || e.kind === "error" || (sawProgress && e.kind === "not-downloaded"),
-    // 2,5 GB: lokal 30 s, vom echten HF-Repo je nach Leitung 10–20 min (gemessen 2026-08-19).
-    30 * 60_000,
+    downloadDeadline14,
     "warte auf den Modell-Download",
     1000,
   );
@@ -356,7 +382,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     "14. Download über den Panel-Knopf endet auf „bereit“",
     done14?.kind === "ready" && sawProgress && status14 === readyText,
     done14 === null
-      ? "Download nach 15 min nicht fertig"
+      ? `Download nach ${Math.round(downloadDeadline14 / 60_000)} min nicht fertig`
       : done14.kind === "ready"
         ? `${Math.round((Date.now() - t0) / 1000)} s · Fortschritt gesehen: ${sawProgress} · Status „${status14}"`
         : `Engine-Zustand ${JSON.stringify(done14)}`,
