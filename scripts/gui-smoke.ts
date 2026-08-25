@@ -299,198 +299,222 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
   const statusText = () =>
     cdp.evaluate<string>(`const el = document.querySelector(".lig-status-text"); return el ? el.textContent.trim() : "";`);
 
-  // --- 13. Modus umstellen ---------------------------------------------------
-  await cdp.evaluate(`
-    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-    p.settings.assetBaseUrl = ${JSON.stringify(assetsBase)};
-    await p.saveSettings();
-    await p.setEngine("builtin");
-    return true;
-  `);
-  let st = await pollUntil(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", 500);
-  if (st?.kind === "gpu-missing") {
-    record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24 gegenstandslos`);
-    for (const n of [
-      "14. Download über den Panel-Knopf endet auf „bereit“",
-      "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
-      "16. Zurück auf „Server“ bringt die Regler zurück",
-      "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
-    ])
-      skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
-    return;
-  }
-  // Ein vorhandener Download wird entfernt, damit Punkt 14 den echten Weg misst — erlaubt,
-  // weil die Quelle der lokale Server ist (siehe Kopfkommentar).
-  if (st?.kind === "ready") {
-    await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(); return true;`);
-    st = await pollUntil(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", 500);
-  }
-  // Gerendert messen, nicht die Klasse lesen: die war beim Bug vom 2026-08-21 gesetzt, während
-  // die Zeile im Bild stand. Punkt 17 prüft das systematisch — hier bleibt es als Vorbedingung
-  // von 14/15 stehen, weil ein Panel mit sichtbarem Negativ-Prompt kein builtin-Panel ist.
-  const negHidden = await cdp.evaluate<boolean>(`
-    const el = document.querySelector(".lig-negative-row");
-    return !!el && getComputedStyle(el).display === "none";
-  `);
-  const ctaLabel = await cdp.evaluate<string>(`
-    const b = document.querySelector(".lig-empty button");
-    return b && getComputedStyle(b).display !== "none" ? b.textContent.trim() : "";
-  `);
-  const notDownloaded = t("status.notDownloaded");
-  const status13 = await statusText();
-  record(
-    "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
-    st?.kind === "not-downloaded" && status13 === notDownloaded && negHidden && ctaLabel !== "",
-    st?.kind !== "not-downloaded"
-      ? `Engine-Zustand ${JSON.stringify(st)}`
-      : `Status „${status13}" · Negativ-Prompt ausgeblendet: ${negHidden} · CTA „${ctaLabel}"`,
-  );
-  if (st?.kind !== "not-downloaded") {
-    skip("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
-    skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 13 nicht erreicht");
-    skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
-    skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
-    return;
-  }
-
-  // --- 14. Download über den Panel-Knopf -------------------------------------
-  const t0 = Date.now();
-  // Frist proportional zum Modell, das gerade aktiv ist (settings.builtinModel steht seit
-  // Punkt 13 fest, wird hier aber nicht selbst gesetzt — geerbt aus data.json). Siehe
-  // downloadDeadlineMs() für die Herleitung.
-  const modelId14 = await cdp.evaluate<BuiltinModelId>(
+  // 13-15 sind fuer SD-Turbo geschrieben (Punkt 15 prueft `model: sd-turbo`) und muessen das
+  // deshalb selbst ETABLIEREN statt es aus data.json zu ERBEN — sonst haengt der Lauf am
+  // Modell, das die letzte Session zufaellig hinterlassen hat (gemessen 2026-08-24: mit
+  // "sdxl-turbo" geerbt schlug Punkt 13 den 7-GB-Download statt des 2,5-GB-Downloads vor,
+  // Punkt 14 lief 66 Minuten, 15/16/24 wurden uebersprungen). Originalwert deshalb hier
+  // gemerkt und im `finally` zurueckgestellt, wie `runModelStageChecks()` es vormacht.
+  const originalModel = await cdp.evaluate<BuiltinModelId>(
     `return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.builtinModel;`,
   );
-  const downloadDeadline14 = downloadDeadlineMs(totalBytes([...assetsFor(modelId14), RUNTIME_WASM]));
-  await clickReal(cdp, `document.querySelector(".lig-empty button")`);
-  let sawProgress = false;
-  const done14 = await pollUntil(
-    async () => {
-      const e = await engineState();
-      if (e.kind === "downloading" && (e.received ?? 0) > 0) sawProgress = true;
-      return e;
-    },
-    // „not-downloaded" ist der STARTzustand — als Ende zählt er erst nach gesehenem Fortschritt
-    // (Abbruch). Gemessen 2026-08-19: ohne diese Bedingung endete der Prüfpunkt sofort rot.
-    (e) => e.kind === "ready" || e.kind === "error" || (sawProgress && e.kind === "not-downloaded"),
-    downloadDeadline14,
-    "warte auf den Modell-Download",
-    1000,
-  );
-  const status14 = await statusText();
-  record(
-    "14. Download über den Panel-Knopf endet auf „bereit“",
-    done14?.kind === "ready" && sawProgress && status14 === readyText,
-    done14 === null
-      ? `Download nach ${Math.round(downloadDeadline14 / 60_000)} min nicht fertig`
-      : done14.kind === "ready"
-        ? `${Math.round((Date.now() - t0) / 1000)} s · Fortschritt gesehen: ${sawProgress} · Status „${status14}"`
-        : `Engine-Zustand ${JSON.stringify(done14)}`,
-  );
-  if (done14?.kind !== "ready") {
-    skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 14 nicht erreicht");
-    skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
-    skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
-    return;
-  }
-
-  // --- 15. Bild + Notiz ------------------------------------------------------
-  const notesBefore = await cdp.evaluate<number>(`return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`);
-  await cdp.evaluate(`
-    const ta = document.querySelector(".lig-panel textarea.lig-prompt");
-    ta.value = ${JSON.stringify(SMOKE_PROMPT + ", built-in")}; ta.dispatchEvent(new Event("input", { bubbles: true }));
-    const seed = document.querySelector(".lig-panel input.lig-seed");
-    seed.value = "4242"; seed.dispatchEvent(new Event("input", { bubbles: true }));
-    return true;
-  `);
-  const t1 = Date.now();
-  // Wie Punkt 7: es zählt nur ein NEUES Bild, nicht das aus dem Reroll von Punkt 11.
-  const imageBefore15 = await cdp.evaluate<string>(`const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`);
-  await clickReal(cdp, `document.querySelector(".lig-generate")`);
-  let sawLoading = false;
-  const image15 = await pollUntil(
-    async () => {
-      const r = await cdp.evaluate<{ length: number; status: string; sig: string }>(`
-        const img = document.querySelector(".lig-image");
-        const status = document.querySelector(".lig-status-text");
-        return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
-      `);
-      if (r.status.includes("GPU")) sawLoading = true;
-      return r;
-    },
-    (r) => (r.length > 5000 && r.sig !== imageBefore15 && r.status === readyText) || istFehler(r.status),
-    generateTimeoutMs,
-    "warte auf das Bild der eingebauten Engine",
-    500,
-  );
-  let note15: { model: string | null; steps: number | null } | null = null;
-  if (image15 !== null && !istFehler(image15.status)) {
-    const createLabel = t("generate.button.create");
+  try {
+    // --- 13. Modus umstellen -------------------------------------------------
     await cdp.evaluate(`
-      const button = [...document.querySelectorAll(".lig-actions button")].find((b) => b.textContent.trim() === ${JSON.stringify(createLabel)});
-      if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
-      button.click(); return true;
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.settings.assetBaseUrl = ${JSON.stringify(assetsBase)};
+      await p.saveSettings();
+      await p.setEngine("builtin");
+      if (p.settings.builtinModel !== ${JSON.stringify(DEFAULT_BUILTIN_MODEL_ID)}) {
+        await p.setBuiltinModel(${JSON.stringify(DEFAULT_BUILTIN_MODEL_ID)});
+      }
+      return true;
     `);
-    const body = await pollUntil(
-      () =>
-        cdp.evaluate<string | null>(`
-          const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
-          if (files.length <= ${notesBefore}) return null;
-          files.sort((a, b) => b.stat.ctime - a.stat.ctime);
-          return await app.vault.cachedRead(files[0]);
-        `),
-      (b) => b !== null,
-      60_000,
-      "warte auf die Ergebnis-Notiz",
+    let st = await pollUntil(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", 500);
+    if (st?.kind === "gpu-missing") {
+      record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24 gegenstandslos`);
+      for (const n of [
+        "14. Download über den Panel-Knopf endet auf „bereit“",
+        "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
+        "16. Zurück auf „Server“ bringt die Regler zurück",
+        "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
+      ])
+        skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
+      return;
+    }
+    // Ein vorhandener Download wird entfernt, damit Punkt 14 den echten Weg misst — erlaubt,
+    // weil die Quelle der lokale Server ist (siehe Kopfkommentar).
+    if (st?.kind === "ready") {
+      await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(); return true;`);
+      st = await pollUntil(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", 500);
+    }
+    // Gerendert messen, nicht die Klasse lesen: die war beim Bug vom 2026-08-21 gesetzt, während
+    // die Zeile im Bild stand. Punkt 17 prüft das systematisch — hier bleibt es als Vorbedingung
+    // von 14/15 stehen, weil ein Panel mit sichtbarem Negativ-Prompt kein builtin-Panel ist.
+    const negHidden = await cdp.evaluate<boolean>(`
+      const el = document.querySelector(".lig-negative-row");
+      return !!el && getComputedStyle(el).display === "none";
+    `);
+    const ctaLabel = await cdp.evaluate<string>(`
+      const b = document.querySelector(".lig-empty button");
+      return b && getComputedStyle(b).display !== "none" ? b.textContent.trim() : "";
+    `);
+    const notDownloaded = t("status.notDownloaded");
+    const status13 = await statusText();
+    record(
+      "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
+      st?.kind === "not-downloaded" && status13 === notDownloaded && negHidden && ctaLabel !== "",
+      st?.kind !== "not-downloaded"
+        ? `Engine-Zustand ${JSON.stringify(st)}`
+        : `Status „${status13}" · Negativ-Prompt ausgeblendet: ${negHidden} · CTA „${ctaLabel}"`,
+    );
+    if (st?.kind !== "not-downloaded") {
+      skip("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
+      skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 13 nicht erreicht");
+      skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
+      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
+      return;
+    }
+
+    // --- 14. Download über den Panel-Knopf -------------------------------------
+    const t0 = Date.now();
+    // Frist proportional zum Modell — Punkt 13 hat es oben auf DEFAULT_BUILTIN_MODEL_ID
+    // (sd-turbo) ETABLIERT, hier nicht erneut aus data.json lesen. Siehe downloadDeadlineMs()
+    // für die Herleitung.
+    const downloadDeadline14 = downloadDeadlineMs(totalBytes([...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM]));
+    await clickReal(cdp, `document.querySelector(".lig-empty button")`);
+    let sawProgress = false;
+    const done14 = await pollUntil(
+      async () => {
+        const e = await engineState();
+        if (e.kind === "downloading" && (e.received ?? 0) > 0) sawProgress = true;
+        return e;
+      },
+      // „not-downloaded" ist der STARTzustand — als Ende zählt er erst nach gesehenem Fortschritt
+      // (Abbruch). Gemessen 2026-08-19: ohne diese Bedingung endete der Prüfpunkt sofort rot.
+      (e) => e.kind === "ready" || e.kind === "error" || (sawProgress && e.kind === "not-downloaded"),
+      downloadDeadline14,
+      "warte auf den Modell-Download",
       1000,
     );
-    if (body) {
-      const model = body.match(/^model:\s*(.+)$/m)?.[1]?.trim() ?? null;
-      const stepsRaw = body.match(/^steps:\s*(\d+)$/m)?.[1];
-      note15 = { model, steps: stepsRaw ? Number(stepsRaw) : null };
-    }
-  }
-  record(
-    "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
-    image15 !== null && !istFehler(image15.status) && note15?.model === "sd-turbo" && (note15.steps ?? 99) <= 4,
-    image15 === null
-      ? "kein Bild innerhalb der Frist"
-      : istFehler(image15.status)
-        ? `Lauf gescheitert, gemeldet vom Plugin: „${image15.status}"`
-        : `${Math.round((Date.now() - t1) / 1000)} s · ${Math.round(image15.length / 1024)} KB · Ladephase gesehen: ${sawLoading} · Notiz: ${JSON.stringify(note15)}`,
-  );
-
-  // --- 24. Inhalt statt Form — billige Zusatzabsicherung fuer SD-Turbo -------
-  // Kostet nichts extra: misst dasselbe Bild, das Punkt 15 ohnehin schon generiert hat, kein
-  // zweiter Lauf. SD-Turbo hat keinen bekannten fp16-Defekt (siehe convert_model.py) — aber die
-  // Pruefkette war bis Phase 4 komplett blind gegen ein rein schwarzes/uniformes Bild, und ob
-  // ein spaeteres ORT-/Treiber-Upgrade SD-Turbo dieselbe Fehlerklasse eintraegt, ist unbekannt.
-  // Fuer diese eine zusaetzliche Messung an einem ohnehin vorhandenen Bild lohnt sich das.
-  const NAME24 = "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform";
-  if (image15 !== null && !istFehler(image15.status)) {
-    const stats15 = await pixelStats(cdp);
+    const status14 = await statusText();
     record(
-      NAME24,
-      stats15 !== null && stats15.stddev >= CONTENT_STDDEV_MIN && stats15.distinctLuma >= CONTENT_LUMA_BUCKETS_MIN,
-      stats15 === null
-        ? "Bild nicht lesbar (kein PNG-Data-URL)"
-        : `${stats15.width}×${stats15.height} · Luma-Stddev ${stats15.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats15.distinctLuma} distinkte Luma-Stufen (Grenze ${CONTENT_LUMA_BUCKETS_MIN})`,
+      "14. Download über den Panel-Knopf endet auf „bereit“",
+      done14?.kind === "ready" && sawProgress && status14 === readyText,
+      done14 === null
+        ? `Download nach ${Math.round(downloadDeadline14 / 60_000)} min nicht fertig`
+        : done14.kind === "ready"
+          ? `${Math.round((Date.now() - t0) / 1000)} s · Fortschritt gesehen: ${sawProgress} · Status „${status14}"`
+          : `Engine-Zustand ${JSON.stringify(done14)}`,
     );
-  } else {
-    skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
-  }
+    if (done14?.kind !== "ready") {
+      skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 14 nicht erreicht");
+      skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
+      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
+      return;
+    }
 
-  // --- 16. Zurück auf Server -------------------------------------------------
-  await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].setEngine("server"); return true;`);
-  await new Promise((r) => setTimeout(r, 1000));
-  const back = await cdp.evaluate<{ neg: boolean; cfg: boolean; max: string }>(`
-    const sichtbar = (sel) => {
-      const el = document.querySelector(sel);
-      return !!el && getComputedStyle(el).display !== "none";
-    };
-    return { neg: sichtbar(".lig-negative-row"), cfg: sichtbar(".lig-cfg"), max: document.querySelector(".lig-steps")?.max ?? "" };
-  `);
-  record("16. Zurück auf „Server“ bringt die Regler zurück", back.neg && back.cfg && back.max === String(STEPS.max), `Negativ ${back.neg} · CFG ${back.cfg} · Steps-Max ${back.max}`);
+    // --- 15. Bild + Notiz ------------------------------------------------------
+    const notesBefore = await cdp.evaluate<number>(`return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`);
+    await cdp.evaluate(`
+      const ta = document.querySelector(".lig-panel textarea.lig-prompt");
+      ta.value = ${JSON.stringify(SMOKE_PROMPT + ", built-in")}; ta.dispatchEvent(new Event("input", { bubbles: true }));
+      const seed = document.querySelector(".lig-panel input.lig-seed");
+      seed.value = "4242"; seed.dispatchEvent(new Event("input", { bubbles: true }));
+      return true;
+    `);
+    const t1 = Date.now();
+    // Wie Punkt 7: es zählt nur ein NEUES Bild, nicht das aus dem Reroll von Punkt 11.
+    const imageBefore15 = await cdp.evaluate<string>(`const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`);
+    await clickReal(cdp, `document.querySelector(".lig-generate")`);
+    let sawLoading = false;
+    const image15 = await pollUntil(
+      async () => {
+        const r = await cdp.evaluate<{ length: number; status: string; sig: string }>(`
+          const img = document.querySelector(".lig-image");
+          const status = document.querySelector(".lig-status-text");
+          return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
+        `);
+        if (r.status.includes("GPU")) sawLoading = true;
+        return r;
+      },
+      (r) => (r.length > 5000 && r.sig !== imageBefore15 && r.status === readyText) || istFehler(r.status),
+      generateTimeoutMs,
+      "warte auf das Bild der eingebauten Engine",
+      500,
+    );
+    let note15: { model: string | null; steps: number | null } | null = null;
+    if (image15 !== null && !istFehler(image15.status)) {
+      const createLabel = t("generate.button.create");
+      await cdp.evaluate(`
+        const button = [...document.querySelectorAll(".lig-actions button")].find((b) => b.textContent.trim() === ${JSON.stringify(createLabel)});
+        if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
+        button.click(); return true;
+      `);
+      const body = await pollUntil(
+        () =>
+          cdp.evaluate<string | null>(`
+            const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
+            if (files.length <= ${notesBefore}) return null;
+            files.sort((a, b) => b.stat.ctime - a.stat.ctime);
+            return await app.vault.cachedRead(files[0]);
+          `),
+        (b) => b !== null,
+        60_000,
+        "warte auf die Ergebnis-Notiz",
+        1000,
+      );
+      if (body) {
+        const model = body.match(/^model:\s*(.+)$/m)?.[1]?.trim() ?? null;
+        const stepsRaw = body.match(/^steps:\s*(\d+)$/m)?.[1];
+        note15 = { model, steps: stepsRaw ? Number(stepsRaw) : null };
+      }
+    }
+    record(
+      "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
+      image15 !== null && !istFehler(image15.status) && note15?.model === "sd-turbo" && (note15.steps ?? 99) <= 4,
+      image15 === null
+        ? "kein Bild innerhalb der Frist"
+        : istFehler(image15.status)
+          ? `Lauf gescheitert, gemeldet vom Plugin: „${image15.status}"`
+          : `${Math.round((Date.now() - t1) / 1000)} s · ${Math.round(image15.length / 1024)} KB · Ladephase gesehen: ${sawLoading} · Notiz: ${JSON.stringify(note15)}`,
+    );
+
+    // --- 24. Inhalt statt Form — billige Zusatzabsicherung fuer SD-Turbo -------
+    // Kostet nichts extra: misst dasselbe Bild, das Punkt 15 ohnehin schon generiert hat, kein
+    // zweiter Lauf. SD-Turbo hat keinen bekannten fp16-Defekt (siehe convert_model.py) — aber die
+    // Pruefkette war bis Phase 4 komplett blind gegen ein rein schwarzes/uniformes Bild, und ob
+    // ein spaeteres ORT-/Treiber-Upgrade SD-Turbo dieselbe Fehlerklasse eintraegt, ist unbekannt.
+    // Fuer diese eine zusaetzliche Messung an einem ohnehin vorhandenen Bild lohnt sich das.
+    const NAME24 = "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform";
+    if (image15 !== null && !istFehler(image15.status)) {
+      const stats15 = await pixelStats(cdp);
+      record(
+        NAME24,
+        stats15 !== null && stats15.stddev >= CONTENT_STDDEV_MIN && stats15.distinctLuma >= CONTENT_LUMA_BUCKETS_MIN,
+        stats15 === null
+          ? "Bild nicht lesbar (kein PNG-Data-URL)"
+          : `${stats15.width}×${stats15.height} · Luma-Stddev ${stats15.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats15.distinctLuma} distinkte Luma-Stufen (Grenze ${CONTENT_LUMA_BUCKETS_MIN})`,
+      );
+    } else {
+      skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
+    }
+
+    // --- 16. Zurück auf Server -------------------------------------------------
+    await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].setEngine("server"); return true;`);
+    await new Promise((r) => setTimeout(r, 1000));
+    const back = await cdp.evaluate<{ neg: boolean; cfg: boolean; max: string }>(`
+      const sichtbar = (sel) => {
+        const el = document.querySelector(sel);
+        return !!el && getComputedStyle(el).display !== "none";
+      };
+      return { neg: sichtbar(".lig-negative-row"), cfg: sichtbar(".lig-cfg"), max: document.querySelector(".lig-steps")?.max ?? "" };
+    `);
+    record("16. Zurück auf „Server“ bringt die Regler zurück", back.neg && back.cfg && back.max === String(STEPS.max), `Negativ ${back.neg} · CFG ${back.cfg} · Steps-Max ${back.max}`);
+  } finally {
+    // Gilt auch bei einem frühen `return` oben (GPU fehlt, Vorbedingung 13/14 nicht erreicht) —
+    // ein Treiber, der das geerbte Modell überschreibt, muss es unabhängig vom Ausgang wieder
+    // hinstellen, wie es dastand.
+    await cdp
+      .evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        if (p.settings.builtinModel !== ${JSON.stringify(originalModel)}) {
+          await p.setBuiltinModel(${JSON.stringify(originalModel)});
+        }
+        return true;
+      `)
+      .catch(() => undefined);
+  }
 }
 
 /**
