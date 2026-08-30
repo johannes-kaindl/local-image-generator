@@ -69,6 +69,10 @@ import { registerI18n } from "../src/i18n/strings";
 import { pickLang, setLang, t } from "../src/vendor/kit/i18n";
 
 const PLUGIN_ID = "local-image-generator";
+/** Name von Punkt 18d — an vier Stellen gebraucht (Messung + drei Auslass-Pfade). Eine
+ *  Konstante, weil ein abweichend getippter Name den Punkt aus der Abschlusszeile fallen
+ *  liesse, ohne dass irgendetwas rot wird. */
+const NAME_18D = "18d. generate() im builtin-Modus laedt ohne Klick KEIN Byte";
 /** Zielordner für Bild + Ergebnis-Notiz. Wird angelegt und am Ende wieder entfernt
  *  (außer mit `--keep`) — so muss der Treiber keine Dateien aus fremden Ordnern fischen. */
 const SMOKE_FOLDER = "_lig-gui-smoke";
@@ -327,6 +331,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         "14. Download über den Panel-Knopf endet auf „bereit“",
         "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
         "16. Zurück auf „Server“ bringt die Regler zurück",
+        NAME_18D,
         "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
       ])
         skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
@@ -362,9 +367,18 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       skip("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
       skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 13 nicht erreicht");
       skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
+      skip(NAME_18D, "Vorbedingung 13 nicht erreicht");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
       return;
     }
+
+    // --- 18d. Download-Verweigerung der Provider-API ---------------------------
+    // Steht HIER und nicht bei 18a–c: der Zustand „not-downloaded" ist an genau dieser Stelle
+    // GEPRUEFT (Punkt 13 hat ihn eben gemessen) statt angenommen, der Modus ist builtin, und
+    // Punkt 14 stellt gleich darauf den geladenen Zustand wieder her. Der Punkt kostet damit
+    // keinen eigenen Auf- und Abbau — anderswo im Lauf muesste er den Cache selbst leeren und
+    // 2,5 GB Wiederbeschaffung verursachen.
+    await runApiDownloadRefusalCheck(cdp);
 
     // --- 14. Download über den Panel-Knopf -------------------------------------
     const t0 = Date.now();
@@ -681,7 +695,7 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
  * Bereitschafts-Gate endet ein builtin-`generate()` ohne Assets als
  * `{ ok: false, reason: "failed" }` — nicht als stiller Download.
  */
-async function runApiCheck(cdp: Cdp): Promise<void> {
+async function runApiCheck(cdp: Cdp, endpoint: string): Promise<void> {
   const form = await cdp.evaluate<{ version: unknown; keys: string[]; status: Record<string, unknown> }>(`
     const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
     if (!api) return { version: null, keys: [], status: {} };
@@ -703,6 +717,156 @@ async function runApiCheck(cdp: Cdp): Promise<void> {
     "18b. status() meldet Faehigkeiten typgerecht",
     caps !== undefined && typeof caps["negativePrompt"] === "boolean" && typeof caps["maxSteps"] === "number",
     JSON.stringify(caps ?? null),
+  );
+
+  await runApiFailureCheck(cdp, endpoint);
+}
+
+/**
+ * Schaltet den Fehlermodus des Mock-Servers (`scripts/mock-a1111.mjs`) und meldet, ob er
+ * gegriffen hat. `false` heisst „hier laeuft kein Mock" — nicht „der Aufruf ist gescheitert":
+ * beides ist fuer den Aufrufer dieselbe Entscheidung (den Punkt nicht messen).
+ */
+async function setMockFailure(endpoint: string, on: boolean): Promise<boolean> {
+  try {
+    const res = await fetch(`${endpoint.replace(/\/+$/, "")}/mock/fail?on=${on ? 1 : 0}`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { failing?: unknown };
+    return body.failing === on;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Punkt 18c: ein GESCHEITERTER Fremdlauf darf im Panel keine Spur hinterlassen.
+ *
+ * Seit `f223c8f` faellt ein fehlgeschlagener API-Lauf im `catch` von `runGeneration()` auf
+ * `{ kind: "idle" }` zurueck statt auf `error` mit der rohen Backend-Meldung. Das sieht wie
+ * ein verschluckter Fehler aus und ist keiner: der Aufrufer bekommt den Fehlschlag als
+ * RUECKGABEWERT, und die Statuszeile gehoert dem eigenen Klick des Nutzers — ein fremdes
+ * Plugin darf sie nicht mit seinen Fehlern beschriften. Die Entscheidung liegt in `main.ts`,
+ * der einzigen Schicht dieses Repos ohne Unit-Test-Ebene; ohne diesen Punkt traegt sie nur
+ * ein Kommentar.
+ *
+ * Gemessen wird die GERENDERTE Zeile, nicht der Zustand — der Zustand war beim Bug vom
+ * 2026-08-21 korrekt, waehrend die Darstellung daneben lag. Und der Erwartungswert ist
+ * „unveraendert gegenueber vorher", nicht „kein Fehlertext": eine Zeile, die nach dem
+ * Fremdlauf etwas ANDERES Richtiges zeigt, waere ebenfalls eine Spur.
+ */
+async function runApiFailureCheck(cdp: Cdp, endpoint: string): Promise<void> {
+  const NAME = "18c. Ein gescheiterter Fremdlauf hinterlaesst keine Spur im Panel";
+  const statusLine = () =>
+    cdp.evaluate<{ text: string; cls: string }>(`
+      const textEl = document.querySelector(".lig-status-text");
+      const iconEl = document.querySelector(".lig-status-icon");
+      return { text: textEl ? textEl.textContent.trim() : "", cls: iconEl ? iconEl.className : "" };
+    `);
+
+  // Vorbedingung HERSTELLEN statt erben: ein Panel, das schon vorher einen Fehler zeigt,
+  // koennte den Fremdlauf-Fehler nicht von seinem eigenen unterscheiden — der Punkt waere
+  // gruen, ohne seinen Gegenstand beruehrt zu haben.
+  const before = await pollUntil(
+    statusLine,
+    (line) => !line.cls.includes("is-error") && !istFehler(line.text),
+    15_000,
+    "warte auf ein fehlerfreies Panel",
+    500,
+  );
+  if (!before) {
+    skip(NAME, "Panel zeigt schon VOR dem Fremdlauf einen Fehler — sein eigener Fund waere nicht zuordenbar");
+    return;
+  }
+
+  if (!(await setMockFailure(endpoint, true))) {
+    skip(
+      NAME,
+      `kein Mock unter ${endpoint} (/mock/fail antwortet nicht) — einen echten Bild-Server kann der Treiber nicht zum Scheitern bringen`,
+    );
+    return;
+  }
+  try {
+    const outcome = await cdp.evaluate<{ ok: unknown; reason: unknown }>(`
+      const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].api;
+      const r = await api.generate({ prompt: ${JSON.stringify(`${SMOKE_PROMPT} — api failure probe`)} });
+      return { ok: r.ok, reason: r.ok ? null : r.reason };
+    `);
+    // Erst nach einem Rendering-Fenster messen. Ohne die Pause misst der Punkt moeglicherweise,
+    // BEVOR das Panel einen (fehlerhaften) Fehlerzustand zeichnen konnte — und waere gruen,
+    // weil er zu frueh hinsieht.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const after = await statusLine();
+
+    const abgewiesen = outcome.ok === false && outcome.reason === "failed";
+    const unveraendert = after.text === before.text && after.cls === before.cls;
+    const keineFremdmeldung = !/mock|failure|500/i.test(after.text) && !istFehler(after.text);
+    record(
+      NAME,
+      abgewiesen && unveraendert && keineFremdmeldung,
+      abgewiesen
+        ? `generate() → {ok:false, reason:"failed"} · Statuszeile „${after.text}" (${after.cls}) ${unveraendert ? "unveraendert" : `WEICHT AB von „${before.text}" (${before.cls})`}`
+        : `generate() lieferte ${JSON.stringify(outcome)} statt {ok:false, reason:"failed"}`,
+    );
+  } finally {
+    await setMockFailure(endpoint, false);
+  }
+}
+
+/**
+ * Punkt 18d: `generate()` im builtin-Modus OHNE Assets weist ab, statt 2,5 GB zu laden.
+ *
+ * „Ohne Klick fliesst kein Byte" ist die Zusage, mit der dieses Plugin einen 2,5-GB-Download
+ * ueberhaupt rechtfertigt — ein Fremdplugin darf sie nicht umgehen koennen. Getragen wurde
+ * sie bis 2026-08-30 nur STRUKTURELL (`ModelStore.getBuffer` geht ueber `matchOrThrow`, das
+ * bei einem Cache-Fehltreffer wirft; der einzige Ladepfad `ModelStore.download` haengt an
+ * zwei geklickten Bedienelementen und kommt in `ApiDeps` nicht vor). Ein Argument ist keine
+ * Messung: es gilt fuer den Code, den es beschreibt, und niemand merkt, wenn ein spaeterer
+ * Umbau ihm den Boden entzieht.
+ *
+ * Gemessen wird deshalb die WIRKUNG, nicht das Symbol: gezaehlt werden die Eintraege in
+ * ALLEN Caches des Renderers, nicht nur im Asset-Cache des Plugins — ein Ladepfad, der
+ * seinen Ablageort wechselt, bliebe einer namensgebundenen Pruefung sonst verborgen.
+ *
+ * ⚠️ Die Cache-Zaehlung allein reicht NICHT, und das ist gemessen: in der Gegenprobe vom
+ * 2026-08-30 (ein `startDownload()` in `ApiDeps.readiness` eingebaut) stand die Zahl nach
+ * den drei Sekunden Wartezeit noch unveraendert auf 22 — ein Download war laengst angelaufen,
+ * hatte aber noch keine Datei fertig geschrieben. Rot wurde der Punkt allein ueber den
+ * Engine-Zustand („downloading" statt „not-downloaded"). Wer diese dritte Bedingung fuer
+ * redundant haelt und streicht, macht den Punkt blind fuer genau den Defekt, gegen den er
+ * steht. Die Wartezeit zu verlaengern waere die schlechtere Antwort: sie macht jeden Lauf
+ * langsamer und bleibt eine Wette auf die Schreibgeschwindigkeit der Quelle.
+ */
+async function runApiDownloadRefusalCheck(cdp: Cdp): Promise<void> {
+  const NAME = NAME_18D;
+  const cacheEntries = () =>
+    cdp.evaluate<number>(`
+      let n = 0;
+      for (const name of await caches.keys()) n += (await (await caches.open(name)).keys()).length;
+      return n;
+    `);
+  const engineKind = () =>
+    cdp.evaluate<string>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].getEngineState().kind;`);
+
+  const before = await cacheEntries();
+  const outcome = await cdp.evaluate<{ ok: unknown; reason: unknown }>(`
+    const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].api;
+    const r = await api.generate({ prompt: ${JSON.stringify(`${SMOKE_PROMPT} — api download probe`)} });
+    return { ok: r.ok, reason: r.ok ? null : r.reason };
+  `);
+  // Ein angelaufener Download braucht einen Moment, bis er sichtbar wird. Sofort zu messen
+  // hiesse, die Abwesenheit von etwas zu bestaetigen, das noch gar nicht da sein KANN.
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  const after = await cacheEntries();
+  const kind = await engineKind();
+
+  record(
+    NAME,
+    outcome.ok === false && outcome.reason === "model-not-downloaded" && after === before && kind === "not-downloaded",
+    outcome.ok === false && outcome.reason === "model-not-downloaded"
+      ? `abgewiesen · Cache-Eintraege ${before} → ${after} · Engine bleibt „${kind}"`
+      : `generate() lieferte ${JSON.stringify(outcome)} statt {ok:false, reason:"model-not-downloaded"} · Cache ${before} → ${after}`,
   );
 }
 
@@ -2046,11 +2210,15 @@ async function main(): Promise<void> {
       "25. SDXL-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform (VAE-fp16-Wächter)",
     ];
     if (!builtin) {
-      console.log("\n(ohne --builtin: Punkte 13–16, 20–25 übersprungen — sie brauchen den lokalen Asset-Server)");
+      console.log("\n(ohne --builtin: Punkte 13–16, 18d, 20–25 übersprungen — sie brauchen den lokalen Asset-Server)");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "ohne --builtin nicht erreicht");
+      // 18d haengt am geprueften Zustand „not-downloaded", den nur Punkt 13 herstellt — ohne
+      // ihn koennte der Punkt nur eine unbekannte Cache-Lage messen.
+      skip(NAME_18D, "ohne --builtin nicht erreicht (braucht den von Punkt 13 hergestellten Zustand)");
     } else if (quick) {
-      console.log("\n(--quick: Punkte 13–16, 20–25 übersprungen — sie brauchen Download und/oder Generierung)");
+      console.log("\n(--quick: Punkte 13–16, 18d, 20–25 übersprungen — sie brauchen Download und/oder Generierung)");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "--quick: keine Generierung");
+      skip(NAME_18D, "--quick: kein builtin-Zweig");
     } else {
       const assetsUp = await fetch(`${assetsBase.replace(/\/+$/, "")}/sd-turbo/tokenizer/vocab.json`, { method: "HEAD", signal: AbortSignal.timeout(3000) })
         .then((r) => r.status === 200)
@@ -2061,6 +2229,7 @@ async function main(): Promise<void> {
           "14. Download über den Panel-Knopf endet auf „bereit“",
           "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
           "16. Zurück auf „Server“ bringt die Regler zurück",
+          NAME_18D,
           "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
           ...ZWEITE_STUFE,
         ])
@@ -2081,7 +2250,7 @@ async function main(): Promise<void> {
     // --- 18. Die Provider-API am laufenden Obsidian --------------------------
     // Bewusst ausserhalb der --builtin/--quick-Bedingung: der Punkt braucht weder Server
     // noch Assets, nur die registrierte Plugin-Instanz.
-    await runApiCheck(cdp);
+    await runApiCheck(cdp, endpoint);
 
     // --- 19. img2img am laufenden Wirt ---------------------------------------
     // Braucht den Server-Modus (die eingebaute Engine kann kein img2img) und den Mock.

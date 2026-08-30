@@ -9,6 +9,14 @@
 //   node scripts/mock-a1111.mjs                # Port 7861
 //   MOCK_PORT=7862 MOCK_DELAY_MS=3000 node scripts/mock-a1111.mjs
 //
+// Fehlermodus zur Laufzeit (fuer Smoke-Punkt 18c): `GET /mock/fail?on=1` laesst txt2img und
+// img2img mit HTTP 500 und einer WIEDERERKENNBAREN Meldung antworten, `?on=0` schaltet zurueck.
+// Ein Umschalter statt einer Env-Variablen, weil der Punkt den Fehlerfall MITTEN im Lauf
+// braucht und der Rest des Laufs echte Bilder erwartet — ein Neustart des Servers waere ein
+// zweiter Zustand, den der Treiber nicht kontrolliert. Der Pfad dient dem Treiber zugleich als
+// Erkennungsmerkmal: antwortet er nicht, laeuft kein Mock und Punkt 18c weiss, dass er den
+// Fehlerfall nicht herstellen kann (echte Bild-Server kann man nicht zum Scheitern bringen).
+//
 // Danach den Plugin-Endpunkt auf http://127.0.0.1:7861 stellen und `npm run smoke:gui`.
 // Erwartung seit 598f050: genau EINE /progress-Anfrage pro Lauf (Poller stoppt nach 404).
 import http from "node:http";
@@ -55,17 +63,29 @@ function noisePng(size = 256, seed = 7) {
 // der auf ein NEUES Bild wartet (Smoke 7/15), nie eines (gemessen 2026-08-19).
 const pngFor = (seed) => noisePng(256, Number.isFinite(seed) ? seed : 7);
 const counts = { options: 0, progress: 0, txt2img: 0, img2img: 0 };
+// Absichtlich auffaellig: Smoke-Punkt 18c prueft, dass GENAU DIESER Text nach einem
+// gescheiterten Fremdlauf NICHT in der Statuszeile des Panels steht.
+const FAIL_MESSAGE = "mock-a1111: refused on purpose (smoke 18c)";
+let failing = false;
 const persist = () => writeFileSync(COUNTS_FILE, JSON.stringify(counts));
 const json = (res, status, body) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
 
 http.createServer((req, res) => {
   const path = new URL(req.url ?? "/", "http://x").pathname;
+  if (path === "/mock/fail") {
+    const on = new URL(req.url ?? "/", "http://x").searchParams.get("on");
+    if (on !== null) failing = on !== "0" && on !== "false";
+    return json(res, 200, { failing });
+  }
   if (path === "/sdapi/v1/options") { counts.options++; persist(); return json(res, 200, { model: "mock-model.ckpt" }); }
   if (path === "/sdapi/v1/progress") { counts.progress++; persist(); return json(res, 404, { detail: "Not Found" }); }
   if (path === "/sdapi/v1/txt2img" || path === "/sdapi/v1/img2img") {
     const img2img = path.endsWith("/img2img");
     if (img2img) counts.img2img++; else counts.txt2img++;
     persist();
+    // Vor dem Body-Lesen: der Fehlerfall soll so frueh antworten, wie ein ueberlasteter Server
+    // es taete. Der Zaehler steigt trotzdem — ein abgelehnter Lauf IST ein Lauf.
+    if (failing) return json(res, 500, { error: "MockFailure", detail: FAIL_MESSAGE });
     let body = "";
     req.on("data", (c) => { body += c; });
     req.on("end", () => {

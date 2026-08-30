@@ -379,6 +379,55 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-30 · 0.9.0 · Obsidian 1.13.7 (**Staging-Vault**, nicht `10_Pallas`) · A1111-Mock (Port 7861) + lokaler Asset-Mock (Port 7862) · **28/28 grün**
+
+**Der Lauf war seit dem 28.08. rot — und der gemeldete Grund war der falsche.** Die
+GUI-Smoke-Runde jenes Tages führte das Repo als „Plugin im Vault deaktiviert" (Treiber-Abbruch
+`Plugin local-image-generator ist nicht aktiv`). Gemessen am 30.08. stand das Plugin in Pallas'
+`community-plugins.json` durchaus drin; der eigentliche Rückstand war ein anderer und lag eine
+Ebene höher: **der Treiber lief überhaupt gegen den Produktivvault.** Dort misst er laut
+Dach-Doktrin den *installierten* Store-Build, nicht den gebauten Repo-Stand — die
+`manifest.version` verrät den Unterschied nicht, weil beide dieselbe Nummer tragen. Umgestellt
+auf den eigenen Staging-Vault (`$STAGING_VAULTS_DIR/local-image-generator`, dort deployt der
+Lauf den Repo-Stand selbst). Kein „Wiedereinschalten" nötig, das wäre die Reparatur des
+Symptoms gewesen.
+
+**Ohne Neustart von Obsidian gefahren.** Die App lief bereits mit `--remote-debugging-port=9222`
+und trug an dem Tag die Fenster mehrerer paralleler Sessions. Das eigene Fenster kam per IPC
+dazu (`window.electron.ipcRenderer.send("vault-open", pfad)` aus einem beliebigen Renderer),
+ausgewählt wird es über `attachTo("workspace", port, vault)`. Der Rezept-Kopf oben („Obsidian
+beenden und neu starten") gilt nur, wenn sonst niemand an der Instanz hängt.
+
+**Neu in diesem Lauf: 18c und 18d** — die zwei Zusagen der Provider-API, die bis dahin auf
+Argumenten statt auf Messungen ruhten. Beide mit Gegenprobe belegt:
+
+| Punkt | Mutation | Ergebnis |
+|---|---|---|
+| 18c | `this.state.run = { kind: "error", … }` auch für `external` (der Fix `f223c8f` zurückgebaut) | rot: *Statuszeile „Error: txt2img HTTP 500" (is-error) WEICHT AB von „Ready" (is-ok)* |
+| 18d | `void this.startDownload()` in `ApiDeps.readiness` — ein Ladepfad in der API, genau was der Punkt ausschließt | rot: *Engine bleibt „downloading"* |
+
+**Was die 18d-Gegenprobe gelehrt hat, und warum die dritte Bedingung bleibt:** rot wurde der
+Punkt allein über den **Engine-Zustand**. Die Cache-Zählung stand nach den drei Sekunden
+Wartezeit noch unverändert auf 22 — der Download war längst angelaufen, hatte aber noch keine
+Datei fertig geschrieben. Eine Prüfung nur auf „Cache-Einträge unverändert" wäre in genau
+diesem Zeitfenster grün geblieben. Die Wartezeit zu verlängern wäre die schlechtere Antwort:
+sie verlangsamt jeden Lauf und bleibt eine Wette auf die Schreibgeschwindigkeit der Quelle.
+
+**Für 18c brauchte der Mock einen Fehlermodus** (`GET /mock/fail?on=1`, schaltet txt2img/img2img
+auf HTTP 500). Ein Umschalter zur Laufzeit statt einer Env-Variablen, weil der Punkt den
+Fehlerfall *mitten* im Lauf braucht und der Rest des Laufs echte Bilder erwartet. Derselbe Pfad
+dient dem Treiber als Erkennungsmerkmal: antwortet er nicht, läuft kein Mock, und 18c
+überspringt sich mit klarem Grund — einen echten Bild-Server kann man nicht zum Scheitern
+bringen.
+
+**Ein Zwischenfall, der zum Verfahren gehört:** der Abbruch des Gegenproben-Laufs per SIGTERM
+(Zeitgrenze der Aufruf-Schicht, nicht des Treibers) übersprang dessen `finally` und ließ einen
+angefangenen Download im Renderer zurück. Der Folgelauf hing daraufhin bei Punkt 14 nach der
+ersten Datei. Geheilt durch ein `location.reload()` im Fenster des Staging-Vaults; danach
+28/28. Wer einen Lauf hart abbricht, muss mit einem verwaisten Stream rechnen — der Vault ist
+dann nicht kaputt, aber der nächste Lauf misst ihn.
+
+
 ### 2026-08-24 · 0.9-dev (zweite Modellstufe) · Obsidian 1.13.7 (Vault `10_Pallas`) · A1111-Mock (Port 7860) + lokaler Asset-Mock (Port 7862) · **24/24 grün**
 
 **Baseline zuerst gefahren, unveränderter Treiber (Ruling des Controllers):** vor jeder
