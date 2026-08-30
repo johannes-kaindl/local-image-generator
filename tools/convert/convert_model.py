@@ -39,18 +39,24 @@ MODELS = {
     "sd-turbo": {
         "hf": "stabilityai/sd-turbo",
         "task": "stable-diffusion",
-        "parts": ["text_encoder", "unet", "vae_decoder"],
+        "parts": ["text_encoder", "unet", "vae_decoder", "vae_encoder"],
         "tokenizers": {"tokenizer": "tokenizer"},
         "split": [],                       # nichts stueckeln
         "fp32": [],                        # keine Ausnahme — SD-Turbo bleibt komplett fp16
+                                           # (vae_encoder: Spike 2026-08-30, Peak 1248 ueber
+                                           # 7 diverse Inputs — 50x Luft zur fp16-Grenze)
     },
     "sdxl-turbo": {
         "hf": "stabilityai/sdxl-turbo",
         "task": "stable-diffusion-xl",
-        "parts": ["text_encoder", "text_encoder_2", "unet", "vae_decoder"],
+        "parts": ["text_encoder", "text_encoder_2", "unet", "vae_decoder", "vae_encoder"],
         "tokenizers": {"tokenizer": "tokenizer", "tokenizer_2": "tokenizer_2"},
         "split": ["unet"],                 # nur das UNet reisst die Grenze
-        "fp32": ["vae_decoder"],           # ueberschreitet in fp16 den Wertebereich, s. Modulkopf
+        "fp32": ["vae_decoder", "vae_encoder"],
+        # vae_decoder: ueberschreitet in fp16 den Wertebereich, s. Modulkopf.
+        # vae_encoder: Spike 2026-08-30 — max |Aktivierung| 300k-500k auf JEDEM von 7 diversen
+        # Inputs (torch-Hooks), Faktor 7 ueber fp16s 65504. Derselbe Fall wie der Decoder, nur
+        # schlimmer. NICHT "der Einheitlichkeit wegen" auf fp16 zurueckstellen.
     },
 }
 
@@ -145,8 +151,18 @@ def main() -> None:
     ap.add_argument("--model", required=True, choices=sorted(MODELS))
     ap.add_argument("--work", default=None, help="Default: dist-assets/_work/<model>-fp32")
     ap.add_argument("--out", default=None, help="Default: dist-assets/<model>")
+    # --only <part>: NUR die genannten Teile (wiederholbar). Ohne Filter konvertiert der Lauf
+    # ALLE Teile neu — bei SDXL Stunden Maschinenzeit, und jede Neuerzeugung riskiert neue
+    # Hashes im Manifest (= Zwangs-Redownload fuer alle Nutzer). Ein Nachtrag eines einzelnen
+    # Teils (vae_encoder, 0.11.0) darf die bestehenden Bytes nicht anfassen.
+    ap.add_argument("--only", action="append", default=None, metavar="PART")
     a = ap.parse_args()
     spec = MODELS[a.model]
+    if a.only:
+        unknown = [x for x in a.only if x not in spec["parts"]]
+        if unknown:
+            raise SystemExit(f"--only: unbekannte Teile {unknown} — erlaubt: {spec['parts']}")
+        spec = {**spec, "parts": [x for x in spec["parts"] if x in a.only]}
     work = Path(a.work) if a.work else Path(f"dist-assets/_work/{a.model}-fp32")
     out = Path(a.out) if a.out else Path(f"dist-assets/{a.model}")
 
