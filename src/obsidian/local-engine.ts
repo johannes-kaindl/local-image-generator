@@ -47,6 +47,10 @@ export interface LocalEngineDeps {
   checkGpu: () => Promise<"ok" | "no-webgpu" | "no-f16">;
   /** RGBA → PNG-Data-URL (Canvas im Renderer, Fake im Test). */
   encodePng: (rgba: Uint8ClampedArray, w: number, h: number) => string;
+  /** Base64 (initImageData, img2img) → CHW-Float32-Pixel in Zielgroesse — DOM-Wandlung,
+   *  injiziert wie encodePng, damit sie in Node per Fake testbar bleibt (echt: `decodeInitImage`
+   *  aus `./png`, Canvas + createImageBitmap). Pflicht-Dep, auch wenn txt2img sie nie ruft. */
+  decodeImage: (base64: string, size: number) => Promise<Float32Array>;
   /** Timer-Port für den Session-Build-Wachhund (`SESSION_BUILD_TIMEOUT_MS`). Default
    *  `window.setTimeout`/`clearTimeout` (Store-Regel prefer-window-timers, Muster wie
    *  `StoreDeps.timer` in model-store.ts) — ein Test kann hier einen Fake einsetzen, der
@@ -71,6 +75,18 @@ export class LocalEngineBackend implements ImageBackend {
   private running: Promise<unknown> | null = null;
   private runtimeReady = false;
   private readonly timers: TimeoutTimers;
+  /** Perlenschnur fuer `deps.createSession()` (Live-Smoke-Fund 2026-08-31, Punkt 25): der
+   *  WebGPU-EP von onnxruntime-web vertraegt nur EINE Session-Erzeugung zugleich —
+   *  `webgpuRegisterDevice` im Emscripten-Glue setzt ein Flag und wirft "another WebGPU EP
+   *  inference session is being created.", wenn eine zweite Erzeugung ueberlappt (nachlesbar
+   *  in node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs, Suche nach
+   *  "is being created"). `load()` haengt fuer sdxl-turbo FUENF `loadPart()`-Aufrufe an ein
+   *  `Promise.all` — mit vier Teilen ging das Rennen zufaellig gut, mit dem fuenften
+   *  (vaeEncoder, klein und schnell erzeugt) ist es live erstmals gerissen. `enqueueCreate()`
+   *  reiht jeden `createSession`-Aufruf hinter den vorigen; die `Promise.all`-Struktur in
+   *  `load()` und die Parallelitaet von `store.getBuffer()` bleiben unangetastet — nur die
+   *  Session-ERZEUGUNG wird seriell. */
+  private createChain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly deps: LocalEngineDeps,
@@ -97,7 +113,11 @@ export class LocalEngineBackend implements ImageBackend {
     const engine = await this.ensureLoaded();
     const steps = Math.min(this.model.steps.max, Math.max(this.model.steps.min, Math.round(req.steps)));
     const size = this.pickSize(req);
-    const res = await engine.generate({ prompt: req.prompt, steps, seed: req.seed, size }, (s, t) => this.onPhase?.("generating", s, t));
+    const init = req.initImageData !== null ? await this.deps.decodeImage(req.initImageData, size) : undefined;
+    const res = await engine.generate(
+      { prompt: req.prompt, steps, seed: req.seed, size, initPixels: init, denoising: req.denoising ?? undefined },
+      (s, t) => this.onPhase?.("generating", s, t),
+    );
     const dataUrl = this.deps.encodePng(res.rgba, res.width, res.height);
     // Wie A1111Client: nackte Base64 — main.ts hängt das data:-Präfix selbst an.
     return dataUrl.slice(dataUrl.indexOf(",") + 1);
@@ -126,6 +146,17 @@ export class LocalEngineBackend implements ImageBackend {
     this.engine = null;
     this.loading = null;
     if (e) await e.dispose();
+  }
+
+  /** Haengt `fn` hinter das vorherige Glied der Erzeugungs-Queue (`createChain`). Ein
+   *  gescheitertes vorheriges Glied darf die Kette nicht vergiften — deshalb `.catch()` auf
+   *  dem WARTE-Zweig, bevor `fn` startet; das eigene Ergebnis (Erfolg oder Fehlschlag) geht
+   *  unverfaelscht an den Aufrufer zurueck und wird separat abgefangen, damit es das
+   *  NAECHSTE Glied ebenfalls nicht vergiftet. */
+  private enqueueCreate(fn: () => Promise<Session>): Promise<Session> {
+    const result = this.createChain.catch(() => undefined).then(fn);
+    this.createChain = result.catch(() => undefined);
+    return result;
   }
 
   private ensureLoaded(): Promise<BuiltinEngine> {
@@ -160,7 +191,12 @@ export class LocalEngineBackend implements ImageBackend {
     // `SESSION_BUILD_TIMEOUT_MS`, bevor der Aufruf als haengend gilt. Ein spaetes Aufloesen
     // nach Ablauf wird nicht mehr abgewartet (ORT bietet kein Abort) — die Session bleibt dann
     // unreleased im Hintergrund verwaist, dieselbe Abwaegung wie im verworfenen 0.4-Entwurf.
-    const sessionPromise = this.deps.createSession(buf, ext);
+    // Seit dem WebGPU-EP-Serialisierungs-Fix (2026-08-31) laeuft der Aufruf ueber
+    // `enqueueCreate()` — die Frist deckt damit auch die Wartezeit in der Erzeugungs-Queue mit
+    // ab, nicht nur die eigentliche `createSession`-Laufzeit. 5 Minuten tragen das reichlich:
+    // gemessene SDXL-Session-Aufbauten liegen bei ~1 s pro Teil auf M5, fuenf Teile in Reihe
+    // also bei ~5 s statt der bisher angenommenen parallelen ~1 s.
+    const sessionPromise = this.enqueueCreate(() => this.deps.createSession(buf, ext));
     // Review-Fund: `withTimeout` haengt intern `work.then(...)` an — nur den Erfolgsfall, kein
     // `onRejected`. Verwirft `sessionPromise` NACH Ablauf der Frist (die Race also schon per
     // Timeout entschieden ist), waere das genau die Art `unhandledrejection`, die die eigene
@@ -170,7 +206,24 @@ export class LocalEngineBackend implements ImageBackend {
     // Ergebnis unten aendert sich dadurch nicht.
     sessionPromise.catch(() => { /* nur gegen unhandledrejection nach einem Timeout */ });
     const raced = await withTimeout(sessionPromise, SESSION_BUILD_TIMEOUT_MS, this.timers);
-    if (raced.timedOut) throw new SessionBuildTimeout(SESSION_BUILD_TIMEOUT_MS);
+    if (raced.timedOut) {
+      // Review-Fund (Fix-Runde 1, 2026-08-31): ohne Reset bleibt `this.createChain` an genau
+      // DIESES haengende `sessionPromise` gekettet — beim historischen Ewig-Haenger-Fall
+      // (`create()` resolved nie, jsep/asyncify-Fehlpaarung) settelt es NIE, also wuerde JEDER
+      // kuenftige `enqueueCreate()`-Aufruf auf derselben Backend-Instanz fuer immer warten und
+      // nie wieder ein echtes `createSession()` ausloesen. `main.ts` cached die Instanz
+      // (`ensureLocalEngine`) — der naheliegende Retry nach einem Timeout (Nutzer klickt erneut
+      // Generate) waere damit dauerhaft tot, nicht nur der eine Ladeversuch. Der Reset hier
+      // gibt kuenftigen Versuchen eine frische Kette; dieselbe bereits akzeptierte Abwaegung
+      // wie die "Session bleibt unreleased im Hintergrund verwaist" oben: ein kleines
+      // Restrisiko, dass die alte Promise doch noch spaet settelt und der WebGPU-EP dann zwei
+      // Erzeugungen ueberlappen sieht, gegen die Garantie, dass kuenftige Versuche ueberhaupt
+      // wieder etwas probieren. Der spaete-Settle-Fall endet schlimmstenfalls im selben
+      // lesbaren Fehler ("another WebGPU EP inference session is being created."), den dieser
+      // Fix ohnehin behandelt — kein neuer Fehlermodus.
+      this.createChain = Promise.resolve();
+      throw new SessionBuildTimeout(SESSION_BUILD_TIMEOUT_MS);
+    }
     return raced.value;
   }
 
@@ -185,34 +238,51 @@ export class LocalEngineBackend implements ImageBackend {
       this.runtimeReady = true;
     }
     if (this.model.kind === "sdxl") {
-      const { textEncoder, textEncoder2, unet, vaeDecoder, tokenizer, tokenizer2 } = this.model.parts;
-      const [textEncoderSession, textEncoder2Session, unetSession, vaeDecoderSession, vocabText, mergesText, vocab2Text, merges2Text] =
-        await Promise.all([
-          this.loadPart(textEncoder),
-          this.loadPart(textEncoder2),
-          this.loadPart(unet),
-          this.loadPart(vaeDecoder),
-          store.getText(tokenizer.vocab),
-          store.getText(tokenizer.merges),
-          store.getText(tokenizer2.vocab),
-          store.getText(tokenizer2.merges),
-        ]);
+      const { textEncoder, textEncoder2, unet, vaeDecoder, vaeEncoder, tokenizer, tokenizer2 } = this.model.parts;
+      const [
+        textEncoderSession,
+        textEncoder2Session,
+        unetSession,
+        vaeDecoderSession,
+        vaeEncoderSession,
+        vocabText,
+        mergesText,
+        vocab2Text,
+        merges2Text,
+      ] = await Promise.all([
+        this.loadPart(textEncoder),
+        this.loadPart(textEncoder2),
+        this.loadPart(unet),
+        this.loadPart(vaeDecoder),
+        this.loadPart(vaeEncoder),
+        store.getText(tokenizer.vocab),
+        store.getText(tokenizer.merges),
+        store.getText(tokenizer2.vocab),
+        store.getText(tokenizer2.merges),
+      ]);
       return new SdxlTurboEngine(
-        { textEncoder: textEncoderSession, textEncoder2: textEncoder2Session, unet: unetSession, vaeDecoder: vaeDecoderSession },
+        {
+          textEncoder: textEncoderSession,
+          textEncoder2: textEncoder2Session,
+          unet: unetSession,
+          vaeDecoder: vaeDecoderSession,
+          vaeEncoder: vaeEncoderSession,
+        },
         { primary: parseTokenizer(vocabText, mergesText), secondary: parseTokenizer(vocab2Text, merges2Text) },
         { vaeScaling: this.model.vaeScaling, size: this.model.sizes[0]!.width },
       );
     }
-    const { textEncoder, unet, vaeDecoder, tokenizer } = this.model.parts;
-    const [textEncoderSession, unetSession, vaeDecoderSession, vocabText, mergesText] = await Promise.all([
+    const { textEncoder, unet, vaeDecoder, vaeEncoder, tokenizer } = this.model.parts;
+    const [textEncoderSession, unetSession, vaeDecoderSession, vaeEncoderSession, vocabText, mergesText] = await Promise.all([
       this.loadPart(textEncoder),
       this.loadPart(unet),
       this.loadPart(vaeDecoder),
+      this.loadPart(vaeEncoder),
       store.getText(tokenizer.vocab),
       store.getText(tokenizer.merges),
     ]);
     return new SdTurboEngine(
-      { textEncoder: textEncoderSession, unet: unetSession, vaeDecoder: vaeDecoderSession },
+      { textEncoder: textEncoderSession, unet: unetSession, vaeDecoder: vaeDecoderSession, vaeEncoder: vaeEncoderSession },
       parseTokenizer(vocabText, mergesText),
     );
   }

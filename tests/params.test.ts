@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hardenParams } from "../src/core/params";
+import { hardenParams, denoiseRaster } from "../src/core/params";
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { CFG, DEFAULT_SIZE, DENOISING, STEPS } from "../src/core/generation";
 
@@ -167,8 +167,30 @@ describe("hardenParams", () => {
 });
 
 describe("hardenParams — Ausgangsbild und denoising", () => {
-  it("streicht das Ausgangsbild im builtin-Modus still", () => {
-    const p = hardenParams({ prompt: "x", initImage: { ref: "Bilder/a.png" }, denoising: 0.4 }, ctx("builtin"));
+  // Seit 0.11 akzeptiert die eingebaute Engine eine Vorlage — sie rastert das Teil-Denoising
+  // nur auf `steps` Einstiegspunkte. Die Notiz traegt den EFFEKTIVEN Wert (denoiseRaster),
+  // nicht den Wunsch: eine Haertung, eine Wahrheit.
+  it("rastert denoising im builtin-Modus auf die Einstiegspunkte von `steps` statt es zu streichen", () => {
+    const p = hardenParams(
+      { prompt: "x", initImage: { ref: "Bilder/a.png" }, denoising: 0.6, steps: 4 },
+      ctx("builtin"),
+    );
+    expect(p.initImage).toBe("Bilder/a.png");
+    expect(p.denoising).toBe(0.5); // denoiseRaster(4, 0.6) => effective 0.5
+  });
+
+  it("nimmt ohne Angabe den Denoising-Default, der bereits auf dem Raster liegt", () => {
+    const p = hardenParams({ prompt: "x", initImage: { ref: "a.png" }, steps: 4 }, ctx("builtin"));
+    expect(p.denoising).toBe(0.75);
+  });
+
+  it("laesst denoising im Server-Modus kontinuierlich (kein Raster)", () => {
+    const p = hardenParams({ prompt: "x", initImage: { ref: "a.png" }, denoising: 0.6 }, ctx("server"));
+    expect(p.denoising).toBe(0.6);
+  });
+
+  it("bleibt bei txt2img (keine Vorlage) im builtin-Modus null", () => {
+    const p = hardenParams({ prompt: "x", denoising: 0.6 }, ctx("builtin"));
     expect(p.initImage).toBeNull();
     expect(p.denoising).toBeNull();
   });
@@ -229,5 +251,20 @@ describe("eine Haertung, zwei Aufrufer", () => {
     expect(voll).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 4 });
     // nur was der Aufrufer wirklich sagen darf, unterscheidet sich
     expect(schmal.steps).toBe(4);
+  });
+});
+
+describe("denoiseRaster", () => {
+  it("rastert auf steps Stufen und liefert den Einstiegspunkt", () => {
+    expect(denoiseRaster(4, 1)).toEqual({ tStart: 0, effective: 1 });
+    expect(denoiseRaster(4, 0.75)).toEqual({ tStart: 1, effective: 0.75 });
+    expect(denoiseRaster(4, 0.6)).toEqual({ tStart: 2, effective: 0.5 });   // round(2.4)=2
+    expect(denoiseRaster(4, 0.7)).toEqual({ tStart: 1, effective: 0.75 });  // round(2.8)=3
+    expect(denoiseRaster(4, 0.25)).toEqual({ tStart: 3, effective: 0.25 });
+  });
+  it("klemmt auf mindestens einen Step", () => {
+    expect(denoiseRaster(4, 0)).toEqual({ tStart: 3, effective: 0.25 });
+    expect(denoiseRaster(1, 0)).toEqual({ tStart: 0, effective: 1 });
+    expect(denoiseRaster(1, 1)).toEqual({ tStart: 0, effective: 1 });
   });
 });

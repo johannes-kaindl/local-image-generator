@@ -14,6 +14,7 @@ const EXPECT_SD_TURBO = {
   text_encoder: { inputs: ["input_ids"], firstOutput: "last_hidden_state" },
   unet: { inputs: ["sample", "timestep", "encoder_hidden_states"], firstOutput: "out_sample" },
   vae_decoder: { inputs: ["latent_sample"], firstOutput: "sample" },
+  vae_encoder: { inputs: ["sample"], firstOutput: "latent_parameters" },
 };
 // unet.inputs "text_embeds"/"time_ids": aus dem Spike-Plan uebernommene ERWARTUNG (Task-3-Brief
 // Step 5), an dieser Konversion noch NICHT nachgemessen — dist-assets/sdxl-turbo/ war beim
@@ -35,6 +36,7 @@ const EXPECT_SDXL_TURBO = {
     firstOutput: "out_sample",
   },
   vae_decoder: { inputs: ["latent_sample"], firstOutput: "sample" },
+  vae_encoder: { inputs: ["sample"], firstOutput: "latent_parameters" },
 };
 const MODELS = { "sd-turbo": EXPECT_SD_TURBO, "sdxl-turbo": EXPECT_SDXL_TURBO };
 const EXPECT = MODELS[basename(ROOT)] ?? EXPECT_SD_TURBO;

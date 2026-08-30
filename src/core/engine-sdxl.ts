@@ -7,8 +7,10 @@
 // SD-Turbo (engine.ts) bleibt dabei unangetastet.
 import {
   decodeLatents,
+  encodeInitImage,
   floatFeed,
   idsFeed,
+  noisedInitLatents,
   runDiffusion,
   toF32,
   type BuiltinEngine,
@@ -18,6 +20,7 @@ import {
   type ProgressFn,
   type Session,
 } from "./engine";
+import { denoiseRaster } from "./params";
 import { makeSchedule } from "./pipeline/scheduler";
 import { tokenize, type TokenizerData } from "./pipeline/tokenizer";
 
@@ -26,6 +29,9 @@ export interface SdxlSessions {
   textEncoder2: Session;
   unet: Session;
   vaeDecoder: Session;
+  /** img2img (Spec 0.9 §4a) — Pflichtfeld wie bei SD-Turbo (engine.ts): txt2img ruft ihn nie
+   *  auf, aber `local-engine.ts` laedt ihn unbedingt mit. */
+  vaeEncoder: Session;
 }
 
 export interface SdxlTokenizers {
@@ -121,15 +127,19 @@ export class SdxlTurboEngine implements BuiltinEngine {
     return this._busy;
   }
 
-  // Gibt alle vier ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden). Idempotent,
+  // Gibt alle fünf ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden). Idempotent,
   // Best-Effort wie SdTurboEngine.dispose().
   async dispose(): Promise<void> {
     if (this._disposed) return;
     this._disposed = true;
     await Promise.all(
-      [this.sessions.textEncoder, this.sessions.textEncoder2, this.sessions.unet, this.sessions.vaeDecoder].map((s) =>
-        s.release().catch(() => {}),
-      ),
+      [
+        this.sessions.textEncoder,
+        this.sessions.textEncoder2,
+        this.sessions.unet,
+        this.sessions.vaeDecoder,
+        this.sessions.vaeEncoder,
+      ].map((s) => s.release().catch(() => {})),
     );
   }
 
@@ -166,6 +176,16 @@ export class SdxlTurboEngine implements BuiltinEngine {
       const timeIds = new Float32Array([size, size, 0, 0, size, size]);
 
       const schedule = makeSchedule(req.steps);
+
+      // img2img (Spec 0.9 §4a): nur bei einer Vorlage — sonst bleibt der txt2img-Pfad
+      // exakt wie zuvor (init bleibt undefined, runDiffusion startet bei 0).
+      let init: { latents: Float32Array; startAt: number } | undefined;
+      if (req.initPixels) {
+        const { tStart } = denoiseRaster(req.steps, req.denoising ?? 1);
+        const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, size, this.opts.vaeScaling);
+        init = { latents: noisedInitLatents(encoded, req.seed, schedule.sigmas[tStart]!), startAt: tStart };
+      }
+
       const latents = await runDiffusion(
         this.sessions.unet,
         schedule,
@@ -177,6 +197,7 @@ export class SdxlTurboEngine implements BuiltinEngine {
           time_ids: floatFeed(this.sessions.unet, "time_ids", timeIds, [1, 6]),
         },
         onProgress,
+        init,
       );
       return await decodeLatents(this.sessions.vaeDecoder, latents, latentDims, this.opts.vaeScaling, size, req.seed);
     } finally {

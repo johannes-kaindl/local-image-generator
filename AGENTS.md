@@ -13,13 +13,15 @@ Verlauf, Ablage im Vault) vor **zwei austauschbaren Backends** (seit 0.6, Spec i
 `_SDD/2026-08-19-eingebaute-engine-zwei-backends-design.md`):
 
 - **Eingebaut (Default):** SD-Turbo im Renderer ueber `onnxruntime-web/webgpu`. Modell
-  (eigene fp16-ONNX-Konversion, ~2,5 GB) + ORT-WASM werden **nur nach Klick** aus dem
+  (eigene fp16-ONNX-Konversion, ~2,6 GB) + ORT-WASM werden **nur nach Klick** aus dem
   eigenen HF-Repo in die Cache API gestreamt, SHA-256 gegen das generierte Manifest
   geprueft. 512 px, Steps 1–4, kein Negativ/CFG (Keine-Attrappen-Linie).
 - **Server:** Draw Things, AUTOMATIC1111, Forge oder SD.Next ueber deren gemeinsame
   A1111-kompatible HTTP-API — dem Server gehoeren Modell und Hardware, volle Regler.
-  Seit 0.8 zusaetzlich **img2img**: von einer Vault-Vorlage aus weiterrechnen. Der eingebaute
-  Modus kann das NICHT (kein VAE-Encoder) — die Zeile ist dort ganz weg, nicht deaktiviert.
+  Seit 0.8 zusaetzlich **img2img**: von einer Vault-Vorlage aus weiterrechnen — seit 0.11 in
+  BEIDEN Backends: der Server kontinuierlich (denoising 0–1 in 0,05er-Schritten), die
+  eingebaute Engine ueber ihren eigenen VAE-Encoder mit nur `steps` Einstiegspunkten
+  (denoising rastert auf {1/steps … 1}; die Quantisierung sitzt in der HAERTUNG, s. Gotchas).
 
 Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History). Beide Backends
 implementieren `ImageBackend` (`src/core/txt2img.ts`); `main.ts` routet nach
@@ -39,7 +41,7 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   I/O-Namen/Dtypes/Shapes mit onnxruntime-node, `npm run assets:upload` laedt ins HF-Repo
   (`johannes-kaindl/local-image-generator-models`, per `HF_MODELS_REPO` ueberschreibbar).
   **Der Namespace ist eine Vertrauenszusage, kein Detail:** die URL steht als Platzhalter der
-  Settings-Zeile „Download source" im Bild, und wer 2,5 GB laedt, gleicht den Namen mit dem
+  Settings-Zeile „Download source" im Bild, und wer 2,6 GB laedt, gleicht den Namen mit dem
   Plugin-Autor ab — er ist deshalb seit 2026-08-21 identisch mit dem GitHub-Profil, auf das
   `authorUrl` zeigt. Das alte `v6t2b9/…` bleibt online: `assetBaseUrl` ist ein GESPEICHERTES
   Setting, eine 0.6.0-Installation traegt die alte URL in ihrer `data.json` und wuerde nach
@@ -186,6 +188,12 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   echtes SDXL-Turbo-Bild und misst dessen Pixel-Inhalt (Luma-Standardabweichung + Zahl
   distinkter Farben) statt nur seine Form — verifiziert per Live-Session-Swap gegen genau
   diesen fp16-Zustand rot, gegen den fp32-Fix gruen (`docs/SMOKE.md` § 2026-08-24 Phase 4).
+  **Seit 0.11 gilt dieselbe Ausnahme fuer SDXLs VAE-ENCODER** (img2img, Posten 4a): der
+  Spike vom 2026-08-30 mass per torch-Hooks max-|Aktivierung| von **300k–500k auf jedem von
+  7 diversen Inputs** — Faktor 7 ueber fp16s 65504, schlimmer als der Decoder-Fall. Er wird
+  deshalb fp32 ausgeliefert (137 MB statt ~68 MB; `MODELS["sdxl-turbo"]["fp32"]` fuehrt
+  beide). SD-Turbos Encoder bleibt fp16 (Peak 1 248, 50x Luft). Live-Beweis unter WebGPU ist
+  GUI-Smoke-Punkt 27 (`docs/SMOKE.md` § 2026-08-31).
   **Bei jedem weiteren fp16-Konversionsschritt an SDXL: diesen Teil NICHT „der Einheitlichkeit
   wegen" zurueckstellen** — er sieht wie eine vergessene Aufraeumarbeit aus und ist keine.
 - **Feeds an die Session anpassen, nie hardcoden:** `Session.inputTypes` (Dtype) UND
@@ -319,10 +327,37 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   txt2img. Aus demselben Grund darf `ApiRequest` NIE ungeprueft als `HardenInput`
   durchgereicht werden (`deps.harden(req)`) — dort heisst `initImage` Base64.
 - **Der Denoise-Regler hat ZWEI Sichtbarkeitsbedingungen, nicht eine.**
-  `controls.initImage` = kann das Backend es (Modus), `controls.denoising` = gibt es eine
-  Vorlage zu aendern. Ein Regler ohne Vorlage bewirkt nichts und waere dieselbe Attrappe wie
-  ein CFG-Regler im builtin-Modus. Deshalb steht `.lig-denoise` auch NICHT in `MODUS_REGLER`
-  von `scripts/gui-smoke.ts`: dort gefuehrt, wuerde Punkt 17 die zweite Stufe als Defekt melden.
+  `controls.initImage` = kann das Backend es, `controls.denoising` = gibt es eine
+  Vorlage zu aendern. Seit 0.11 ist die erste Bedingung in BEIDEN Modi erfuellt (builtin kann
+  img2img) — die Vorlagen-Zeile ist immer sichtbar, und `.lig-init-row`/`.lig-init-from-result`
+  sind aus `MODUS_REGLER` des Smoke-Treibers RAUS (dort gefuehrt, meldete Punkt 17 die gewollte
+  Sichtbarkeit als Defekt; gemessen 2026-08-31). Ein Regler ohne Vorlage bewirkt weiter nichts
+  und waere dieselbe Attrappe wie ein CFG-Regler ohne CFG. Deshalb steht `.lig-denoise` auch
+  NICHT in `MODUS_REGLER`: dort gefuehrt, wuerde Punkt 17 die zweite Stufe als Defekt melden.
+- **Die Denoise-Quantisierung sitzt in der HAERTUNG, nicht in der Engine — und die Formel
+  existiert genau einmal.** `denoiseRaster(steps, d)` (`src/core/params.ts`) rechnet
+  Einstiegspunkt und effektiven Wert; `hardenParams` quantisiert damit (Notiz/Historie/API
+  tragen den EFFEKTIVEN Wert), die Engines LEITEN daraus nur den Einstiegspunkt ab (`d` ist
+  dort schon Rasterwert, die Ableitung ist exakt). Wer in der Engine erneut rundet oder die
+  Formel dupliziert, erzeugt zwei Wahrheiten — dieselbe Falle wie bei den zwei Haertungen.
+  Randfall, DEKLARIERT statt versteckt: bei `steps = 1` hat der Regler genau eine Position
+  (1.0). Er bleibt trotzdem sichtbar, denn auch bei strength 1.0 fliesst die Vorlage schwach
+  ein (`init + noise·sigma[0]`) — ein versteckter Regler wuerde einen img2img-Lauf als
+  txt2img melden.
+- **Der WebGPU-EP vertraegt nur EINE Session-Erzeugung zugleich.** `webgpuRegisterDevice` im
+  Emscripten-Glue setzt ein Flag und wirft `another WebGPU EP inference session is being
+  created`, wenn zwei `InferenceSession.create` ueberlappen. Das `Promise.all` ueber
+  `loadPart()` war deshalb seit 0.9 ein Timing-Gluecksspiel und riss live, als der 5. Teil
+  (der kleine, schnell erzeugte vae_encoder) dazukam. Fix: Erzeugungs-Queue in
+  `LocalEngineBackend` (injizierte Grenze, Node-testbar; `getBuffer` bleibt parallel) plus
+  Ketten-RESET beim Session-Timeout — ohne ihn haette ein einziger Ewig-Haenger jede weitere
+  Erzeugung der gecachten Instanz blockiert (Review-Fund mit Repro). Die Wachhund-Frist
+  enthaelt seither auch die Queue-Wartezeit.
+- **0.11-Migration: Bestandsinstallationen zeigen wieder „Download" — und laden dabei NUR den
+  Encoder nach.** Der Encoder ist Pflichtteil in `assetsFor()`, also ist ein 0.6–0.10-Cache
+  `not-downloaded`; der Downloader ueberspringt gecachte Schluessel und holt nur die fehlende
+  Datei (68 MB sd / 137 MB sdxl — gemessen im Smoke: 1 s gegen den lokalen Mock). Der
+  Bestaetigungsdialog nennt dabei die GESAMTgroesse des Modells, nicht die fehlenden Bytes.
 - **`.lig-model-pick` gehoert aus demselben Grund NICHT in `MODUS_REGLER`.** Die
   Modellwahl im Panel hat ebenfalls zwei UNABHAENGIGE Sichtbarkeitsbedingungen —
   `settings.showModelPicker` UND mehr als ein heruntergeladenes Modell — statt der einen

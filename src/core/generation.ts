@@ -31,8 +31,8 @@ export interface BackendCapabilities {
   cfg: boolean;
   minSteps: number;
   maxSteps: number;
-  /** Kann das Backend ein Ausgangsbild weiterrechnen (img2img)? Die eingebaute Engine
-   *  kann es nicht — ihr fehlt der VAE-Encoder (Roadmap-Posten 4a). */
+  /** Kann das Backend ein Ausgangsbild weiterrechnen (img2img)? Seit 0.11 kann die
+   *  eingebaute Engine das ebenfalls — der VAE-Encoder ist Pflicht-Asset. */
   initImage: boolean;
   /** Nicht-null heißt: das Backend kann NUR diese eine Größe (SD-Turbo ist auf 512²
    *  destilliert). null heißt: der Aufrufer wählt — entweder frei (Server) oder aus `sizes`
@@ -67,7 +67,7 @@ export function backendCapabilities(mode: EngineChoice, model: BuiltinModelId): 
   return {
     negativePrompt: false,
     cfg: false,
-    initImage: false,
+    initImage: true,
     minSteps: m.steps.min,
     maxSteps: m.steps.max,
     // fixedSize bleibt die v1-Zusage „genau diese eine Groesse". Bei zwei erlaubten Groessen

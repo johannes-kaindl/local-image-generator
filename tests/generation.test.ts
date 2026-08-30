@@ -33,11 +33,11 @@ describe("generation constants (Spec §4)", () => {
 });
 
 describe("backendCapabilities", () => {
-  it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt", () => {
+  it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt — kann seit 0.11 aber img2img", () => {
     expect(backendCapabilities("builtin", "sd-turbo")).toEqual({
       negativePrompt: false,
       cfg: false,
-      initImage: false,
+      initImage: true,
       minSteps: BUILTIN_MODELS["sd-turbo"].steps.min,
       maxSteps: BUILTIN_MODELS["sd-turbo"].steps.max,
       fixedSize: BUILTIN_MODELS["sd-turbo"].sizes[0],
@@ -66,12 +66,12 @@ describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
     expect(c.sizes).toEqual([{ width: 512, height: 512 }, { width: 1024, height: 1024 }]);
   });
 
-  it("beide builtin-Modelle bleiben ohne Negativ-Prompt, CFG und img2img", () => {
+  it("beide builtin-Modelle bleiben ohne Negativ-Prompt und CFG, koennen aber img2img", () => {
     for (const id of ["sd-turbo", "sdxl-turbo"] as const) {
       const c = backendCapabilities("builtin", id);
       expect(c.negativePrompt).toBe(false);
       expect(c.cfg).toBe(false);
-      expect(c.initImage).toBe(false);
+      expect(c.initImage).toBe(true);
     }
   });
 
@@ -84,8 +84,8 @@ describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
 });
 
 describe("img2img-Faehigkeit", () => {
-  it("nur der Server-Modus kann ein Ausgangsbild", () => {
+  it("seit 0.11 koennen beide Modi ein Ausgangsbild — die eingebaute Engine hat den VAE-Encoder als Pflicht-Asset", () => {
     expect(backendCapabilities("server", "sd-turbo").initImage).toBe(true);
-    expect(backendCapabilities("builtin", "sd-turbo").initImage).toBe(false);
+    expect(backendCapabilities("builtin", "sd-turbo").initImage).toBe(true);
   });
 });

@@ -4,8 +4,8 @@ Bilder in Obsidian erzeugen — auf dem eigenen Rechner, ohne Cloud und ohne Kon
 Wege, wählbar in den Einstellungen:
 
 - **Eingebaut (Standard):** ein Modell rechnet **auf deiner GPU in Obsidian** per
-  WebGPU — wählbar in den Einstellungen. **SD-Turbo** (≈ 2,5 GB, 512×512) ist die
-  Vorgabe; **SDXL-Turbo** (≈ 7,0 GB, bis 1024×1024, schärfere Bilder) ist ein
+  WebGPU — wählbar in den Einstellungen. **SD-Turbo** (≈ 2,6 GB, 512×512) ist die
+  Vorgabe; **SDXL-Turbo** (≈ 7,1 GB, bis 1024×1024, schärfere Bilder) ist ein
   optionales zweites Modell, auf das du selbst umstellst. Nichts zu installieren:
   **Modell herunterladen** klicken (per Prüfsumme geprüft, außerhalb des Vaults
   abgelegt), dann Prompt eingeben und Generieren.
@@ -48,11 +48,16 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
   entsprechen — ein erneuter Lauf ohne Änderung brächte dasselbe Bild. **Neu würfeln**
   zieht einen frischen Seed und erzeugt trotzdem eine neue Variante; das Würfel-Symbol
   würfelt den Seed, ohne zu erzeugen.
-- **Von einem vorhandenen Bild ausgehen** (Server-Modus): eine Vorlage aus dem Vault
-  wählen — oder am gerade erzeugten Bild auf **Speichern & als Vorlage** klicken — und
-  einstellen, wie weit sich das Modell davon entfernen darf. Im eingebauten Modus fehlt
-  die Zeile ganz, weil SD-Turbo keinen VAE-Encoder hat und es nicht kann; der
-  Stärke-Regler erscheint erst, wenn wirklich eine Vorlage gesetzt ist.
+- **Von einem vorhandenen Bild ausgehen** (img2img, beide Engines): eine Vorlage aus
+  dem Vault wählen — oder am gerade erzeugten Bild auf **Speichern & als Vorlage**
+  klicken — und einstellen, wie weit sich das Modell davon entfernen darf. Im
+  Server-Modus ist die Stärke ein stufenloser Regler; im eingebauten Modus rastert sie
+  auf die Schrittzahl des Modells, weil SD-Turbo und SDXL-Turbo ohnehin nur 1–4
+  diskrete Schritte bieten. Der Stärke-Regler erscheint erst, wenn wirklich eine
+  Vorlage gesetzt ist. Der eingebaute Modus schneidet die Vorlage per Center-Crop auf
+  die quadratische Eingabegröße des Modells zu (ein 16:9-Bild wird beschnitten, nicht
+  verzerrt); der Server-Modus reicht die Datei unverändert weiter und der Server
+  skaliert selbst.
 - Der Reiter **Verlauf** zeigt frühere Erzeugungen als vollständige Rezepte
   (Prompt · Negativ-Prompt · Seed · Schritte · Größe · CFG · Zeit) — nach Prompt
   gruppierbar, per Klick zurück in den Generator ladbar, einzeln löschbar oder komplett
@@ -102,8 +107,8 @@ if (api?.apiVersion === 1) {
 
 `status().capabilities` sagt dir, was das aktive Backend wirklich kann. Die eingebaute Engine
 ist guidance-frei und fest auf 512×512 — ein CFG- oder Größenregler in deiner Oberfläche wäre
-in diesem Modus eine Attrappe. Dasselbe gilt für `capabilities.initImage`: nur das
-Server-Backend kann von einem vorhandenen Bild ausgehen.
+in diesem Modus eine Attrappe. `capabilities.initImage` ist in BEIDEN Modi `true` — beide
+Backends können von einem vorhandenen Bild ausgehen.
 
 Für einen Lauf mit Vorlage: das Bild als Base64 (ohne `data:`-Präfix) mitgeben, dazu
 optional `denoising` zwischen 0 und 1 (Vorgabe `0.75` — höher heißt weiter weg vom Original):
@@ -112,9 +117,15 @@ optional `denoising` zwischen 0 und 1 (Vorgabe `0.75` — höher heißt weiter w
 if (api.status().capabilities.initImage) {
   const r = await api.generate({ prompt: "derselbe See, in der Dämmerung", initImage: pngBase64, denoising: 0.4 });
   // r.image.params.denoising sagt, was tatsächlich angewandt wurde — null heißt, es wurde
-  // ignoriert (der eingebaute Modus streicht es still, statt es vorzutäuschen).
+  // ignoriert (es wurde keine Vorlage geschickt).
 }
 ```
+
+Die eingebaute Engine kann nur einen Teil ihres festen Schritte-Zeitplans neu durchrechnen und
+trifft deshalb nur `steps` unterschiedliche Denoising-Stärken (z. B. 4 Schritte →
+{0.25, 0.5, 0.75, 1}). Dein `denoising` wird auf den nächstgelegenen dieser Werte gerastert —
+das Server-Backend bleibt kontinuierlich. In beiden Fällen ist `r.image.params.denoising` der
+Wert, der tatsächlich gilt — als Quelle der Wahrheit behandeln, nicht den eingegebenen Wert.
 
 Die API startet nie selbst einen Download. Fehlt das Modell, bekommst du
 `{ ok: false, reason: "model-not-downloaded" }` — den Knopf muss der Nutzer selbst klicken.
@@ -156,7 +167,7 @@ das Plugin wurde zwischen deinem `generate()`- und `save()`-Aufruf deaktiviert).
    [Releases](https://github.com/johannes-kaindl/local-image-generator/releases)).
 2. **Eingebaute Engine (Standard):** den Generator öffnen und **Modell herunterladen**
    klicken — oder in **Einstellungen → Local Image Generator → Engine**. Der Knopf nennt
-   die Größe des gerade gewählten Modells (Vorgabe SD-Turbo, ≈ 2,5 GB); dort zuerst
+   die Größe des gerade gewählten Modells (Vorgabe SD-Turbo, ≈ 2,6 GB); dort zuerst
    SDXL-Turbo wählen, wenn stattdessen das schärfere, größere Modell gewünscht ist. Sobald
    der Status *Bereit* meldet, generieren. Das ist die ganze Einrichtung.
 3. **Lieber ein Server?** **Engine** auf *Server (Draw Things / A1111)* stellen, die URL
@@ -227,8 +238,8 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 - **Eingebaute Engine:** eine GPU, die Obsidians WebGPU mit 16-Bit-Shadern
   (`shader-f16`) nutzen kann — Apple-Silicon-Macs erfüllen das, ebenso die meisten
   aktuellen dedizierten GPUs. Plattenplatz und Speicherspitze hängen vom gewählten
-  Modell ab: **SD-Turbo** braucht ≈ 2,5 GB Platz und rund 4 GB freien Speicher, während
-  ein Bild entsteht; **SDXL-Turbo** braucht ≈ 7,0 GB Platz und beim ersten Sitzungsaufbau
+  Modell ab: **SD-Turbo** braucht ≈ 2,6 GB Platz und rund 4 GB freien Speicher, während
+  ein Bild entsteht; **SDXL-Turbo** braucht ≈ 7,1 GB Platz und beim ersten Sitzungsaufbau
   kurzzeitig etwa das *Doppelte* davon im GPU-Speicher (die Gewichte liegen bis zum Ende
   des Ladens sowohl im JS-Heap als auch auf der GPU) — rund 13 GB Spitze. Auf einem
   16-GB-Rechner kann das knapp werden. Das Panel sagt dir, wenn die GPU gar nicht
@@ -314,16 +325,17 @@ Modell-Dateien und holt sie **je Modell einmal, nur wenn du auf Herunterladen kl
 geladen wird, entscheidest du; nichts anderes wird automatisch geholt. Beide kommen aus
 dem Modell-Repository dieses Plugins auf Hugging Face:
 
-**SD-Turbo** (Vorgabe, ≈ 2,5 GB gesamt):
+**SD-Turbo** (Vorgabe, ≈ 2,6 GB gesamt):
 
 | Datei | Größe | Was es ist | Lizenz |
 |---|---|---|---|
 | `sd-turbo/text_encoder/model.onnx` | ≈ 681 MB | CLIP-Text-Encoder (fp16) | Stability AI Community License |
 | `sd-turbo/unet/model.onnx` | ≈ 1,7 GB | UNet (fp16) | Stability AI Community License |
 | `sd-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE-Decoder (fp16) | Stability AI Community License |
+| `sd-turbo/vae_encoder/model.onnx` | ≈ 68 MB | VAE-Encoder (fp16) — für img2img | Stability AI Community License |
 | `sd-turbo/tokenizer/vocab.json`, `merges.txt` | ≈ 1,6 MB | CLIP-BPE-Tokenizer-Daten | (Teil des Modell-Releases) |
 
-**SDXL-Turbo** (optionales zweites Modell, ≈ 7,0 GB gesamt):
+**SDXL-Turbo** (optionales zweites Modell, ≈ 7,1 GB gesamt):
 
 | Datei | Größe | Was es ist | Lizenz |
 |---|---|---|---|
@@ -331,9 +343,10 @@ dem Modell-Repository dieses Plugins auf Hugging Face:
 | `sdxl-turbo/text_encoder_2/model.onnx` | ≈ 1,4 GB | OpenCLIP-bigG-Text-Encoder (fp16) | Stability AI Community License |
 | `sdxl-turbo/unet/model.onnx` + 13 External-Data-Buckets | ≈ 5,1 GB | UNet (fp16, auf mehrere Dateien gestückelt — keine Einzeldatei über 2 GB) | Stability AI Community License |
 | `sdxl-turbo/vae_decoder/model.onnx` | ≈ 198 MB | VAE-Decoder (fp32 — siehe Hinweis unten) | Stability AI Community License |
+| `sdxl-turbo/vae_encoder/model.onnx` | ≈ 137 MB | VAE-Encoder (fp32 — dieselbe gemessene fp16-Bereichsgrenze wie beim Decoder) — für img2img | Stability AI Community License |
 | `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3,2 MB | CLIP-BPE-Tokenizer-Daten, beide Encoder | (Teil des Modell-Releases) |
 
-SDXL-Turbos VAE-Decoder ist die einzige Datei in beiden Modellen, die **fp32** bleibt — seine Aktivierungen überschreiten unter der WebGPU-Ausführung den fp16-Wertebereich, was ein stilles, fehlerfreies rein schwarzes Bild ohne jedes andere Symptom erzeugte. Alles andere in beiden Modellen bleibt fp16.
+SDXL-Turbos VAE-Decoder **und** VAE-Encoder bleiben beide **fp32** — beide gemessenen Aktivierungen überschreiten unter der WebGPU-Ausführung den fp16-Wertebereich (der Encoder-Peak liegt bei rund 300.000–500.000), und beim Decoder erzeugte das ein stilles, fehlerfreies rein schwarzes Bild ohne jedes andere Symptom. Alles andere in beiden Modellen bleibt fp16.
 
 Gemeinsam für beide Modelle:
 

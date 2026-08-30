@@ -67,6 +67,16 @@ function clampFloat(v: number | undefined, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, n));
 }
 
+/** Das builtin-Raster: bei `steps` Schritten gibt es nur `steps` Einstiegspunkte fuer
+ *  Teil-Denoising. Existiert genau EINMAL — die Haertung quantisiert damit (Task 5) und die
+ *  Engine leitet den Einstiegspunkt damit ab (Task 3). Zwei Rechnungen waeren zwei Wahrheiten
+ *  (AGENTS-Gotcha „Dasselbe Konzept in zwei Schichten"). Mindestens ein Step bleibt immer:
+ *  denoising 0 hiesse „nichts tun", und ein Lauf, der nichts tut, waere eine Attrappe. */
+export function denoiseRaster(steps: number, denoising: number): { tStart: number; effective: number } {
+  const tStart = Math.min(steps - 1, Math.max(0, steps - Math.round(denoising * steps)));
+  return { tStart, effective: (steps - tStart) / steps };
+}
+
 /** Die naechstgelegene erlaubte Groesse aus `sizes` waehlen (I2-Fix, Final-Review 2026-08-24) —
  *  "so wie sie heute schon Steps klemmt" (Spec-Zusage an v1-API-Konsumenten). Quadrierter
  *  euklidischer Abstand statt Wurzel (monoton, spart die sqrt, aendert das Ergebnis nicht) —
@@ -104,6 +114,11 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
   const wantedWidth = finite(input.width, DEFAULT_SIZE.width);
   const wantedHeight = finite(input.height, DEFAULT_SIZE.height);
   const size = caps.sizes ? nearestSize(wantedWidth, wantedHeight, caps.sizes) : { width: wantedWidth, height: wantedHeight };
+  const steps = clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps);
+  const rawDenoising = wanted === undefined ? null : clampFloat(input.denoising, DENOISING.min, DENOISING.max, DENOISING.default);
+  // builtin rechnet Teil-Denoising nur an `steps` Einstiegspunkten — die Notiz traegt den
+  // EFFEKTIVEN Wert, nicht den Wunsch (eine Haertung, eine Wahrheit). Server bleibt kontinuierlich.
+  const denoising = rawDenoising !== null && ctx.mode === "builtin" ? denoiseRaster(steps, rawDenoising).effective : rawDenoising;
   return {
     prompt: input.prompt,
     // Ein Regler, den das Backend nicht kann, wird nicht abgelehnt, sondern neutralisiert —
@@ -112,11 +127,11 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
     cfg: caps.cfg ? finite(input.cfg, CFG.default) : 1,
     width: size.width,
     height: size.height,
-    steps: clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps),
+    steps,
     seed: finite(input.seed, () => ctx.randomSeed()),
     model: ctx.model,
     date: isoStamp(ctx.now),
     initImage: wanted?.ref ?? null,
-    denoising: wanted === undefined ? null : clampFloat(input.denoising, DENOISING.min, DENOISING.max, DENOISING.default),
+    denoising,
   };
 }

@@ -174,7 +174,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     });
     this.denoiseValueEl = controls.createSpan({ text: startDenoise, cls: "lig-denoise-value" });
     this.denoiseEl.addEventListener("input", () => {
-      this.denoiseValueEl.setText(this.denoiseEl.value);
+      this.denoiseValueEl.setText(Number(this.denoiseEl.value).toFixed(2));
       this.refresh();
     });
     controls.createSpan({ text: t("generate.seed"), cls: "lig-label" });
@@ -329,7 +329,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     // Die Vorlage selbst setzt der HOST (nur er kann den Vault lesen) — hier nur der Regler.
     const denoise = entry.denoising ?? DENOISING.default;
     this.denoiseEl.value = String(denoise);
-    this.denoiseValueEl.setText(String(denoise));
+    this.denoiseValueEl.setText(Number(this.denoiseEl.value).toFixed(2));
     const inCatalog = SIZES.some((s) => s.width === entry.width && s.height === entry.height);
     const size = inCatalog ? { width: entry.width, height: entry.height } : SIZES[0]!;
     this.sizeEl!.value = `${size.width}x${size.height}`;
@@ -407,6 +407,22 @@ export class GeneratePanel implements HubPanel<TabId> {
         // Rezept im Host nachziehen, sonst rechnet generate() mit dem alten Wert.
         this.host.setRecipe(this.currentRecipe());
       }
+    }
+
+    // Denoise-Raster (builtin): dieselbe Klemm-Falle wie beim Steps-Block oben — der Browser
+    // rastet/klemmt `value` SELBST, sobald `min`/`step` sich aendern, deshalb die Anzeige
+    // BEDINGUNGSLOS aus dem (moeglicherweise vom Browser veraenderten) `value` nachziehen.
+    const raster = vm.controls.denoiseRaster;
+    const dMin = String(raster ? raster.min : DENOISING.min);
+    const dStep = String(raster ? raster.step : DENOISING.step);
+    if (this.denoiseEl.min !== dMin || this.denoiseEl.step !== dStep) {
+      const vorher = Number(this.denoiseEl.value);
+      this.denoiseEl.min = dMin;
+      this.denoiseEl.step = dStep;
+      // Browser klemmt/rastet den value SELBST — Anzeige BEDINGUNGSLOS nachziehen
+      // (Klemm-Falle 2026-08-21, s. Steps-Block oben).
+      this.denoiseValueEl.setText(Number(this.denoiseEl.value).toFixed(2));
+      if (Number(this.denoiseEl.value) !== vorher) this.host.setRecipe(this.currentRecipe());
     }
 
     this.generateBtn.disabled = !vm.generateEnabled;

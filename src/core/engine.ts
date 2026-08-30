@@ -2,6 +2,7 @@
 // sd-turbo-Pipeline (Spec §5): tokenize → text_encoder → UNet-Loop (Euler-Ancestral,
 // guidance 1.0) → VAE-Decode → RGBA. Sessions/Tensoren sind injiziert (OrtValue ist
 // strukturell ort.Tensor-kompatibel) — die Engine bleibt pure und Node-testbar.
+import { denoiseRaster } from "./params";
 import { f16ArrayToF32, f32ArrayToF16 } from "./pipeline/f16";
 import { chwToRgba } from "./pipeline/image";
 import { gaussianArray } from "./pipeline/prng";
@@ -36,6 +37,12 @@ export interface EngineSessions {
   textEncoder: Session;
   unet: Session;
   vaeDecoder: Session;
+  /** img2img (Spec 0.9 §4a): Vorlagen-Pixel → Start-Latents. Pflichtfeld — der Katalog
+   *  (`model-manifest.ts`) laedt ihn fuer jedes builtin-Modell mit; txt2img ruft ihn nie
+   *  auf (Keine-Attrappen-Linie waere sonst umgekehrt verletzt: eine Session, die geladen,
+   *  aber nie gebraucht wird, ist kein Attrappen-Risiko — eine BEDINGT geladene waere ein
+   *  zweiter Ladepfad, den lokal-engine.ts nicht kennt). */
+  vaeEncoder: Session;
 }
 
 /** Provider-Sicht (yijing-oracle, Spec 0.4 §10): model/width/height sind dort OPTIONAL
@@ -50,6 +57,13 @@ export interface GenerateRequest {
    *  SdTurboEngine und alle bestehenden Aufrufer geändert, gegen die Zusage, dass
    *  SD-Turbo unangetastet bleibt (Controller-Ruling Task 9). */
   size?: number;
+  /** img2img (Spec 4a): Vorlagen-Pixel CHW [-1,1], BEREITS auf Zielgroesse (Base64→Pixel
+   *  braucht DOM und sitzt in png.ts/local-engine — Pure-Core-Schnitt). undefined = txt2img. */
+  initPixels?: Float32Array;
+  /** Effektive, schon GEHAERTETE Aenderungsstaerke (Raster {1/steps..1}). Die Engine leitet
+   *  daraus nur noch den Einstiegspunkt ab — mit denoiseRaster, derselben Formel wie die
+   *  Haertung. `d` ist bereits Rasterwert, die Ableitung ist exakt. */
+  denoising?: number;
 }
 
 export interface GenerateResult {
@@ -122,12 +136,23 @@ export async function runDiffusion(
   latentDims: readonly number[],
   extraFeeds: Record<string, OrtValue>,
   onProgress?: ProgressFn,
+  // img2img (Spec 0.9 §4a): Teil-Denoising ab einem Einstiegspunkt statt vom reinen Rauschen.
+  // `init` traegt die bereits verrauschten Vorlagen-Latents UND den Einstiegspunkt im
+  // Zeitplan — ohne `init` bleibt das Verhalten fuer txt2img-Aufrufer EXAKT wie zuvor
+  // (startAt 0, volle Schrittzahl, Fortschritt 1..total).
+  init?: { latents: Float32Array; startAt: number },
 ): Promise<Float32Array> {
   const n = latentDims.reduce((a, b) => a * b, 1);
-  let latents = gaussianArray(seed, n);
-  for (let i = 0; i < n; i++) latents[i] = latents[i]! * schedule.initNoiseSigma;
+  const startAt = init?.startAt ?? 0;
+  let latents: Float32Array;
+  if (init) {
+    latents = init.latents;
+  } else {
+    latents = gaussianArray(seed, n);
+    for (let i = 0; i < n; i++) latents[i] = latents[i]! * schedule.initNoiseSigma;
+  }
 
-  for (let i = 0; i < schedule.timesteps.length; i++) {
+  for (let i = startAt; i < schedule.timesteps.length; i++) {
     const sigma = schedule.sigmas[i]!;
     const scaled = scaleInput(latents, sigma);
     const unetOut = await unet.run({
@@ -138,9 +163,30 @@ export async function runDiffusion(
     const noisePred = toF32(firstOutput(unet, unetOut));
     const stepNoise = gaussianArray(seed + 1000 + i, n); // Ancestral-Noise, seed-abgeleitet
     latents = schedulerStep(noisePred, latents, i, schedule.sigmas, stepNoise);
-    onProgress?.(i + 1, schedule.timesteps.length);
+    onProgress?.(i - startAt + 1, schedule.timesteps.length - startAt);
   }
   return latents;
+}
+
+/** Vorlagen-Pixel → skalierte Latents: Encoder liefert latent_parameters [1,8,h/8,w/8]
+ *  (concat aus mean und logvar); img2img nimmt die mean-Kanaele 0..3 (deterministisch —
+ *  kein Sampling) mal vaeScaling. */
+export async function encodeInitImage(vaeEncoder: Session, pixels: Float32Array, size: number, vaeScaling: number): Promise<Float32Array> {
+  const out = await vaeEncoder.run({ sample: floatFeed(vaeEncoder, "sample", pixels, [1, 3, size, size]) });
+  const params = toF32(firstOutput(vaeEncoder, out));
+  const n = 4 * (size / 8) * (size / 8);
+  const lat = new Float32Array(n);
+  for (let i = 0; i < n; i++) lat[i] = params[i]! * vaeScaling;
+  return lat;
+}
+
+/** img2img-Start: Vorlagen-Latents am Einstiegspunkt verrauschen (Euler-Ancestral:
+ *  noisy = orig + noise * sigma). Noise nimmt `seed` direkt — wie txt2imgs Start-Latents. */
+export function noisedInitLatents(init: Float32Array, seed: number, sigma: number): Float32Array {
+  const noise = gaussianArray(seed, init.length);
+  const out = new Float32Array(init.length);
+  for (let i = 0; i < init.length; i++) out[i] = init[i]! + noise[i]! * sigma;
+  return out;
 }
 
 // VAE-Rueckskalierung + Decode + CHW→RGBA — geteilt zwischen SdTurboEngine und
@@ -178,15 +224,15 @@ export class SdTurboEngine implements BuiltinEngine {
     return this._busy;
   }
 
-  // Gibt die drei ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden).
+  // Gibt die vier ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden).
   // Idempotent — mehrfaches dispose ruft release nur einmal. Einzelne
   // release-Fehler werden geschluckt, damit ein fehlschlagender Session-Release
-  // die anderen beiden nicht blockiert (Best-Effort-Cleanup).
+  // die anderen drei nicht blockiert (Best-Effort-Cleanup).
   async dispose(): Promise<void> {
     if (this._disposed) return;
     this._disposed = true;
     await Promise.all(
-      [this.sessions.textEncoder, this.sessions.unet, this.sessions.vaeDecoder].map((s) =>
+      [this.sessions.textEncoder, this.sessions.unet, this.sessions.vaeDecoder, this.sessions.vaeEncoder].map((s) =>
         s.release().catch(() => {}),
       ),
     );
@@ -207,6 +253,16 @@ export class SdTurboEngine implements BuiltinEngine {
 
       const latentDims = [1, LATENT.c, LATENT.h, LATENT.w] as const;
       const schedule = makeSchedule(req.steps);
+
+      // img2img (Spec 0.9 §4a): nur bei einer Vorlage — sonst bleibt der txt2img-Pfad
+      // exakt wie zuvor (init bleibt undefined, runDiffusion startet bei 0).
+      let init: { latents: Float32Array; startAt: number } | undefined;
+      if (req.initPixels) {
+        const { tStart } = denoiseRaster(req.steps, req.denoising ?? 1);
+        const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, IMAGE_SIZE, VAE_SCALING);
+        init = { latents: noisedInitLatents(encoded, req.seed, schedule.sigmas[tStart]!), startAt: tStart };
+      }
+
       const latents = await runDiffusion(
         this.sessions.unet,
         schedule,
@@ -214,6 +270,7 @@ export class SdTurboEngine implements BuiltinEngine {
         latentDims,
         { encoder_hidden_states: floatFeed(this.sessions.unet, "encoder_hidden_states", hiddenF32, hidden.dims) },
         onProgress,
+        init,
       );
       return await decodeLatents(this.sessions.vaeDecoder, latents, latentDims, VAE_SCALING, IMAGE_SIZE, req.seed);
     } finally {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { OrtValue, Session } from "../src/core/engine";
 import { SdxlTurboEngine } from "../src/core/engine-sdxl";
+import { denoiseRaster } from "../src/core/params";
+import { gaussianArray } from "../src/core/pipeline/prng";
+import { makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
 
 // Zwei UNTERSCHIEDLICHE Vokabulare statt eines geteilten TOK-Objekts (Review-Finding): mit
 // einem einzigen Objekt fuer primary/secondary wuerde nichts auffallen, wenn die beiden
@@ -49,6 +52,28 @@ function multiSession(rec: Rec, outputs: Record<string, [number[], number]>): Se
   };
 }
 
+// img2img (Spec 0.9 §4a): Encoder-Fake mit size/8-Dims — analog zum SD-Turbo-Fake in
+// tests/engine.test.ts, aber mit der pro `side` skalierten Latent-Kantenlaenge.
+function vaeEncoderSession(rec: Rec, side: number, log?: string[]): Session {
+  const l = side / 8;
+  return {
+    inputNames: ["sample"],
+    outputNames: ["latent_parameters"],
+    inputTypes: { sample: "float32" },
+    run: async (feeds) => {
+      log?.push("vae_encoder");
+      rec.feeds.push(feeds);
+      expect(feeds["sample"]!.dims).toEqual([1, 3, side, side]);
+      // mean-Kanaele (0..3) konstant 2, logvar (4..7) konstant -20
+      const p = new Float32Array(8 * l * l);
+      p.fill(2, 0, 4 * l * l);
+      p.fill(-20, 4 * l * l);
+      return { latent_parameters: { data: p, dims: [1, 8, l, l] } };
+    },
+    release: async () => {},
+  };
+}
+
 function sessions(rec: Rec, side: number) {
   const l = side / 8;
   return {
@@ -67,6 +92,7 @@ function sessions(rec: Rec, side: number) {
     }),
     unet: multiSession(rec, { out_sample: [[1, 4, l, l], 0] }),
     vaeDecoder: multiSession(rec, { sample: [[1, 3, side, side], 0] }),
+    vaeEncoder: vaeEncoderSession(rec, side),
   };
 }
 
@@ -206,7 +232,7 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     expect(e.busy).toBe(false);
   });
 
-  it("dispose gibt alle vier Sessions frei (idempotent)", async () => {
+  it("dispose gibt alle fuenf Sessions frei, inkl. vaeEncoder (idempotent)", async () => {
     const rec: Rec = { feeds: [] };
     const s = sessions(rec, 512);
     const released: string[] = [];
@@ -214,10 +240,90 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     s.textEncoder2 = { ...s.textEncoder2, release: async () => void released.push("textEncoder2") };
     s.unet = { ...s.unet, release: async () => void released.push("unet") };
     s.vaeDecoder = { ...s.vaeDecoder, release: async () => void released.push("vaeDecoder") };
+    s.vaeEncoder = { ...s.vaeEncoder, release: async () => void released.push("vaeEncoder") };
     const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
     await e.dispose();
-    expect(released.sort()).toEqual(["textEncoder", "textEncoder2", "unet", "vaeDecoder"]);
+    expect(released.sort()).toEqual(["textEncoder", "textEncoder2", "unet", "vaeDecoder", "vaeEncoder"].sort());
     await e.dispose(); // idempotent
-    expect(released.sort()).toEqual(["textEncoder", "textEncoder2", "unet", "vaeDecoder"]);
+    expect(released.sort()).toEqual(["textEncoder", "textEncoder2", "unet", "vaeDecoder", "vaeEncoder"].sort());
+  });
+
+  it("txt2img (kein initPixels) ruft den vaeEncoder NICHT auf", async () => {
+    const rec: Rec = { feeds: [] };
+    const e = new SdxlTurboEngine(sessions(rec, 512), { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
+    await e.generate({ prompt: "hund", steps: 1, seed: 7, size: 512 });
+    // vaeEncoder-Feed traegt NUR "sample" (kein "timestep") — eindeutig vom UNet-Feed
+    // unterscheidbar, das zusaetzlich "timestep" traegt (runDiffusion).
+    const encoderCalls = rec.feeds.filter((f) => "sample" in f && !("timestep" in f));
+    expect(encoderCalls).toHaveLength(0);
+  });
+
+  it("img2img (initPixels+denoising, Groesse 1024) ruft den vaeEncoder GENAU EINMAL mit der ANGEFORDERTEN Groesse und das UNet nur ab dem Einstiegspunkt", async () => {
+    // Review-Fund F2 (Teil a): size=512 in der urspruenglichen Fassung dieses Tests deckte
+    // sich zufaellig mit SdTurboEngine's fest verdrahteter IMAGE_SIZE-Konstante — eine
+    // Mutation von encodeInitImage(..., size, vaeScaling) zu (..., 512, 0.18215) waere HIER
+    // unbemerkt geblieben. Mit size=1024 prueft der vaeEncoder-Fake (`vaeEncoderSession`)
+    // die Feed-Dims [1,3,1024,1024] und liefert latent_parameters in [1,8,128,128] — eine
+    // hartcodierte 512 in engine-sdxl.ts wuerde die Dims-Assertion im Fake sofort verfehlen.
+    const rec: Rec = { feeds: [] };
+    const e = new SdxlTurboEngine(sessions(rec, 1024), { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 1024 });
+    const steps = 4;
+    const denoising = 0.5;
+    await e.generate({
+      prompt: "hund",
+      steps,
+      seed: 7,
+      size: 1024,
+      initPixels: new Float32Array(3 * 1024 * 1024),
+      denoising,
+    });
+    // vaeEncoder-Feed traegt NUR "sample" (kein "timestep") — eindeutig vom UNet-Feed
+    // unterscheidbar, das zusaetzlich "timestep" traegt (runDiffusion).
+    const encoderCalls = rec.feeds.filter((f) => "sample" in f && !("timestep" in f));
+    expect(encoderCalls).toHaveLength(1);
+    expect(encoderCalls[0]!["sample"]!.dims).toEqual([1, 3, 1024, 1024]);
+    const unetCalls = rec.feeds.filter((f) => "timestep" in f);
+    const { tStart } = denoiseRaster(steps, denoising);
+    expect(unetCalls).toHaveLength(steps - tStart);
+  });
+
+  it("img2img: Start-Latents tragen SDXLs EIGENE vaeScaling (0.13025), nicht SD-Turbos 0.18215 (F2, Teil b)", async () => {
+    // Review-Fund F2 (Teil b): eine Mutation von encodeInitImage(vaeEncoder, pixels, size,
+    // this.opts.vaeScaling) zu (..., 0.18215) hardcodiert liesse alle bisherigen sdxl-Tests
+    // gruen — keiner rechnet die Start-Latent-Mathematik unabhaengig nach. Diese Erwartung ist
+    // bewusst OHNE Bezug auf engine-sdxl.ts komponiert (kein Aufruf von encodeInitImage/
+    // noisedInitLatents aus dem Produktionscode): mean (2, aus dem Fake) * vaeScaling (0.13025,
+    // NICHT SD-Turbos 0.18215) + Ancestral-Noise * sigma am Einstiegspunkt.
+    const rec: Rec = { feeds: [] };
+    const side = 512;
+    const s = sessions(rec, side);
+    const seenFirstSample: Float32Array[] = [];
+    const baseUnetRun = s.unet.run;
+    s.unet = {
+      ...s.unet,
+      run: async (feeds) => {
+        seenFirstSample.push(new Float32Array(feeds["sample"]!.data as Float32Array));
+        return baseUnetRun(feeds);
+      },
+    };
+    const steps = 4;
+    const denoising = 0.5;
+    const seed = 9;
+    const vaeScaling = 0.13025;
+    const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling, size: side });
+    await e.generate({
+      prompt: "hund",
+      steps,
+      seed,
+      size: side,
+      initPixels: new Float32Array(3 * side * side),
+      denoising,
+    });
+    const { tStart } = denoiseRaster(steps, denoising);
+    const schedule = makeSchedule(steps);
+    const sigma = schedule.sigmas[tStart]!;
+    const noise0 = gaussianArray(seed, 1)[0]!;
+    const expected = scaleInput(new Float32Array([2 * vaeScaling + noise0 * sigma]), sigma)[0]!;
+    expect(seenFirstSample[0]![0]).toBeCloseTo(expected, 4);
   });
 });
