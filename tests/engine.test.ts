@@ -87,6 +87,19 @@ describe("SdTurboEngine", () => {
     await engine.generate({ prompt: "cat", steps: 4, seed: 1 }, (s, t) => progress.push([s, t]));
     expect(progress).toEqual([[1, 4], [2, 4], [3, 4], [4, 4]]);
   });
+  it("img2img: Fortschritt ist RELATIV zum Einstiegspunkt, nicht zur vollen Schrittzahl", async () => {
+    // Review-Fund F1: (i - startAt + 1, timesteps.length - startAt) war ungetestet — die
+    // Mutation zu (i + 1, timesteps.length) liess alle bisherigen Tests gruen, weil sie nur
+    // txt2img (startAt immer 0) melden. Bei denoiseRaster(4, 0.5) → tStart 2 laufen nur 2 von
+    // 4 UNet-Schritten; die Meldung muss [1,2],[2,2] sein, NICHT [3,4],[4,4].
+    const engine = new SdTurboEngine(fakeSessions([]), tokData);
+    const progress: Array<[number, number]> = [];
+    await engine.generate(
+      { prompt: "cat", steps: 4, seed: 9, initPixels: new Float32Array(3 * 512 * 512), denoising: 0.5 },
+      (s, t) => progress.push([s, t]),
+    );
+    expect(progress).toEqual([[1, 2], [2, 2]]);
+  });
   it("Lock: paralleler zweiter Aufruf wirft", async () => {
     const engine = new SdTurboEngine(fakeSessions([]), tokData);
     const first = engine.generate({ prompt: "cat", steps: 1, seed: 1 });
