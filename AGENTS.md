@@ -212,9 +212,15 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   aufgerufen ausschliesslich von `startDownload()`, das an genau zwei vom Nutzer geklickte
   Bedienelemente haengt und in `ApiDeps` (`src/main.ts`) nicht vorkommt. Selbst ohne das
   Bereitschafts-Gate endet ein builtin-`generate()` ohne Assets als
-  `{ ok: false, reason: "failed" }`. Diese Garantie ist staerker als ein Smoke-Punkt sie liefern
-  koennte (GUI-Smoke-Punkt 18b misst nur die Form von `capabilities`, im Server-Zweig — siehe
-  `docs/SMOKE.md` § 2026-08-22).
+  `{ ok: false, reason: "failed" }`.
+  **Seit 2026-08-30 ist die Zusage zusaetzlich GEMESSEN, nicht nur begruendet** — GUI-Smoke-Punkt
+  18d, platziert zwischen den Punkten 13 und 14, wo der Zustand `not-downloaded` geprueft statt
+  angenommen ist. ⚠️ Er prueft DREI Dinge (Rueckgabewert, Cache-Umfang, Engine-Zustand), und das
+  ist kein Guertel-mit-Hosentraeger: in der Gegenprobe wurde er **allein ueber den Engine-Zustand**
+  rot, waehrend die Cache-Zaehlung nach drei Sekunden noch unveraendert dastand — der Download
+  lief bereits, hatte aber noch keine Datei fertig geschrieben. Wer die Zustandspruefung fuer
+  redundant haelt und streicht, macht den Punkt blind fuer genau den Defekt, gegen den er steht
+  (`docs/SMOKE.md` § 2026-08-30).
 - **`new Function(` im Bundle ist die ORT-Glue (Emscripten-embind)** — BEHAVIOR-Disclosure
   einer gebuendelten Dependency, notenneutral (publishing.md); `check-clean` laesst es
   begruendet zu, `eval(` bleibt verboten. Bundle ~184 KB (`check:clean`, gemessen 2026-08-20 nach
@@ -325,8 +331,10 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   aus und ist keiner: der Erfolgsfall schrieb schon immer `idle`, der Aufrufer bekommt den
   Fehler als Rueckgabewert, und die Statuszeile gehoert dem eigenen Klick. Wer hier einen
   Fehlerzustand zurueckbaut, laesst das Panel wieder einen FREMDEN Fehlschlag als eigenen
-  melden. ⚠️ Diese Zeile ist die einzige Deckung — der Fix liegt in `main.ts`, der einzigen
-  Schicht ohne Unit-Test-Ebene; ein Smoke-Punkt dafuer ist geseedet, aber noch nicht gebaut.
+  melden. Der Fix liegt in `main.ts`, der einzigen Schicht ohne Unit-Test-Ebene — seit
+  2026-08-30 deckt ihn **GUI-Smoke-Punkt 18c**, gemessen an der gerenderten Statuszeile gegen
+  ihren Wert von VORHER (Gegenprobe: den Fallback zurueckgebaut → rot mit „Statuszeile WEICHT
+  AB von „Ready""). Diese Zeile ist damit nicht mehr die einzige Deckung.
 - **`save()` prueft `created` und `seed`, bevor daraus ein Vault-Pfad wird**
   (`unusableParams` in `src/core/plugin-api.ts`). Sieht redundant aus, weil `ApiParams` beide
   typisiert — TypeScript schuetzt aber keinen JS-Aufrufer, und `buildImageFilename`
