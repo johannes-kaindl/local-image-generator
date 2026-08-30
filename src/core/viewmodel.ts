@@ -127,6 +127,11 @@ export interface PanelViewModel {
     modelPicker: boolean;
     stepsMin: number;
     stepsMax: number;
+    /** Rasterung des Denoise-Reglers: builtin hat nur `steps` echte Stufen (denoiseRaster in
+     *  params.ts rechnet denselben Wert fuer die Haertung) — der Regler darf keine Werte
+     *  anbieten, die die Engine ohnehin auf den naechsten Einstiegspunkt zieht. `null` heisst
+     *  kontinuierlich (Server-Modus waehlt frei). */
+    denoiseRaster: { min: number; step: number } | null;
   };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
@@ -248,6 +253,16 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
   return null;
 }
 
+/** Das Raster fuer den Denoise-Regler im builtin-Modus: bei `stepsClamped` Schritten gibt es
+ *  nur `stepsClamped` Einstiegspunkte (dieselbe Rechnung wie `denoiseRaster` in params.ts,
+ *  hier nur die Regler-GRENZEN, nicht der Wert selbst — zwei Rechnungen waeren zwei
+ *  Wahrheiten). `s.steps` kommt ungeklemmt aus dem State (DOM-Wert), deshalb hier dieselbe
+ *  Klemme wie die Haertung. */
+function rasterFor(s: PanelState, caps: ReturnType<typeof backendCapabilities>): { min: number; step: number } {
+  const stepsClamped = Math.min(caps.maxSteps, Math.max(caps.minSteps, Math.round(s.steps) || caps.minSteps));
+  return { min: 1 / stepsClamped, step: 1 / stepsClamped };
+}
+
 export function buildViewModel(s: PanelState): PanelViewModel {
   const busy = s.run.kind === "contacting" || s.run.kind === "generating"
     || s.run.kind === "loading-model" || s.run.kind === "external";
@@ -283,6 +298,7 @@ export function buildViewModel(s: PanelState): PanelViewModel {
       modelPicker: builtin && s.showModelPicker && s.downloadedModels.length > 1,
       stepsMin: caps.minSteps,
       stepsMax: caps.maxSteps,
+      denoiseRaster: builtin ? rasterFor(s, caps) : null,
     },
     modelLabel,
     modelOptions: s.downloadedModels.map((id) => ({ id, label: modelById(id).label })),

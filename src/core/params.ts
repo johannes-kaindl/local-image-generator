@@ -114,6 +114,11 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
   const wantedWidth = finite(input.width, DEFAULT_SIZE.width);
   const wantedHeight = finite(input.height, DEFAULT_SIZE.height);
   const size = caps.sizes ? nearestSize(wantedWidth, wantedHeight, caps.sizes) : { width: wantedWidth, height: wantedHeight };
+  const steps = clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps);
+  const rawDenoising = wanted === undefined ? null : clampFloat(input.denoising, DENOISING.min, DENOISING.max, DENOISING.default);
+  // builtin rechnet Teil-Denoising nur an `steps` Einstiegspunkten — die Notiz traegt den
+  // EFFEKTIVEN Wert, nicht den Wunsch (eine Haertung, eine Wahrheit). Server bleibt kontinuierlich.
+  const denoising = rawDenoising !== null && ctx.mode === "builtin" ? denoiseRaster(steps, rawDenoising).effective : rawDenoising;
   return {
     prompt: input.prompt,
     // Ein Regler, den das Backend nicht kann, wird nicht abgelehnt, sondern neutralisiert —
@@ -122,11 +127,11 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
     cfg: caps.cfg ? finite(input.cfg, CFG.default) : 1,
     width: size.width,
     height: size.height,
-    steps: clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps),
+    steps,
     seed: finite(input.seed, () => ctx.randomSeed()),
     model: ctx.model,
     date: isoStamp(ctx.now),
     initImage: wanted?.ref ?? null,
-    denoising: wanted === undefined ? null : clampFloat(input.denoising, DENOISING.min, DENOISING.max, DENOISING.default),
+    denoising,
   };
 }

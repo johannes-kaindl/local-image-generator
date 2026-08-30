@@ -32,7 +32,7 @@ describe("status()", () => {
     expect(s.ready).toBe(true);
     expect(s.reason).toBeNull();
     expect(s.capabilities).toEqual({
-      negativePrompt: false, cfg: false, initImage: false,
+      negativePrompt: false, cfg: false, initImage: true,
       maxSteps: BUILTIN_MODELS["sd-turbo"].steps.max,
       fixedSize: BUILTIN_MODELS["sd-turbo"].sizes[0],
       sizes: BUILTIN_MODELS["sd-turbo"].sizes,
@@ -182,9 +182,9 @@ describe("generate()", () => {
 });
 
 describe("generate() — img2img", () => {
-  it("meldet die img2img-Faehigkeit in capabilities", () => {
+  it("meldet die img2img-Faehigkeit in capabilities (seit 0.11 in beiden Modi)", () => {
     expect(createImageGenerationApi(deps({ getMode: () => "server" })).status().capabilities.initImage).toBe(true);
-    expect(createImageGenerationApi(deps()).status().capabilities.initImage).toBe(false);
+    expect(createImageGenerationApi(deps()).status().capabilities.initImage).toBe(true);
   });
 
   // Der Vertrag nimmt BASE64, die Haertung nimmt { ref } — ein bequemes `harden(req)` haette
