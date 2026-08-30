@@ -371,13 +371,33 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
   Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
 
-## Store-Scorecard (gemessen 2026-08-23, Release 0.8.0)
+## Store-Scorecard (gemessen 2026-08-30, Release 0.9.0)
 
-**Health `Excellent` · Review `Passed`** — zum vierten Mal in Folge, diesmal mit
+**Health `Excellent` · Review `Passed`** — zum fuenften Mal in Folge, zum zweiten Mal mit
 **zero warnings**. Keine `low`/`medium`/`high`-Befunde.
 
-**Die Befundliste hat sich gegenueber 0.7.0 um GENAU EINE `info`-Zeile veraendert — und die
-laesst sich auf eine einzige Codezeile zurueckfuehren:**
+**Die Befundliste ist gegenueber 0.8.0 UNVERAENDERT — Zeile fuer Zeile, in beiden Kategorien.**
+Das ist die eigentliche Messung dieser Runde, denn 0.9.0 hat einiges hinzugefuegt, das nach
+„das kostet bestimmt eine Warnung" aussieht: ein ZWEITES eingebautes Modell mit **7,0 GB**
+Download, ein UNet, das als **13 External-Data-Buckets** geladen wird, ein Bestaetigungsdialog
+vor dem grossen Download und ein Modellteil, der bewusst in fp32 ausgeliefert wird. Der Scanner
+bewertet davon **nichts** — weder Groesse noch Stueckelung noch die Zahl der Dateien.
+`Plugin references unrecognized WASM files` stand schon vorher da und ist nicht gewachsen.
+
+**Kostensatz, der ueber dieses Plugin hinausgeht:** ein weiteres Modell derselben Bauart ist in
+der Store-Wertung **gratis**. Was zaehlt, ist die ART des Zugriffs (Netzweg, Vault-Weg,
+Code-Ausfuehrung), nicht sein Umfang. Wer eine zweite Modellstufe plant, muss dafuer nichts
+einpreisen — wohl aber fuer eine neue Zugriffsart (`vault.getFiles()` kostete in 0.8.0 genau
+eine `info`-Zeile, s.u.).
+
+⚠️ **`recheck()` (0.10.0) ist in dieser Messung noch NICHT enthalten.** Es fuegt keine neue
+Zugriffsart hinzu — derselbe `requestUrl`-Weg zu demselben Endpunkt, nur zu einem anderen
+Zeitpunkt —, aber gemessen ist das erst nach dem naechsten Rescan.
+
+### Historie: was 0.8.0 gegenueber 0.7.0 gekostet hat
+
+**Die Befundliste hatte sich gegenueber 0.7.0 um GENAU EINE `info`-Zeile veraendert — und die
+liess sich auf eine einzige Codezeile zurueckfuehren:**
 
 > `**Vault Enumeration**: Enumerates all files in the vault (vault.getFiles, getMarkdownFiles, …).`
 
@@ -398,8 +418,8 @@ main.js byte-for-byte`, keine verwundbaren Abhaengigkeiten, **`Vault Write`**.
 Emscripten-embind in der ORT-Glue), `Plugin references unrecognized WASM files`.
 
 ⚠️ **Drei Pruefungen liefen wieder gar nicht:** `Malware scan not available`,
-`Obfuscation scan not available`, `Network requests scan not available` — **vierte Version in
-Folge**. Das steht unter `info` und sieht wie ein Befund aus, ist aber die Abwesenheit einer
+`Obfuscation scan not available`, `Network requests scan not available` — inzwischen **fuenfte
+Version in Folge** (in 0.9.0 unveraendert vorhanden). Das steht unter `info` und sieht wie ein Befund aus, ist aber die Abwesenheit einer
 Messung. Nicht als Freibrief lesen: wer eine riskante Bauart plant, hat hier **keine**
 Bestaetigung bekommen, nur kein Widerwort.
 
@@ -411,7 +431,8 @@ selben Server kostet nichts.
 
 Nachlesen: `python3 <obsidian-store-recherche>/scripts/scorecard.py local-image-generator`.
 **Der Scan laeuft nie von selbst an** — nach jedem Release im Developer Dashboard einen
-Rescan anstossen (0.8.0: von Johannes am 2026-08-23 angestossen, Ergebnis oben).
+Rescan anstossen (0.9.0: von Johannes am 2026-08-30 angestossen, Ergebnis oben; 0.8.0 am
+2026-08-23).
 
 ## Historie: die in-process-Engine (bis 0.4) und der Thin-Client (0.5)
 
