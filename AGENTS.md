@@ -371,9 +371,9 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
   Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
 
-## Store-Scorecard (gemessen 2026-08-30, Release 0.9.0)
+## Store-Scorecard (gemessen 2026-08-30, Release 0.10.0)
 
-**Health `Excellent` · Review `Passed`** — zum fuenften Mal in Folge, zum zweiten Mal mit
+**Health `Excellent` · Review `Passed`** — zum SECHSTEN Mal in Folge, zum dritten Mal mit
 **zero warnings**. Keine `low`/`medium`/`high`-Befunde.
 
 **Die Befundliste ist gegenueber 0.8.0 UNVERAENDERT — Zeile fuer Zeile, in beiden Kategorien.**
@@ -390,9 +390,18 @@ Code-Ausfuehrung), nicht sein Umfang. Wer eine zweite Modellstufe plant, muss da
 einpreisen — wohl aber fuer eine neue Zugriffsart (`vault.getFiles()` kostete in 0.8.0 genau
 eine `info`-Zeile, s.u.).
 
-⚠️ **`recheck()` (0.10.0) ist in dieser Messung noch NICHT enthalten.** Es fuegt keine neue
-Zugriffsart hinzu — derselbe `requestUrl`-Weg zu demselben Endpunkt, nur zu einem anderen
-Zeitpunkt —, aber gemessen ist das erst nach dem naechsten Rescan.
+**Zweimal an einem Tag bestaetigt, mit zwei verschiedenen Zuwaechsen.** 0.9.0 und 0.10.0 wurden
+am 2026-08-30 nacheinander gescannt (Johannes), und beide Male war die Befundliste Zeile fuer
+Zeile identisch mit der von 0.8.0. Der zweite Fall haerten die Aussage von der anderen Seite:
+0.10.0 brachte keine Groesse, sondern eine neue oeffentliche API-Methode (`recheck()`) mit einem
+zusaetzlichen Netzaufruf — und auch das bewegt nichts, weil es **dieselbe Zugriffsart** ist
+(derselbe `requestUrl`-Weg zu demselben Endpunkt, nur zu einem anderen Zeitpunkt).
+`Number of network request calls` steht als `info` ohne Zahl da und waechst nicht mit.
+
+Zusammen ergeben die beiden Messungen die Regel: **es zaehlt, WELCHE Sorte Zugriff im Code
+vorkommt — nicht wie oft, nicht wie gross, und nicht, wer ihn ausloest.** (Dritter Beleg dafuer
+aus 0.7.0: eine oeffentliche `plugin.api`, ueber die ein FREMDES Plugin in den Vault schreiben
+laesst, liess `Vault Write` ein `pass` bleiben.)
 
 ### Historie: was 0.8.0 gegenueber 0.7.0 gekostet hat
 
