@@ -14,11 +14,11 @@ import {
 } from "../src/core/model-manifest";
 
 describe("model-manifest", () => {
-  it("Katalog trägt sd-turbo mit fünf Dateien, jede mit 64-stelligem Hash und Größe > 0", () => {
+  it("Katalog trägt sd-turbo mit sechs Dateien, jede mit 64-stelligem Hash und Größe > 0", () => {
     expect(BUILTIN_MODELS["sd-turbo"].id).toBe("sd-turbo");
     const files = assetsFor("sd-turbo");
     expect(files.map((f) => f.key).sort()).toEqual(
-      ["sd-turbo/merges", "sd-turbo/text_encoder", "sd-turbo/unet", "sd-turbo/vae_decoder", "sd-turbo/vocab"],
+      ["sd-turbo/merges", "sd-turbo/text_encoder", "sd-turbo/unet", "sd-turbo/vae_decoder", "sd-turbo/vae_encoder", "sd-turbo/vocab"],
     );
     for (const f of files) {
       expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -39,7 +39,7 @@ describe("model-manifest", () => {
   });
   it("allAssets = Default-Modell (sd-turbo) + Runtime; totalBytes summiert", () => {
     const all = allAssets();
-    expect(all).toHaveLength(6);
+    expect(all).toHaveLength(7);
     expect(all.some((f) => f.kind === "wasm")).toBe(true);
     expect(totalBytes(all)).toBe(all.reduce((s, f) => s + f.bytes, 0));
   });
@@ -88,6 +88,11 @@ describe("Modellkatalog (Spec 0.9 §3.3)", () => {
     expect(isBuiltinModelId("sdxl-turbo")).toBe(true);
     expect(isBuiltinModelId("flux")).toBe(false);
     expect(isBuiltinModelId(null)).toBe(false);
+  });
+
+  it("assetsFor enthaelt den vaeEncoder-Teil (img2img, Spec 0.9 §4a) in beiden Modell-Varianten", () => {
+    expect(assetsFor("sd-turbo").some((f) => f.key === "sd-turbo/vae_encoder")).toBe(true);
+    expect(assetsFor("sdxl-turbo").some((f) => f.key === "sdxl-turbo/vae_encoder")).toBe(true);
   });
 
   it("kein Pfad traegt den Modellordner doppelt", () => {

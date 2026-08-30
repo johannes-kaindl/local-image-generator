@@ -185,34 +185,51 @@ export class LocalEngineBackend implements ImageBackend {
       this.runtimeReady = true;
     }
     if (this.model.kind === "sdxl") {
-      const { textEncoder, textEncoder2, unet, vaeDecoder, tokenizer, tokenizer2 } = this.model.parts;
-      const [textEncoderSession, textEncoder2Session, unetSession, vaeDecoderSession, vocabText, mergesText, vocab2Text, merges2Text] =
-        await Promise.all([
-          this.loadPart(textEncoder),
-          this.loadPart(textEncoder2),
-          this.loadPart(unet),
-          this.loadPart(vaeDecoder),
-          store.getText(tokenizer.vocab),
-          store.getText(tokenizer.merges),
-          store.getText(tokenizer2.vocab),
-          store.getText(tokenizer2.merges),
-        ]);
+      const { textEncoder, textEncoder2, unet, vaeDecoder, vaeEncoder, tokenizer, tokenizer2 } = this.model.parts;
+      const [
+        textEncoderSession,
+        textEncoder2Session,
+        unetSession,
+        vaeDecoderSession,
+        vaeEncoderSession,
+        vocabText,
+        mergesText,
+        vocab2Text,
+        merges2Text,
+      ] = await Promise.all([
+        this.loadPart(textEncoder),
+        this.loadPart(textEncoder2),
+        this.loadPart(unet),
+        this.loadPart(vaeDecoder),
+        this.loadPart(vaeEncoder),
+        store.getText(tokenizer.vocab),
+        store.getText(tokenizer.merges),
+        store.getText(tokenizer2.vocab),
+        store.getText(tokenizer2.merges),
+      ]);
       return new SdxlTurboEngine(
-        { textEncoder: textEncoderSession, textEncoder2: textEncoder2Session, unet: unetSession, vaeDecoder: vaeDecoderSession },
+        {
+          textEncoder: textEncoderSession,
+          textEncoder2: textEncoder2Session,
+          unet: unetSession,
+          vaeDecoder: vaeDecoderSession,
+          vaeEncoder: vaeEncoderSession,
+        },
         { primary: parseTokenizer(vocabText, mergesText), secondary: parseTokenizer(vocab2Text, merges2Text) },
         { vaeScaling: this.model.vaeScaling, size: this.model.sizes[0]!.width },
       );
     }
-    const { textEncoder, unet, vaeDecoder, tokenizer } = this.model.parts;
-    const [textEncoderSession, unetSession, vaeDecoderSession, vocabText, mergesText] = await Promise.all([
+    const { textEncoder, unet, vaeDecoder, vaeEncoder, tokenizer } = this.model.parts;
+    const [textEncoderSession, unetSession, vaeDecoderSession, vaeEncoderSession, vocabText, mergesText] = await Promise.all([
       this.loadPart(textEncoder),
       this.loadPart(unet),
       this.loadPart(vaeDecoder),
+      this.loadPart(vaeEncoder),
       store.getText(tokenizer.vocab),
       store.getText(tokenizer.merges),
     ]);
     return new SdTurboEngine(
-      { textEncoder: textEncoderSession, unet: unetSession, vaeDecoder: vaeDecoderSession },
+      { textEncoder: textEncoderSession, unet: unetSession, vaeDecoder: vaeDecoderSession, vaeEncoder: vaeEncoderSession },
       parseTokenizer(vocabText, mergesText),
     );
   }

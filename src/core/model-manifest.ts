@@ -49,6 +49,10 @@ export type BuiltinModel =
         textEncoder: ModelPart;
         unet: ModelPart;
         vaeDecoder: ModelPart;
+        /** img2img (Spec 0.9 §4a): Vorlagen-Pixel → Start-Latents. Pflichtteil — txt2img
+         *  laedt ihn mit, ruft ihn aber nie auf (`assetsFor` bewacht: keine zweite,
+         *  bedingte Ladeschicht fuer einen einzelnen Teil). */
+        vaeEncoder: ModelPart;
         tokenizer: TokenizerFiles;
       };
     })
@@ -59,6 +63,7 @@ export type BuiltinModel =
         textEncoder2: ModelPart;
         unet: ModelPart;
         vaeDecoder: ModelPart;
+        vaeEncoder: ModelPart;
         tokenizer: TokenizerFiles;
         tokenizer2: TokenizerFiles;
       };
@@ -115,6 +120,7 @@ const sdTurbo: BuiltinModel = {
     textEncoder: part("sd-turbo", "text_encoder", sdTurboAssets.text_encoder, "onnx"),
     unet: part("sd-turbo", "unet", sdTurboAssets.unet, "onnx"),
     vaeDecoder: part("sd-turbo", "vae_decoder", sdTurboAssets.vae_decoder, "onnx"),
+    vaeEncoder: part("sd-turbo", "vae_encoder", sdTurboAssets.vae_encoder, "onnx"),
     tokenizer: {
       vocab: asset("sd-turbo", "vocab", sdTurboAssets.vocab, "json"),
       merges: asset("sd-turbo", "merges", sdTurboAssets.merges, "text"),
@@ -140,6 +146,7 @@ const sdxlTurbo: BuiltinModel = {
     textEncoder2: part("sdxl-turbo", "text_encoder_2", sdxlTurboAssets.text_encoder_2, "onnx"),
     unet: part("sdxl-turbo", "unet", sdxlTurboAssets.unet, "onnx"),
     vaeDecoder: part("sdxl-turbo", "vae_decoder", sdxlTurboAssets.vae_decoder, "onnx"),
+    vaeEncoder: part("sdxl-turbo", "vae_encoder", sdxlTurboAssets.vae_encoder, "onnx"),
     tokenizer: {
       vocab: asset("sdxl-turbo", "vocab", sdxlTurboAssets.vocab, "json"),
       merges: asset("sdxl-turbo", "merges", sdxlTurboAssets.merges, "text"),
@@ -172,8 +179,8 @@ export function assetsFor(id: BuiltinModelId): AssetFile[] {
   const m = BUILTIN_MODELS[id];
   const parts: ModelPart[] =
     m.kind === "sd"
-      ? [m.parts.textEncoder, m.parts.unet, m.parts.vaeDecoder]
-      : [m.parts.textEncoder, m.parts.textEncoder2, m.parts.unet, m.parts.vaeDecoder];
+      ? [m.parts.textEncoder, m.parts.unet, m.parts.vaeDecoder, m.parts.vaeEncoder]
+      : [m.parts.textEncoder, m.parts.textEncoder2, m.parts.unet, m.parts.vaeDecoder, m.parts.vaeEncoder];
   const tokenizers: TokenizerFiles[] = m.kind === "sd" ? [m.parts.tokenizer] : [m.parts.tokenizer, m.parts.tokenizer2];
 
   const files: AssetFile[] = [];

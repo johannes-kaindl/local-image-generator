@@ -15,6 +15,34 @@ function fakeSession(inputs: string[], out: string, dims: number[], type: Record
   };
 }
 
+// SDXL-Fakes fuer Text-Encoder mit indizierten hidden_states.N-Ausgaengen (gemessen am echten
+// Modell, s. tests/engine-sdxl.test.ts) — an dieser Stelle geteilt zwischen der C1-Regression
+// (Groesse) und der vaeEncoder-Ladewege-Zaehlung (Spec 0.9 §4a), statt zweimal dasselbe
+// Duplikat zu pflegen.
+function hiddenOutputs(count: number, dim: number): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (let i = 0; i < count; i++) out[`hidden_states.${i}`] = [1, 77, dim];
+  return out;
+}
+
+function multiSessionOf(outputs: Record<string, unknown>): Session {
+  const outputNames = Object.keys(outputs);
+  return {
+    inputNames: [],
+    outputNames,
+    inputTypes: {},
+    run: async () => {
+      const result: Record<string, { data: Float32Array; dims: number[] }> = {};
+      for (const [name, dims] of Object.entries(outputs)) {
+        const d = dims as number[];
+        result[name] = { data: new Float32Array(d.reduce((a, b) => a * b, 1)).fill(1), dims: d };
+      }
+      return result;
+    },
+    release: async () => {},
+  };
+}
+
 function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
   const state = { released: 0 };
   const store = {
@@ -27,10 +55,14 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
     createSession: async (buf) => {
       log.push(`session:${buf.byteLength}`);
       const n = log.filter((l) => l.startsWith("session:")).length;
+      // Vier Teile je sd-turbo-Ladelauf, in der Reihenfolge, in der load() sie anfragt:
+      // textEncoder, unet, vaeDecoder, vaeEncoder (img2img, Spec 0.9 §4a).
+      const idx = n % 4;
       const s =
-        n % 3 === 1 ? fakeSession(["input_ids"], "last_hidden_state", [1, 77, 1024], { input_ids: "int64" })
-        : n % 3 === 2 ? fakeSession(["sample", "timestep", "encoder_hidden_states"], "out_sample", [1, 4, 64, 64], { sample: "float32", timestep: "int64", encoder_hidden_states: "float32" })
-        : fakeSession(["latent_sample"], "sample", [1, 3, 512, 512], { latent_sample: "float32" });
+        idx === 1 ? fakeSession(["input_ids"], "last_hidden_state", [1, 77, 1024], { input_ids: "int64" })
+        : idx === 2 ? fakeSession(["sample", "timestep", "encoder_hidden_states"], "out_sample", [1, 4, 64, 64], { sample: "float32", timestep: "int64", encoder_hidden_states: "float32" })
+        : idx === 3 ? fakeSession(["latent_sample"], "sample", [1, 3, 512, 512], { latent_sample: "float32" })
+        : fakeSession(["sample"], "latent_parameters", [1, 8, 64, 64], { sample: "float32" });
       return { ...s, release: async () => { state.released++; } };
     },
     checkGpu: async () => "ok",
@@ -53,15 +85,16 @@ function reqOf(prompt: string): typeof req {
 }
 
 describe("LocalEngineBackend", () => {
-  it("erster generate lädt WASM, drei Sessions und den Tokenizer genau einmal — der zweite nicht mehr", async () => {
+  it("erster generate lädt WASM, vier Sessions (inkl. vaeEncoder) und den Tokenizer genau einmal — der zweite nicht mehr", async () => {
     const log: string[] = [];
     const be = new LocalEngineBackend(makeDeps(log), BUILTIN_MODELS["sd-turbo"]);
     const phases: string[] = [];
     be.onPhase = (p, s, t) => phases.push(`${p}${s !== undefined ? `:${s}/${t}` : ""}`);
     await be.generate(req);
     expect(log.filter((l) => l === "initRuntime")).toHaveLength(1);
-    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
+    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(4);
     expect(log).toContain(`buffer:${RUNTIME_WASM.key}`);
+    expect(log).toContain("buffer:sd-turbo/vae_encoder");
     expect(log).toContain("text:sd-turbo/vocab");
     expect(phases[0]).toBe("loading-model");
     expect(be.loaded).toBe(true);
@@ -121,33 +154,11 @@ describe("LocalEngineBackend", () => {
       getText: async (f: AssetFile) =>
         f.key.endsWith("/vocab") || f.key.endsWith("/vocab_2") ? JSON.stringify({ "hund</w>": 1 }) : "#version\n",
     } as unknown as ModelStore;
-    function hiddenOutputs(count: number, dim: number): Record<string, unknown> {
-      const out: Record<string, unknown> = {};
-      for (let i = 0; i < count; i++) out[`hidden_states.${i}`] = [1, 77, dim];
-      return out;
-    }
-    function multiSession(outputs: Record<string, unknown>): Session {
-      const outputNames = Object.keys(outputs);
-      return {
-        inputNames: [],
-        outputNames,
-        inputTypes: {},
-        run: async () => {
-          const result: Record<string, { data: Float32Array; dims: number[] }> = {};
-          for (const [name, dims] of Object.entries(outputs)) {
-            const d = dims as number[];
-            result[name] = { data: new Float32Array(d.reduce((a, b) => a * b, 1)).fill(1), dims: d };
-          }
-          return result;
-        },
-        release: async () => {},
-      };
-    }
     const byRole: Record<string, Session> = {
-      textEncoder: multiSession(hiddenOutputs(13, 768)),
-      textEncoder2: multiSession({ ...hiddenOutputs(33, 1280), text_embeds: [1, 1280] }),
-      unet: multiSession({ out_sample: [1, 4, 4, 4] }),
-      vaeDecoder: multiSession({ sample: [1, 3, 8, 8] }),
+      textEncoder: multiSessionOf(hiddenOutputs(13, 768)),
+      textEncoder2: multiSessionOf({ ...hiddenOutputs(33, 1280), text_embeds: [1, 1280] }),
+      unet: multiSessionOf({ out_sample: [1, 4, 4, 4] }),
+      vaeDecoder: multiSessionOf({ sample: [1, 3, 8, 8] }),
     };
     deps.createSession = async (buf) => {
       const role = Object.entries(ROLE_BYTES).find(([, len]) => len === buf.byteLength)?.[0];
@@ -159,18 +170,58 @@ describe("LocalEngineBackend", () => {
     expect(png).toBe(`1024x1024:${1024 * 1024 * 4}`);
   });
 
+  // Spec 0.9 §4a: vaeEncoder ist ein Pflichtteil, den auch der SDXL-Ladeweg mitlaedt — txt2img
+  // ruft ihn nie auf (s. tests/engine-sdxl.test.ts), aber `load()` muss ihn als FUENFTE
+  // ONNX-Session aufbauen, sonst wirft die Engine beim ersten img2img-Auftrag auf einen nie
+  // geladenen Teil.
+  it("laedt fuenf ONNX-Sessions fuer sdxl-turbo (inkl. vaeEncoder)", async () => {
+    const sessionCalls: number[] = [];
+    const deps = makeDeps([]);
+    const ROLE_BYTES = { textEncoder: 11, textEncoder2: 12, unet: 13, vaeDecoder: 14, vaeEncoder: 15 } as const;
+    const model = BUILTIN_MODELS["sdxl-turbo"];
+    if (model.kind !== "sdxl") throw new Error("unreachable: sdxl-turbo ist immer kind sdxl");
+    deps.store = {
+      getBuffer: async (f: AssetFile) => {
+        if (f.key === model.parts.textEncoder.file.key) return new ArrayBuffer(ROLE_BYTES.textEncoder);
+        if (f.key === model.parts.textEncoder2.file.key) return new ArrayBuffer(ROLE_BYTES.textEncoder2);
+        if (f.key === model.parts.unet.file.key) return new ArrayBuffer(ROLE_BYTES.unet);
+        if (f.key === model.parts.vaeDecoder.file.key) return new ArrayBuffer(ROLE_BYTES.vaeDecoder);
+        if (f.key === model.parts.vaeEncoder.file.key) return new ArrayBuffer(ROLE_BYTES.vaeEncoder);
+        return new ArrayBuffer(1); // External-Data-Buckets: Inhalt hier irrelevant
+      },
+      getText: async (f: AssetFile) =>
+        f.key.endsWith("/vocab") || f.key.endsWith("/vocab_2") ? JSON.stringify({ "hund</w>": 1 }) : "#version\n",
+    } as unknown as ModelStore;
+    const byRole: Record<string, Session> = {
+      textEncoder: multiSessionOf(hiddenOutputs(13, 768)),
+      textEncoder2: multiSessionOf({ ...hiddenOutputs(33, 1280), text_embeds: [1, 1280] }),
+      unet: multiSessionOf({ out_sample: [1, 4, 4, 4] }),
+      vaeDecoder: multiSessionOf({ sample: [1, 3, 8, 8] }),
+      vaeEncoder: multiSessionOf({ latent_parameters: [1, 8, 4, 4] }),
+    };
+    deps.createSession = async (buf) => {
+      sessionCalls.push(buf.byteLength);
+      const role = Object.entries(ROLE_BYTES).find(([, len]) => len === buf.byteLength)?.[0];
+      return role ? byRole[role]! : byRole.vaeDecoder!;
+    };
+    const be = new LocalEngineBackend(deps, model);
+    await be.generate({ ...req, width: 1024, height: 1024 });
+    expect(sessionCalls).toHaveLength(5);
+    expect(sessionCalls).toContain(ROLE_BYTES.vaeEncoder);
+  });
+
   it("dispose gibt die Sessions frei; danach lädt generate neu", async () => {
     const log: string[] = [];
     const deps = makeDeps(log);
     const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
     await be.generate(req);
     await be.dispose();
-    expect(deps.released).toBe(3);
+    expect(deps.released).toBe(4);
     expect(be.loaded).toBe(false);
     await be.dispose(); // idempotent
-    expect(deps.released).toBe(3);
+    expect(deps.released).toBe(4);
     await be.generate(req);
-    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(6);
+    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(8);
   });
 
   it("dispose während eines laufenden generate wartet das Ergebnis ab, statt die Sessions darunter wegzuziehen", async () => {
@@ -180,7 +231,10 @@ describe("LocalEngineBackend", () => {
     const slowCreate = deps.createSession;
     deps.createSession = async (buf) => {
       const s = await slowCreate(buf);
-      const tag = s.inputNames.includes("sample") ? "unet" : s.inputNames[0]!;
+      // "timestep" ist eindeutig fuer das UNet — seit dem vaeEncoder (Spec 0.9 §4a)
+      // traegt auch dessen Fake-Session einen "sample"-Input, waere also mit der
+      // alten Pruefung (`inputNames.includes("sample")`) faelschlich "unet" getaggt.
+      const tag = s.inputNames.includes("timestep") ? "unet" : s.inputNames[0]!;
       return {
         ...s,
         run: async (f) => { if (tag === "unet") await new Promise((r) => setTimeout(r, 40)); log.push(`run:${tag}`); return s.run(f); },
@@ -197,7 +251,7 @@ describe("LocalEngineBackend", () => {
     const firstRelease = log.findIndex((l) => l.startsWith("release:"));
     const lastRun = log.map((l, i) => (l.startsWith("run:") ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
     expect(firstRelease).toBeGreaterThan(lastRun);
-    expect(deps.released).toBe(3);
+    expect(deps.released).toBe(4);
     expect(be.loaded).toBe(false);
   });
 
@@ -209,7 +263,7 @@ describe("LocalEngineBackend", () => {
     await p1;
     const r2 = await p2;
     // Die pure Engine ist single-flight („engine is busy"); der Backend-Loader aber nur einmal.
-    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(3);
+    expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(4);
     expect(typeof r2).toBe("string");
   });
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { SdTurboEngine, type OrtValue, type Session } from "../src/core/engine";
+import { f16ArrayToF32 } from "../src/core/pipeline/f16";
+import { denoiseRaster } from "../src/core/params";
+import { gaussianArray } from "../src/core/pipeline/prng";
+import { makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
 import type { TokenizerData } from "../src/core/pipeline/tokenizer";
 
 const tokData: TokenizerData = { vocab: { "cat</w>": 1 }, merges: [] };
@@ -44,7 +48,22 @@ function fakeSessions(log: string[]) {
     },
     release: async () => {},
   };
-  return { textEncoder, unet, vaeDecoder };
+  const vaeEncoder: Session = {
+    inputNames: ["sample"],
+    outputNames: ["latent_parameters"],
+    inputTypes: { sample: "float32" },
+    run: async (feeds) => {
+      log.push("vae_encoder");
+      expect(feeds["sample"]!.dims).toEqual([1, 3, 512, 512]);
+      // mean-Kanaele (0..3) konstant 2, logvar (4..7) konstant -20
+      const p = new Float32Array(8 * 64 * 64);
+      p.fill(2, 0, 4 * 64 * 64);
+      p.fill(-20, 4 * 64 * 64);
+      return { latent_parameters: { data: p, dims: [1, 8, 64, 64] } };
+    },
+    release: async () => {},
+  };
+  return { textEncoder, unet, vaeDecoder, vaeEncoder };
 }
 
 describe("SdTurboEngine", () => {
@@ -55,6 +74,12 @@ describe("SdTurboEngine", () => {
     expect(log).toEqual(["text_encoder", "unet", "unet", "vae"]);
     expect(res.rgba.length).toBe(512 * 512 * 4);
     expect(res.seed).toBe(5);
+  });
+  it("txt2img (kein initPixels) ruft den vae_encoder NICHT auf", async () => {
+    const log: string[] = [];
+    const engine = new SdTurboEngine(fakeSessions(log), tokData);
+    await engine.generate({ prompt: "cat", steps: 2, seed: 5 });
+    expect(log).not.toContain("vae_encoder");
   });
   it("meldet Fortschritt pro UNet-Step", async () => {
     const engine = new SdTurboEngine(fakeSessions([]), tokData);
@@ -157,21 +182,75 @@ describe("SdTurboEngine", () => {
       },
       release: async () => {},
     };
-    const engine = new SdTurboEngine({ textEncoder, unet, vaeDecoder }, tokData);
+    const vaeEncoder: Session = {
+      inputNames: ["sample"],
+      outputNames: ["latent_parameters"],
+      inputTypes: { sample: "float32" },
+      run: async () => ({ latent_parameters: { data: new Float32Array(8 * 64 * 64), dims: [1, 8, 64, 64] } }),
+      release: async () => {},
+    };
+    const engine = new SdTurboEngine({ textEncoder, unet, vaeDecoder, vaeEncoder }, tokData);
     const res = await engine.generate({ prompt: "cat", steps: 1, seed: 3 });
     expect(res.rgba.length).toBe(512 * 512 * 4);
   });
-  it("dispose ruft release auf allen drei Sessions (idempotent)", async () => {
+  it("img2img (initPixels+denoising) ruft den vae_encoder GENAU EINMAL und das UNet nur ab dem Einstiegspunkt", async () => {
+    const log: string[] = [];
+    const engine = new SdTurboEngine(fakeSessions(log), tokData);
+    const steps = 4;
+    const denoising = 0.5;
+    await engine.generate({
+      prompt: "cat",
+      steps,
+      seed: 9,
+      initPixels: new Float32Array(3 * 512 * 512),
+      denoising,
+    });
+    expect(log.filter((l) => l === "vae_encoder")).toHaveLength(1);
+    const { tStart } = denoiseRaster(steps, denoising);
+    expect(tStart).toBe(2); // gemessen: denoiseRaster(4, 0.5) → Einstieg beim 3. von 4 Schritten
+    expect(log.filter((l) => l === "unet")).toHaveLength(steps - tStart);
+  });
+  it("img2img: Start-Latents entsprechen dem verrauschten Vorlagen-Latent am Einstiegspunkt (f16-Toleranz)", async () => {
+    const seenFirstSample: Float32Array[] = [];
+    const s = fakeSessions([]);
+    const baseUnetRun = s.unet.run;
+    s.unet = {
+      ...s.unet,
+      run: async (feeds) => {
+        seenFirstSample.push(f16ArrayToF32(feeds["sample"]!.data as Uint16Array));
+        return baseUnetRun(feeds);
+      },
+    };
+    const engine = new SdTurboEngine(s, tokData);
+    const steps = 4;
+    const denoising = 0.5;
+    const seed = 9;
+    await engine.generate({
+      prompt: "cat",
+      steps,
+      seed,
+      initPixels: new Float32Array(3 * 512 * 512),
+      denoising,
+    });
+    const { tStart } = denoiseRaster(steps, denoising);
+    const schedule = makeSchedule(steps);
+    const sigma = schedule.sigmas[tStart]!;
+    const noise0 = gaussianArray(seed, 1)[0]!;
+    const expected = scaleInput(new Float32Array([2 * 0.18215 + noise0 * sigma]), sigma)[0]!;
+    expect(seenFirstSample[0]![0]).toBeCloseTo(expected, 2);
+  });
+  it("dispose ruft release auf allen vier Sessions auf (idempotent)", async () => {
     const released: string[] = [];
     const s = fakeSessions([]);
     s.textEncoder = { ...s.textEncoder, release: async () => void released.push("text_encoder") };
     s.unet = { ...s.unet, release: async () => void released.push("unet") };
     s.vaeDecoder = { ...s.vaeDecoder, release: async () => void released.push("vae_decoder") };
+    s.vaeEncoder = { ...s.vaeEncoder, release: async () => void released.push("vae_encoder") };
     const engine = new SdTurboEngine(s, tokData);
     await engine.dispose();
-    expect(released.sort()).toEqual(["text_encoder", "unet", "vae_decoder"]);
+    expect(released.sort()).toEqual(["text_encoder", "unet", "vae_decoder", "vae_encoder"]);
     await engine.dispose(); // idempotent: kein zweiter release-Aufruf
-    expect(released.sort()).toEqual(["text_encoder", "unet", "vae_decoder"]);
+    expect(released.sort()).toEqual(["text_encoder", "unet", "vae_decoder", "vae_encoder"]);
   });
   it("skalarer timestep (shape [] im Export, eigene Konversion 2026-08-19): dims [] und float32", async () => {
     const seen: { dims: readonly number[]; data: unknown }[] = [];
