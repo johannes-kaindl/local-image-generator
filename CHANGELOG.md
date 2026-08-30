@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **img2img in the built-in engine.** Both bundled models (SD-Turbo, SDXL-Turbo) can now
+  start from a reference image, powered by a newly shipped VAE encoder per model
+  (SD-Turbo fp16 ≈ 68 MB; SDXL-Turbo fp32 ≈ 137 MB — its activations exceed the fp16 range
+  by ~7×, measured, same class of issue as its decoder). The template row, vault picker and
+  "Save & use as template" now work in both modes; the Provider API accepts `initImage` in
+  built-in mode too (`apiVersion` stays 1).
+- **Denoising snaps to real steps in built-in mode.** With `steps` diffusion steps there are
+  only `steps` meaningful entry points; the slider snaps to that raster ({1/steps … 1}) and
+  the note/history/API report the EFFECTIVE value that was computed — never a wish that was
+  silently rounded. Server mode keeps its continuous 0–1 slider.
+
+### Fixed
+
+- **Concurrent ORT session creation race.** The WebGPU execution provider only supports one
+  `InferenceSession.create` at a time; loading model parts in parallel could throw
+  `another WebGPU EP inference session is being created`. Session creation is now serialized
+  (buffers still load in parallel), and the creation chain resets after a session-build
+  timeout so a single hung build can no longer block every later attempt.
+
+### Changed
+
+- **Existing installations will show the Download button again after this update** — only
+  the missing VAE encoder is fetched (≈ 68 MB for SD-Turbo, ≈ 137 MB for SDXL-Turbo); all
+  cached files are reused. The confirmation dialog shows the model's total size, not the
+  missing bytes. Totals are now ≈ 2.6 GB (SD-Turbo) and ≈ 7.1 GB (SDXL-Turbo).
+
 ## [0.10.0] — 2026-08-30
 
 ### Added

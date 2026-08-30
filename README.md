@@ -4,8 +4,8 @@ Generate images inside Obsidian — on your own machine, with no cloud and no
 account. Two ways to do it, chosen in the settings:
 
 - **Built-in (default):** a model runs **on your GPU inside Obsidian** via
-  WebGPU — pick one in the settings. **SD-Turbo** (≈ 2.5 GB, 512×512) is the
-  default; **SDXL-Turbo** (≈ 7.0 GB, up to 1024×1024, sharper output) is an
+  WebGPU — pick one in the settings. **SD-Turbo** (≈ 2.6 GB, 512×512) is the
+  default; **SDXL-Turbo** (≈ 7.1 GB, up to 1024×1024, sharper output) is an
   optional second model you switch to yourself. Nothing to install: click
   **Download model**, verified by checksum and stored outside your vault,
   then type a prompt and press Generate.
@@ -179,7 +179,7 @@ no progress (Draw Things has no progress endpoint) — show an indeterminate spi
 2. **Built-in engine (default):** open the generator and click **Download
    model** — or do it from **Settings → Local Image Generator → Engine**.
    The button names the size of the currently selected model (SD-Turbo,
-   ≈ 2.5 GB, by default); pick SDXL-Turbo there first if you want the
+   ≈ 2.6 GB, by default); pick SDXL-Turbo there first if you want the
    sharper, larger model instead. When the status says *Ready*, generate.
    That's the whole setup.
 3. **Server instead?** Switch **Engine** to *Server (Draw Things / A1111)*,
@@ -251,8 +251,8 @@ line and settings both show the server's active model name once connected.
 - **Built-in engine:** a GPU that Obsidian's WebGPU can use with 16-bit
   shaders (`shader-f16`) — Apple Silicon Macs qualify, as do most current
   discrete GPUs. Disk and peak GPU memory depend on which model you pick:
-  **SD-Turbo** needs ≈ 2.5 GB of disk and roughly 4 GB of free memory while
-  an image is being made; **SDXL-Turbo** needs ≈ 7.0 GB of disk, and briefly
+  **SD-Turbo** needs ≈ 2.6 GB of disk and roughly 4 GB of free memory while
+  an image is being made; **SDXL-Turbo** needs ≈ 7.1 GB of disk, and briefly
   needs about *double* that in GPU memory the first time its session is
   built (the weights sit in both the JS heap and on the GPU until loading
   finishes) — roughly 13 GB peak. That can get tight on a 16 GB machine. The
@@ -345,16 +345,17 @@ Download** (in the generator panel or in the settings) — you pick which of
 the two catalog models to download; nothing else is fetched automatically.
 Both come from this plugin's model repository on Hugging Face:
 
-**SD-Turbo** (default, ≈ 2.5 GB total):
+**SD-Turbo** (default, ≈ 2.6 GB total):
 
 | File | Size | What it is | License |
 |---|---|---|---|
 | `sd-turbo/text_encoder/model.onnx` | ≈ 681 MB | CLIP text encoder (fp16) | Stability AI Community License |
 | `sd-turbo/unet/model.onnx` | ≈ 1.7 GB | UNet (fp16) | Stability AI Community License |
 | `sd-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE decoder (fp16) | Stability AI Community License |
+| `sd-turbo/vae_encoder/model.onnx` | ≈ 68 MB | VAE encoder (fp16) — for img2img | Stability AI Community License |
 | `sd-turbo/tokenizer/vocab.json`, `merges.txt` | ≈ 1.6 MB | CLIP BPE tokenizer data | (part of the model release) |
 
-**SDXL-Turbo** (optional second model, ≈ 7.0 GB total):
+**SDXL-Turbo** (optional second model, ≈ 7.1 GB total):
 
 | File | Size | What it is | License |
 |---|---|---|---|
@@ -362,6 +363,7 @@ Both come from this plugin's model repository on Hugging Face:
 | `sdxl-turbo/text_encoder_2/model.onnx` | ≈ 1.4 GB | OpenCLIP bigG text encoder (fp16) | Stability AI Community License |
 | `sdxl-turbo/unet/model.onnx` + 13 external-data buckets | ≈ 5.1 GB | UNet (fp16, split across files — no single file exceeds 2 GB) | Stability AI Community License |
 | `sdxl-turbo/vae_decoder/model.onnx` | ≈ 198 MB | VAE decoder (fp32 — see note below) | Stability AI Community License |
+| `sdxl-turbo/vae_encoder/model.onnx` | ≈ 137 MB | VAE encoder (fp32 — same fp16 range issue as the decoder, measured) — for img2img | Stability AI Community License |
 | `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3.2 MB | CLIP BPE tokenizer data, both encoders | (part of the model release) |
 
 SDXL-Turbo's VAE decoder is the one file in either model that stays **fp32** — its activations exceed fp16's range under the WebGPU execution provider, which produced a silent, error-free pure-black image with no other symptom. Everything else in both models is fp16.

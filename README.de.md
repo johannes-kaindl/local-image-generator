@@ -4,8 +4,8 @@ Bilder in Obsidian erzeugen — auf dem eigenen Rechner, ohne Cloud und ohne Kon
 Wege, wählbar in den Einstellungen:
 
 - **Eingebaut (Standard):** ein Modell rechnet **auf deiner GPU in Obsidian** per
-  WebGPU — wählbar in den Einstellungen. **SD-Turbo** (≈ 2,5 GB, 512×512) ist die
-  Vorgabe; **SDXL-Turbo** (≈ 7,0 GB, bis 1024×1024, schärfere Bilder) ist ein
+  WebGPU — wählbar in den Einstellungen. **SD-Turbo** (≈ 2,6 GB, 512×512) ist die
+  Vorgabe; **SDXL-Turbo** (≈ 7,1 GB, bis 1024×1024, schärfere Bilder) ist ein
   optionales zweites Modell, auf das du selbst umstellst. Nichts zu installieren:
   **Modell herunterladen** klicken (per Prüfsumme geprüft, außerhalb des Vaults
   abgelegt), dann Prompt eingeben und Generieren.
@@ -162,7 +162,7 @@ das Plugin wurde zwischen deinem `generate()`- und `save()`-Aufruf deaktiviert).
    [Releases](https://github.com/johannes-kaindl/local-image-generator/releases)).
 2. **Eingebaute Engine (Standard):** den Generator öffnen und **Modell herunterladen**
    klicken — oder in **Einstellungen → Local Image Generator → Engine**. Der Knopf nennt
-   die Größe des gerade gewählten Modells (Vorgabe SD-Turbo, ≈ 2,5 GB); dort zuerst
+   die Größe des gerade gewählten Modells (Vorgabe SD-Turbo, ≈ 2,6 GB); dort zuerst
    SDXL-Turbo wählen, wenn stattdessen das schärfere, größere Modell gewünscht ist. Sobald
    der Status *Bereit* meldet, generieren. Das ist die ganze Einrichtung.
 3. **Lieber ein Server?** **Engine** auf *Server (Draw Things / A1111)* stellen, die URL
@@ -233,8 +233,8 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 - **Eingebaute Engine:** eine GPU, die Obsidians WebGPU mit 16-Bit-Shadern
   (`shader-f16`) nutzen kann — Apple-Silicon-Macs erfüllen das, ebenso die meisten
   aktuellen dedizierten GPUs. Plattenplatz und Speicherspitze hängen vom gewählten
-  Modell ab: **SD-Turbo** braucht ≈ 2,5 GB Platz und rund 4 GB freien Speicher, während
-  ein Bild entsteht; **SDXL-Turbo** braucht ≈ 7,0 GB Platz und beim ersten Sitzungsaufbau
+  Modell ab: **SD-Turbo** braucht ≈ 2,6 GB Platz und rund 4 GB freien Speicher, während
+  ein Bild entsteht; **SDXL-Turbo** braucht ≈ 7,1 GB Platz und beim ersten Sitzungsaufbau
   kurzzeitig etwa das *Doppelte* davon im GPU-Speicher (die Gewichte liegen bis zum Ende
   des Ladens sowohl im JS-Heap als auch auf der GPU) — rund 13 GB Spitze. Auf einem
   16-GB-Rechner kann das knapp werden. Das Panel sagt dir, wenn die GPU gar nicht
@@ -320,16 +320,17 @@ Modell-Dateien und holt sie **je Modell einmal, nur wenn du auf Herunterladen kl
 geladen wird, entscheidest du; nichts anderes wird automatisch geholt. Beide kommen aus
 dem Modell-Repository dieses Plugins auf Hugging Face:
 
-**SD-Turbo** (Vorgabe, ≈ 2,5 GB gesamt):
+**SD-Turbo** (Vorgabe, ≈ 2,6 GB gesamt):
 
 | Datei | Größe | Was es ist | Lizenz |
 |---|---|---|---|
 | `sd-turbo/text_encoder/model.onnx` | ≈ 681 MB | CLIP-Text-Encoder (fp16) | Stability AI Community License |
 | `sd-turbo/unet/model.onnx` | ≈ 1,7 GB | UNet (fp16) | Stability AI Community License |
 | `sd-turbo/vae_decoder/model.onnx` | ≈ 99 MB | VAE-Decoder (fp16) | Stability AI Community License |
+| `sd-turbo/vae_encoder/model.onnx` | ≈ 68 MB | VAE-Encoder (fp16) — für img2img | Stability AI Community License |
 | `sd-turbo/tokenizer/vocab.json`, `merges.txt` | ≈ 1,6 MB | CLIP-BPE-Tokenizer-Daten | (Teil des Modell-Releases) |
 
-**SDXL-Turbo** (optionales zweites Modell, ≈ 7,0 GB gesamt):
+**SDXL-Turbo** (optionales zweites Modell, ≈ 7,1 GB gesamt):
 
 | Datei | Größe | Was es ist | Lizenz |
 |---|---|---|---|
@@ -337,6 +338,7 @@ dem Modell-Repository dieses Plugins auf Hugging Face:
 | `sdxl-turbo/text_encoder_2/model.onnx` | ≈ 1,4 GB | OpenCLIP-bigG-Text-Encoder (fp16) | Stability AI Community License |
 | `sdxl-turbo/unet/model.onnx` + 13 External-Data-Buckets | ≈ 5,1 GB | UNet (fp16, auf mehrere Dateien gestückelt — keine Einzeldatei über 2 GB) | Stability AI Community License |
 | `sdxl-turbo/vae_decoder/model.onnx` | ≈ 198 MB | VAE-Decoder (fp32 — siehe Hinweis unten) | Stability AI Community License |
+| `sdxl-turbo/vae_encoder/model.onnx` | ≈ 137 MB | VAE-Encoder (fp32 — dieselbe gemessene fp16-Bereichsgrenze wie beim Decoder) — für img2img | Stability AI Community License |
 | `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3,2 MB | CLIP-BPE-Tokenizer-Daten, beide Encoder | (Teil des Modell-Releases) |
 
 SDXL-Turbos VAE-Decoder ist die einzige Datei in beiden Modellen, die **fp32** bleibt — seine Aktivierungen überschreiten unter der WebGPU-Ausführung den fp16-Wertebereich, was ein stilles, fehlerfreies rein schwarzes Bild ohne jedes andere Symptom erzeugte. Alles andere in beiden Modellen bleibt fp16.
