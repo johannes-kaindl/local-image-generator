@@ -380,6 +380,26 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-08-30 (abends) · 0.10.0-dev (`recheck()`) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **29/29 grün**
+
+Derselbe Aufbau wie der Lauf darunter, ein Prüfpunkt mehr: **18e** misst `recheck()` an der
+`main.ts`-Naht. Sein mittlerer Schritt ist der eigentliche Beweis — nachdem der Endpunkt wieder
+auf den erreichbaren Mock zeigt, muss `status()` **weiter** `unreachable` melden. Täte es das
+nicht, hätte sich der Zustand nebenbei aufgefrischt und der Punkt könnte über `recheck()` nichts
+aussagen, obwohl er grün wäre. Gegenprobe: den Netzaufruf aus `recheck()` entfernt → rot mit
+*„recheck() → ready=false, reason=unreachable"*.
+
+**Dabei fiel eine Lücke in 18a auf.** Die Formprüfung listete `["status", "generate", "save"]`
+und verlangte `keys.length === 3` — eine neue Vertragsmethode wäre ihr nie aufgefallen, und mit
+`recheck` an Bord hätte sie ein Fehlen davon weiter als „formtreu" gemeldet. Auf vier erweitert.
+Verallgemeinert: **eine Formprüfung gegen eine Literal-Liste altert mit dem Vertrag, ohne rot zu
+werden** — dieselbe Fehlerklasse, aus der Punkt 12 seine Erwartung aus `getSettingDefinitions()`
+selbst holt statt aus einer Liste im Treiber.
+
+Der builtin-Zweig von `recheck()` (No-op, kein Netzaufruf) wird hier bewusst **nicht** gemessen:
+das prüft `tests/plugin-api.test.ts` am injizierten Fake durch **Zählen** der Netzaufrufe — eine
+Aussage, die am Wirt gar nicht formulierbar wäre.
+
 ### 2026-08-30 · 0.9.0 · Obsidian 1.13.7 (**Staging-Vault**, nicht `10_Pallas`) · A1111-Mock (Port 7861) + lokaler Asset-Mock (Port 7862) · **28/28 grün**
 
 **Der Lauf war seit dem 28.08. rot — und der gemeldete Grund war der falsche.** Die
