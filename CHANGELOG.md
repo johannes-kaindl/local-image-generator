@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-08-30
+
 ### Added
 
 - **img2img in the built-in engine.** Both bundled models (SD-Turbo, SDXL-Turbo) can now
