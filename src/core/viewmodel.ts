@@ -256,8 +256,10 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
 /** Das Raster fuer den Denoise-Regler im builtin-Modus: bei `stepsClamped` Schritten gibt es
  *  nur `stepsClamped` Einstiegspunkte (dieselbe Rechnung wie `denoiseRaster` in params.ts,
  *  hier nur die Regler-GRENZEN, nicht der Wert selbst — zwei Rechnungen waeren zwei
- *  Wahrheiten). `s.steps` kommt ungeklemmt aus dem State (DOM-Wert), deshalb hier dieselbe
- *  Klemme wie die Haertung. */
+ *  Wahrheiten). `s.steps` kommt ungeklemmt aus dem State (DOM-Wert), deshalb hier dieselben
+ *  GRENZEN wie die Haertung — die Rundung unterscheidet sich bewusst: die Haertung klemmt
+ *  ueber `clampInt` (trunc), hier steht `Math.round`. Das wird nur bei nicht-ganzzahligen
+ *  `steps` sichtbar, die der `step="1"`-Regler im Panel gar nicht liefern kann. */
 function rasterFor(s: PanelState, caps: ReturnType<typeof backendCapabilities>): { min: number; step: number } {
   const stepsClamped = Math.min(caps.maxSteps, Math.max(caps.minSteps, Math.round(s.steps) || caps.minSteps));
   return { min: 1 / stepsClamped, step: 1 / stepsClamped };

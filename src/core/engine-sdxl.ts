@@ -127,7 +127,7 @@ export class SdxlTurboEngine implements BuiltinEngine {
     return this._busy;
   }
 
-  // Gibt alle vier ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden). Idempotent,
+  // Gibt alle fünf ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden). Idempotent,
   // Best-Effort wie SdTurboEngine.dispose().
   async dispose(): Promise<void> {
     if (this._disposed) return;

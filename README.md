@@ -48,11 +48,14 @@ Either way, your prompts and images never leave your machine.
   would just reproduce the same image. **Reroll** rolls a fresh seed and
   generates a new variation regardless; use the dice icon to reroll the
   seed by hand without generating.
-- **Start from an existing image** (server mode): pick a reference image from your
-  vault — or hit **Save & use as reference** on a result you just made — and set how
-  far the model may move away from it. The row is absent in built-in mode, because
-  SD-Turbo has no VAE encoder and cannot do it; the strength slider only appears once
-  a reference is actually set.
+- **Start from an existing image** (img2img, both engines): pick a reference image
+  from your vault — or hit **Save & use as reference** on a result you just made —
+  and set how far the model may move away from it. In server mode the strength is a
+  continuous slider; in built-in mode it snaps to the model's step count, since
+  SD-Turbo and SDXL-Turbo only offer 1–4 discrete steps to begin with. The strength
+  slider only appears once a reference is actually set. Built-in mode center-crops
+  the reference to the model's square input size (a 16:9 image gets cropped, not
+  squished); server mode hands the file over unchanged and lets the server scale it.
 - Switch to the **History** tab to see your past generations as full recipes
   (prompt · negative prompt · seed · steps · size · CFG · time) — group them
   by prompt, click one to load its recipe back into Generate, delete single
@@ -366,7 +369,7 @@ Both come from this plugin's model repository on Hugging Face:
 | `sdxl-turbo/vae_encoder/model.onnx` | ≈ 137 MB | VAE encoder (fp32 — same fp16 range issue as the decoder, measured) — for img2img | Stability AI Community License |
 | `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3.2 MB | CLIP BPE tokenizer data, both encoders | (part of the model release) |
 
-SDXL-Turbo's VAE decoder is the one file in either model that stays **fp32** — its activations exceed fp16's range under the WebGPU execution provider, which produced a silent, error-free pure-black image with no other symptom. Everything else in both models is fp16.
+SDXL-Turbo's VAE decoder **and** VAE encoder both stay **fp32** — both measured activations exceed fp16's range under the WebGPU execution provider (the encoder's peak sits around 300k–500k), and for the decoder that produced a silent, error-free pure-black image with no other symptom. Everything else in both models is fp16.
 
 Shared by both models:
 

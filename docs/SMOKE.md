@@ -104,7 +104,7 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 24 | SD-Turbo liefert ein Bild mit echtem **Inhalt** (Luma-Stddev + distinkte Farben) | billige Zusatzabsicherung, misst dasselbe Bild wie 15 |
 | 25 | SDXL-Turbo liefert ein Bild mit echtem **Inhalt**, nicht Schwarz/uniform | der eigentliche Regressionswächter aus Phase 4 des SDXL-Turbo-Debuggings — s. u. |
 | 26 | builtin-img2img (SD-Turbo): str 0.25 bleibt **nah** an der Vorlage (RMSE ≤ 35), str 1.0 entfernt sich (≥ 40) | die inhaltliche Prüfung des ganzen Weges Base64 → `decodeInitImage` → VAE-Encoder → Teil-Denoising; der C-Lauf (str 1.0) ist die **eingebaute Gegenprobe**: wäre die Vorlage wirkungslos, lägen beide Läufe gleich weit weg |
-| 27 | builtin-img2img (SDXL-Turbo): dasselbe mit Grenzen 45/30 | der **Live-Beweis** für den fp32-VAE-Encoder unter WebGPU — torch-Hooks maßen 300k–500k Aktivierungs-Peak, ein Node/CPU-Test kann diesen Fehlermodus prinzipiell nicht sehen |
+| 27 | builtin-img2img (SDXL-Turbo): dasselbe mit Grenzen 28/30 | der **Live-Beweis** für den fp32-VAE-Encoder unter WebGPU — torch-Hooks maßen 300k–500k Aktivierungs-Peak, ein Node/CPU-Test kann diesen Fehlermodus prinzipiell nicht sehen |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -825,6 +825,11 @@ ROT an allen drei Bedingungen zugleich — gemeldeter `denoising`-Wert (1 statt 
 Live-Werte (SD: 10.0/51.2 · SDXL: 9.1/46.5) liegen deutlich innerhalb der aus dem Spike
 (Node/CPU: str25 ≈ 19, str100 ≈ 51) abgeleiteten Schwellen; die Schwellen bleiben bewusst
 großzügig — sie sollen kaputte Encoder/Crops fangen, nicht Seed-Varianz.
+
+**Punkt-27-nah-Schwelle danach festgeschrieben (Spec-§7-Auftrag „am Live-Lauf kalibrieren"):**
+die provisorische 45 war gegen den gemessenen Live-Wert 9.1 (str 0.25) nur mit ~3 % Marge zur
+Mutations-Gegenprobe 46.5 rot; auf 28 gesenkt, damit sie dieselbe relative Luft haelt wie
+SD-Turbos Punkt 26 (9.1→28 ≈ Faktor 3, wie SD-Turbos 10.0→35).
 
 **Drei Befunde des ersten Laufs (28/31), alle behoben:**
 

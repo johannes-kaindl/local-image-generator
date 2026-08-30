@@ -224,10 +224,10 @@ export class SdTurboEngine implements BuiltinEngine {
     return this._busy;
   }
 
-  // Gibt die drei ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden).
+  // Gibt die vier ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden).
   // Idempotent — mehrfaches dispose ruft release nur einmal. Einzelne
   // release-Fehler werden geschluckt, damit ein fehlschlagender Session-Release
-  // die anderen beiden nicht blockiert (Best-Effort-Cleanup).
+  // die anderen drei nicht blockiert (Best-Effort-Cleanup).
   async dispose(): Promise<void> {
     if (this._disposed) return;
     this._disposed = true;

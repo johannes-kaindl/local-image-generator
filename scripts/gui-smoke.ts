@@ -2553,7 +2553,10 @@ async function main(): Promise<void> {
         await runModelStageChecks(cdp, assetsBase, generateTimeoutMs);
         await runSdxlContentCheck(cdp, generateTimeoutMs);
         await runBuiltinImg2ImgCheck(cdp, "sd-turbo", NAME_26, { nah: 35, fern: 40 }, generateTimeoutMs);
-        await runBuiltinImg2ImgCheck(cdp, "sdxl-turbo", NAME_27, { nah: 45, fern: 30 }, generateTimeoutMs);
+        // nah-Schwelle am Live-Lauf kalibriert (Spec §7): gemessen 9.1 (str 0.25) vs. 46.5
+        // (Mutations-Gegenprobe) — die provisorische 45 war nur mit ~3 % Marge rot. 28 haelt
+        // dieselbe relative Luft wie SD-Turbo (9.1→28 ≈ Faktor 3, wie SD-Turbos 10.0→35).
+        await runBuiltinImg2ImgCheck(cdp, "sdxl-turbo", NAME_27, { nah: 28, fern: 30 }, generateTimeoutMs);
       }
     }
 

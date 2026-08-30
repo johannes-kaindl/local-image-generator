@@ -13,7 +13,9 @@ All notable changes to this project are documented here. The format follows
   (SD-Turbo fp16 ≈ 68 MB; SDXL-Turbo fp32 ≈ 137 MB — its activations exceed the fp16 range
   by ~7×, measured, same class of issue as its decoder). The template row, vault picker and
   "Save & use as template" now work in both modes; the Provider API accepts `initImage` in
-  built-in mode too (`apiVersion` stays 1).
+  built-in mode too (`apiVersion` stays 1). Built-in mode center-crops the reference to the
+  model's square input size before encoding it; server mode hands the file to the server
+  unscaled and unchanged.
 - **Denoising snaps to real steps in built-in mode.** With `steps` diffusion steps there are
   only `steps` meaningful entry points; the slider snaps to that raster ({1/steps … 1}) and
   the note/history/API report the EFFECTIVE value that was computed — never a wish that was

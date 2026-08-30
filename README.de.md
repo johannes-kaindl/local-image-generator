@@ -48,11 +48,16 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
   entsprechen — ein erneuter Lauf ohne Änderung brächte dasselbe Bild. **Neu würfeln**
   zieht einen frischen Seed und erzeugt trotzdem eine neue Variante; das Würfel-Symbol
   würfelt den Seed, ohne zu erzeugen.
-- **Von einem vorhandenen Bild ausgehen** (Server-Modus): eine Vorlage aus dem Vault
-  wählen — oder am gerade erzeugten Bild auf **Speichern & als Vorlage** klicken — und
-  einstellen, wie weit sich das Modell davon entfernen darf. Im eingebauten Modus fehlt
-  die Zeile ganz, weil SD-Turbo keinen VAE-Encoder hat und es nicht kann; der
-  Stärke-Regler erscheint erst, wenn wirklich eine Vorlage gesetzt ist.
+- **Von einem vorhandenen Bild ausgehen** (img2img, beide Engines): eine Vorlage aus
+  dem Vault wählen — oder am gerade erzeugten Bild auf **Speichern & als Vorlage**
+  klicken — und einstellen, wie weit sich das Modell davon entfernen darf. Im
+  Server-Modus ist die Stärke ein stufenloser Regler; im eingebauten Modus rastert sie
+  auf die Schrittzahl des Modells, weil SD-Turbo und SDXL-Turbo ohnehin nur 1–4
+  diskrete Schritte bieten. Der Stärke-Regler erscheint erst, wenn wirklich eine
+  Vorlage gesetzt ist. Der eingebaute Modus schneidet die Vorlage per Center-Crop auf
+  die quadratische Eingabegröße des Modells zu (ein 16:9-Bild wird beschnitten, nicht
+  verzerrt); der Server-Modus reicht die Datei unverändert weiter und der Server
+  skaliert selbst.
 - Der Reiter **Verlauf** zeigt frühere Erzeugungen als vollständige Rezepte
   (Prompt · Negativ-Prompt · Seed · Schritte · Größe · CFG · Zeit) — nach Prompt
   gruppierbar, per Klick zurück in den Generator ladbar, einzeln löschbar oder komplett
@@ -341,7 +346,7 @@ dem Modell-Repository dieses Plugins auf Hugging Face:
 | `sdxl-turbo/vae_encoder/model.onnx` | ≈ 137 MB | VAE-Encoder (fp32 — dieselbe gemessene fp16-Bereichsgrenze wie beim Decoder) — für img2img | Stability AI Community License |
 | `sdxl-turbo/tokenizer{,_2}/vocab.json`, `merges.txt` | ≈ 3,2 MB | CLIP-BPE-Tokenizer-Daten, beide Encoder | (Teil des Modell-Releases) |
 
-SDXL-Turbos VAE-Decoder ist die einzige Datei in beiden Modellen, die **fp32** bleibt — seine Aktivierungen überschreiten unter der WebGPU-Ausführung den fp16-Wertebereich, was ein stilles, fehlerfreies rein schwarzes Bild ohne jedes andere Symptom erzeugte. Alles andere in beiden Modellen bleibt fp16.
+SDXL-Turbos VAE-Decoder **und** VAE-Encoder bleiben beide **fp32** — beide gemessenen Aktivierungen überschreiten unter der WebGPU-Ausführung den fp16-Wertebereich (der Encoder-Peak liegt bei rund 300.000–500.000), und beim Decoder erzeugte das ein stilles, fehlerfreies rein schwarzes Bild ohne jedes andere Symptom. Alles andere in beiden Modellen bleibt fp16.
 
 Gemeinsam für beide Modelle:
 
