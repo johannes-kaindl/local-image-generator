@@ -558,7 +558,7 @@ async function settingsBild(port: number, outDir: string, modus: "builtin" | "se
   `);
   haupt.close();
 
-  const fenster = (await attachTo("settings", port)) ?? (await attachTo("workspace", port, REPO_NAME));
+  const fenster = (await attachTo("settings", port, REPO_NAME)) ?? (await attachTo("workspace", port, REPO_NAME));
   if (!fenster) return `${name} — kein Einstellungen-Fenster`;
   try {
     await fenster.send("Page.bringToFront");
