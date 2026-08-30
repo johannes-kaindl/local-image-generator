@@ -75,6 +75,18 @@ export class LocalEngineBackend implements ImageBackend {
   private running: Promise<unknown> | null = null;
   private runtimeReady = false;
   private readonly timers: TimeoutTimers;
+  /** Perlenschnur fuer `deps.createSession()` (Live-Smoke-Fund 2026-08-31, Punkt 25): der
+   *  WebGPU-EP von onnxruntime-web vertraegt nur EINE Session-Erzeugung zugleich —
+   *  `webgpuRegisterDevice` im Emscripten-Glue setzt ein Flag und wirft "another WebGPU EP
+   *  inference session is being created.", wenn eine zweite Erzeugung ueberlappt (nachlesbar
+   *  in node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs, Suche nach
+   *  "is being created"). `load()` haengt fuer sdxl-turbo FUENF `loadPart()`-Aufrufe an ein
+   *  `Promise.all` — mit vier Teilen ging das Rennen zufaellig gut, mit dem fuenften
+   *  (vaeEncoder, klein und schnell erzeugt) ist es live erstmals gerissen. `enqueueCreate()`
+   *  reiht jeden `createSession`-Aufruf hinter den vorigen; die `Promise.all`-Struktur in
+   *  `load()` und die Parallelitaet von `store.getBuffer()` bleiben unangetastet — nur die
+   *  Session-ERZEUGUNG wird seriell. */
+  private createChain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly deps: LocalEngineDeps,
@@ -136,6 +148,17 @@ export class LocalEngineBackend implements ImageBackend {
     if (e) await e.dispose();
   }
 
+  /** Haengt `fn` hinter das vorherige Glied der Erzeugungs-Queue (`createChain`). Ein
+   *  gescheitertes vorheriges Glied darf die Kette nicht vergiften — deshalb `.catch()` auf
+   *  dem WARTE-Zweig, bevor `fn` startet; das eigene Ergebnis (Erfolg oder Fehlschlag) geht
+   *  unverfaelscht an den Aufrufer zurueck und wird separat abgefangen, damit es das
+   *  NAECHSTE Glied ebenfalls nicht vergiftet. */
+  private enqueueCreate(fn: () => Promise<Session>): Promise<Session> {
+    const result = this.createChain.catch(() => undefined).then(fn);
+    this.createChain = result.catch(() => undefined);
+    return result;
+  }
+
   private ensureLoaded(): Promise<BuiltinEngine> {
     if (this.engine) return Promise.resolve(this.engine);
     if (!this.loading) {
@@ -168,7 +191,12 @@ export class LocalEngineBackend implements ImageBackend {
     // `SESSION_BUILD_TIMEOUT_MS`, bevor der Aufruf als haengend gilt. Ein spaetes Aufloesen
     // nach Ablauf wird nicht mehr abgewartet (ORT bietet kein Abort) — die Session bleibt dann
     // unreleased im Hintergrund verwaist, dieselbe Abwaegung wie im verworfenen 0.4-Entwurf.
-    const sessionPromise = this.deps.createSession(buf, ext);
+    // Seit dem WebGPU-EP-Serialisierungs-Fix (2026-08-31) laeuft der Aufruf ueber
+    // `enqueueCreate()` — die Frist deckt damit auch die Wartezeit in der Erzeugungs-Queue mit
+    // ab, nicht nur die eigentliche `createSession`-Laufzeit. 5 Minuten tragen das reichlich:
+    // gemessene SDXL-Session-Aufbauten liegen bei ~1 s pro Teil auf M5, fuenf Teile in Reihe
+    // also bei ~5 s statt der bisher angenommenen parallelen ~1 s.
+    const sessionPromise = this.enqueueCreate(() => this.deps.createSession(buf, ext));
     // Review-Fund: `withTimeout` haengt intern `work.then(...)` an — nur den Erfolgsfall, kein
     // `onRejected`. Verwirft `sessionPromise` NACH Ablauf der Frist (die Race also schon per
     // Timeout entschieden ist), waere das genau die Art `unhandledrejection`, die die eigene

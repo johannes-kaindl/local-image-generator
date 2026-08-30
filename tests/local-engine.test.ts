@@ -359,4 +359,37 @@ describe("LocalEngineBackend", () => {
     await expect(be.generate(reqOf("hund"))).rejects.toThrow(SessionBuildTimeout);
     expect(requestedMs).toContain(SESSION_BUILD_TIMEOUT_MS);
   });
+
+  // Live-Smoke-Fund 2026-08-31 (Punkt 25): `load()` haengt fuer sdxl-turbo FUENF `loadPart()`-
+  // Aufrufe an ein `Promise.all` — bis zu fuenf gleichzeitige `deps.createSession()`-Aufrufe.
+  // Der WebGPU-EP von onnxruntime-web vertraegt aber nur EINE Session-Erzeugung zugleich:
+  // `webgpuRegisterDevice` im Emscripten-Glue setzt ein Flag und wirft "another WebGPU EP
+  // inference session is being created.", wenn eine zweite Erzeugung ueberlappt (Suche im
+  // Bundle: node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.asyncify.mjs). Mit vier
+  // Teilen ging das Rennen bisher zufaellig gut; mit dem fuenften (vaeEncoder, klein und
+  // schnell erzeugt) ist es im Live-Smoke erstmals gerissen. Dieser Test zaehlt die
+  // GLEICHZEITIG offenen `createSession`-Aufrufe eines echten sdxl-turbo-Ladelaufs (5 Teile)
+  // und haelt fest, dass nie mehr als einer gleichzeitig offen ist. Vor dem Fix (Promise.all
+  // ohne Serialisierung) steht hier 5 statt 1.
+  it("serialisiert createSession-Aufrufe beim Laden — der WebGPU-EP vertraegt nur eine Erzeugung zugleich", async () => {
+    const deps = makeDeps([]);
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    deps.createSession = async (buf) => {
+      concurrent++;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      // Mikro-/Makrotask-Verzoegerung: erzwingt echte Ueberlappung, falls die Aufrufe nicht
+      // serialisiert werden — ohne sie koennte ein rein synchron aufloesender Fake eine
+      // Race verdecken, die im echten ORT (asynchrones WASM/GPU-Setup) sehr wohl auftritt.
+      await new Promise((r) => setTimeout(r, 5));
+      concurrent--;
+      return fakeSession(["sample"], "out_sample", [1, 4, 64, 64], {});
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sdxl-turbo"]);
+    // Das generierte Bild selbst ist hier irrelevant (generische Fake-Sessions liefern keine
+    // fuer SdxlTurboEngine gueltigen Ausgaben) — es geht ausschliesslich um die Reihenfolge
+    // der createSession-Aufrufe waehrend load().
+    await be.generate(reqOf("hund")).catch(() => undefined);
+    expect(maxConcurrent).toBe(1);
+  });
 });
