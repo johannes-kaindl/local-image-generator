@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import type { Session } from "../src/core/engine";
+import { describe, expect, it, vi } from "vitest";
+import { SdTurboEngine, type GenerateRequest, type GenerateResult, type Session } from "../src/core/engine";
 import { BUILTIN_MODELS, RUNTIME_WASM, type AssetFile } from "../src/core/model-manifest";
 import { LocalEngineBackend, SessionBuildTimeout, SESSION_BUILD_TIMEOUT_MS, type LocalEngineDeps } from "../src/obsidian/local-engine";
 import type { ModelStore } from "../src/obsidian/model-store";
@@ -67,6 +67,9 @@ function makeDeps(log: string[]): LocalEngineDeps & { released: number } {
     },
     checkGpu: async () => "ok",
     encodePng: (rgba, w, h) => `data:image/png;base64,${w}x${h}:${rgba.length}`,
+    // txt2img-Default fuer alle bestehenden Tests, die decodeImage nicht selbst setzen —
+    // wird bei initImageData: null (der Regelfall hier) nie aufgerufen.
+    decodeImage: async () => new Float32Array(3 * 512 * 512),
     // Node-Umgebung hat kein `window` — der Produktions-Default in local-engine.ts (`REAL_TIMERS`)
     // ruft `window.setTimeout`. Hier bewusst die globalen Timer statt `window.*`, damit alle
     // bestehenden Tests (die `timers` nicht selbst setzen) nicht an einem ReferenceError
@@ -112,6 +115,47 @@ describe("LocalEngineBackend", () => {
     expect(png.startsWith("data:")).toBe(false);
     expect(png).toBe(`512x512:${512 * 512 * 4}`);
     expect(steps).toEqual(["1/2", "2/2"]);
+  });
+
+  // Task 4 (Spec 0.9 §4a Fortsetzung): local-engine.ts reicht Base64→Pixel-Wandlung und
+  // Denoise-Staerke an die pure Engine durch. `decodeImage` ist injiziert (wie encodePng) —
+  // dieser Test spy'd direkt auf SdTurboEngine.prototype.generate, damit die REFERENZ des
+  // Fake-decodeImage-Ergebnisses ueberprueft werden kann (kein Umweg ueber echte
+  // Session-Feeds, die den Wert kopieren wuerden).
+  it("initImageData/denoising: decodeImage wird mit (base64, Zielgroesse) gerufen, das Ergebnis geht referenzgleich als initPixels an die Engine", async () => {
+    const decodeCalls: [string, number][] = [];
+    const pixels = new Float32Array(3 * 512 * 512);
+    const deps = makeDeps([]);
+    deps.decodeImage = async (b64, size) => {
+      decodeCalls.push([b64, size]);
+      return pixels;
+    };
+    const seen: { initPixels?: Float32Array; denoising?: number }[] = [];
+    const spy = vi.spyOn(SdTurboEngine.prototype, "generate").mockImplementation(async (r: GenerateRequest): Promise<GenerateResult> => {
+      seen.push({ initPixels: r.initPixels, denoising: r.denoising });
+      return { rgba: new Uint8ClampedArray(512 * 512 * 4), width: 512, height: 512, seed: r.seed };
+    });
+    try {
+      const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+      await be.generate({ ...req, initImageData: "QUJD", denoising: 0.5 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(decodeCalls).toEqual([["QUJD", 512]]);
+    expect(seen[0]!.initPixels).toBe(pixels);
+    expect(seen[0]!.denoising).toBe(0.5);
+  });
+
+  it("txt2img (initImageData: null) ruft decodeImage nicht auf", async () => {
+    let calls = 0;
+    const deps = makeDeps([]);
+    deps.decodeImage = async () => {
+      calls++;
+      return new Float32Array(3 * 512 * 512);
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+    await be.generate(req);
+    expect(calls).toBe(0);
   });
 
   it("Steps werden auf den Modellbereich geklemmt, Größe ist immer 512 (Rezept-Ehrlichkeit)", async () => {

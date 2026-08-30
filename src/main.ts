@@ -39,7 +39,7 @@ import { hasLegacyCache } from "./obsidian/legacy-cache";
 import { LocalEngineBackend, SessionBuildTimeout } from "./obsidian/local-engine";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
-import { base64OfDataUrl, dataUrlToBytes, rgbaToDataUrl } from "./obsidian/png";
+import { base64OfDataUrl, dataUrlToBytes, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { ImagePickerModal } from "./obsidian/image-picker";
 import { GeneratorView, VIEW_TYPE, type PanelRecipe, type ViewHost } from "./obsidian/view";
@@ -548,6 +548,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         initRuntime: initOrt,
         checkGpu,
         encodePng: rgbaToDataUrl,
+        decodeImage: decodeInitImage,
       },
       this.activeModel(),
     );

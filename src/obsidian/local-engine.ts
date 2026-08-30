@@ -47,6 +47,10 @@ export interface LocalEngineDeps {
   checkGpu: () => Promise<"ok" | "no-webgpu" | "no-f16">;
   /** RGBA → PNG-Data-URL (Canvas im Renderer, Fake im Test). */
   encodePng: (rgba: Uint8ClampedArray, w: number, h: number) => string;
+  /** Base64 (initImageData, img2img) → CHW-Float32-Pixel in Zielgroesse — DOM-Wandlung,
+   *  injiziert wie encodePng, damit sie in Node per Fake testbar bleibt (echt: `decodeInitImage`
+   *  aus `./png`, Canvas + createImageBitmap). Pflicht-Dep, auch wenn txt2img sie nie ruft. */
+  decodeImage: (base64: string, size: number) => Promise<Float32Array>;
   /** Timer-Port für den Session-Build-Wachhund (`SESSION_BUILD_TIMEOUT_MS`). Default
    *  `window.setTimeout`/`clearTimeout` (Store-Regel prefer-window-timers, Muster wie
    *  `StoreDeps.timer` in model-store.ts) — ein Test kann hier einen Fake einsetzen, der
@@ -97,7 +101,11 @@ export class LocalEngineBackend implements ImageBackend {
     const engine = await this.ensureLoaded();
     const steps = Math.min(this.model.steps.max, Math.max(this.model.steps.min, Math.round(req.steps)));
     const size = this.pickSize(req);
-    const res = await engine.generate({ prompt: req.prompt, steps, seed: req.seed, size }, (s, t) => this.onPhase?.("generating", s, t));
+    const init = req.initImageData !== null ? await this.deps.decodeImage(req.initImageData, size) : undefined;
+    const res = await engine.generate(
+      { prompt: req.prompt, steps, seed: req.seed, size, initPixels: init, denoising: req.denoising ?? undefined },
+      (s, t) => this.onPhase?.("generating", s, t),
+    );
     const dataUrl = this.deps.encodePng(res.rgba, res.width, res.height);
     // Wie A1111Client: nackte Base64 — main.ts hängt das data:-Präfix selbst an.
     return dataUrl.slice(dataUrl.indexOf(",") + 1);
