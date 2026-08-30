@@ -206,7 +206,24 @@ export class LocalEngineBackend implements ImageBackend {
     // Ergebnis unten aendert sich dadurch nicht.
     sessionPromise.catch(() => { /* nur gegen unhandledrejection nach einem Timeout */ });
     const raced = await withTimeout(sessionPromise, SESSION_BUILD_TIMEOUT_MS, this.timers);
-    if (raced.timedOut) throw new SessionBuildTimeout(SESSION_BUILD_TIMEOUT_MS);
+    if (raced.timedOut) {
+      // Review-Fund (Fix-Runde 1, 2026-08-31): ohne Reset bleibt `this.createChain` an genau
+      // DIESES haengende `sessionPromise` gekettet — beim historischen Ewig-Haenger-Fall
+      // (`create()` resolved nie, jsep/asyncify-Fehlpaarung) settelt es NIE, also wuerde JEDER
+      // kuenftige `enqueueCreate()`-Aufruf auf derselben Backend-Instanz fuer immer warten und
+      // nie wieder ein echtes `createSession()` ausloesen. `main.ts` cached die Instanz
+      // (`ensureLocalEngine`) — der naheliegende Retry nach einem Timeout (Nutzer klickt erneut
+      // Generate) waere damit dauerhaft tot, nicht nur der eine Ladeversuch. Der Reset hier
+      // gibt kuenftigen Versuchen eine frische Kette; dieselbe bereits akzeptierte Abwaegung
+      // wie die "Session bleibt unreleased im Hintergrund verwaist" oben: ein kleines
+      // Restrisiko, dass die alte Promise doch noch spaet settelt und der WebGPU-EP dann zwei
+      // Erzeugungen ueberlappen sieht, gegen die Garantie, dass kuenftige Versuche ueberhaupt
+      // wieder etwas probieren. Der spaete-Settle-Fall endet schlimmstenfalls im selben
+      // lesbaren Fehler ("another WebGPU EP inference session is being created."), den dieser
+      // Fix ohnehin behandelt — kein neuer Fehlermodus.
+      this.createChain = Promise.resolve();
+      throw new SessionBuildTimeout(SESSION_BUILD_TIMEOUT_MS);
+    }
     return raced.value;
   }
 

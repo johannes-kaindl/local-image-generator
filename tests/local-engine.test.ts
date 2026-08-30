@@ -392,4 +392,64 @@ describe("LocalEngineBackend", () => {
     await be.generate(reqOf("hund")).catch(() => undefined);
     expect(maxConcurrent).toBe(1);
   });
+
+  // Fix-Runde 1 (Review-Fund, 2026-08-31): ein simpler Reject eines Teils darf die
+  // Erzeugungs-Kette NICHT vergiften — anders als der Timeout-Fall unten haengt hier
+  // `sessionPromise` nicht, sie verwirft nur. `enqueueCreate()`s eigener `.catch(() =>
+  // undefined)` auf der WEITERGEREICHTEN Kette (nicht auf dem zurueckgegebenen Ergebnis) federt
+  // das schon vor diesem Fix ab. Test haelt das als Regression fest: alle 5 Teile werden
+  // trotz des Fehlschlags angefragt (keine der nachfolgenden Erzeugungen wird uebersprungen),
+  // und ein ZWEITER load()-Versuch derselben Instanz ruft createSession erneut auf.
+  it("ein fehlschlagender Teil vergiftet die Erzeugungs-Kette nicht — alle 5 Teile werden angefragt, ein zweiter Versuch startet erneut", async () => {
+    const deps = makeDeps([]);
+    let calls = 0;
+    deps.createSession = async () => {
+      calls++;
+      if (calls === 2) throw new Error("Teil 2 von 5 schlaegt fehl");
+      return fakeSession(["sample"], "out_sample", [1, 4, 64, 64], {});
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sdxl-turbo"]);
+    await expect(be.generate(reqOf("hund"))).rejects.toThrow();
+    expect(calls).toBe(5);
+    // Zweiter Versuch derselben Instanz: keine vergiftete Kette, createSession wird erneut
+    // angefragt (Zaehler waechst ueber die 5 des ersten Versuchs hinaus).
+    await be.generate(reqOf("hund")).catch(() => undefined);
+    expect(calls).toBeGreaterThan(5);
+  });
+
+  // Fix-Runde 1 (Critical-Review-Fund, 2026-08-31): der eigentliche Poisoning-Fall. Vor dem
+  // Reset in `loadPart()`s `raced.timedOut`-Zweig blieb `this.createChain` fuer immer an das
+  // NIE settelnde `sessionPromise` des historischen Ewig-Haenger-Falls gekettet — jeder
+  // kuenftige `enqueueCreate()`-Aufruf auf derselben Instanz haette dann selbst nie wieder
+  // einen echten `createSession()`-Aufruf ausgeloest, nur seinen eigenen Wachhund-Timer
+  // ablaufen lassen. Da `main.ts` die Backend-Instanz cached (`ensureLocalEngine`), waere der
+  // naheliegende Retry nach einem Timeout (Nutzer klickt erneut Generate) auf Dauer tot
+  // gewesen, bis Modellwechsel oder Neustart. Ohne den Fix (Reset auskommentiert) haengt
+  // dieser Test: der zweite Versuch wartet ebenfalls auf die nie settelnde erste Promise und
+  // loest damit selbst wieder den (hier sehr kurzen) Wachhund aus — er wird rot mit
+  // SessionBuildTimeout statt gruen mit einem fertigen Bild.
+  it("nach SessionBuildTimeout ist die Erzeugungs-Kette NICHT vergiftet — ein zweiter Versuch ruft createSession erneut auf und gelingt", async () => {
+    const log: string[] = [];
+    const deps = makeDeps(log);
+    const workingCreate = deps.createSession;
+    // Erster Versuch: der historische Ewig-Haenger — `createSession` loest nie auf und
+    // verwirft nie.
+    deps.createSession = () => new Promise<Session>(() => { /* haengt absichtlich fuer immer */ });
+    // Wie im Wachhund-Test oben: echte, aber winzige Frist statt der Produktions-Konstante.
+    deps.timers = {
+      setTimeout: (fn, ms) => setTimeout(fn, 20) as unknown as number,
+      clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+    };
+    const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+    await expect(be.generate(reqOf("hund"))).rejects.toThrow(SessionBuildTimeout);
+
+    // Zweiter Versuch: funktionierender Fake. OHNE den Reset in loadPart() bliebe die Kette an
+    // das haengende Promise von oben gekettet, und dieser Aufruf wuerde createSession nie
+    // erreichen — der Test bliebe rot (Timeout statt Erfolg).
+    deps.createSession = workingCreate;
+    const before = log.filter((l) => l.startsWith("session:")).length;
+    const png = await be.generate(reqOf("hund"));
+    expect(png.startsWith("512x512")).toBe(true);
+    expect(log.filter((l) => l.startsWith("session:")).length).toBeGreaterThan(before);
+  });
 });
