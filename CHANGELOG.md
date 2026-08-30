@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-30
+
 ### Added
 
 - **`api.recheck()` for consuming plugins.** `status()` is synchronous and makes no network
