@@ -363,11 +363,15 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       return;
     }
     // Ein vorhandener Download wird entfernt, damit Punkt 14 den echten Weg misst — erlaubt,
-    // weil die Quelle der lokale Server ist (siehe Kopfkommentar).
-    if (st?.kind === "ready") {
-      await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(); return true;`);
-      st = await pollUntil(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", 500);
-    }
+    // weil die Quelle der lokale Server ist (siehe Kopfkommentar). BEDINGUNGSLOS, nicht nur
+    // bei kind === "ready": nach einer Manifest-Erweiterung (0.11: vae_encoder wird
+    // Pflichtteil) ist eine Bestandslage "not-downloaded" MIT fast vollem Cache — der
+    // Download waere dann 68 MB in unter einer Sekunde, Punkt 14 saehe nie einen Fortschritt
+    // und faellt rot, obwohl nichts kaputt ist (gemessen 2026-08-31, erster Lauf nach der
+    // Erweiterung: „1 s · Fortschritt gesehen: false"). removeModel() auf leerem Cache ist
+    // ein No-op.
+    await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(); return true;`);
+    st = await pollUntil(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", 500);
     // Gerendert messen, nicht die Klasse lesen: die war beim Bug vom 2026-08-21 gesetzt, während
     // die Zeile im Bild stand. Punkt 17 prüft das systematisch — hier bleibt es als Vorbedingung
     // von 14/15 stehen, weil ein Panel mit sichtbarem Negativ-Prompt kein builtin-Panel ist.
@@ -577,12 +581,14 @@ const MODUS_REGLER = [
   ".lig-cfg-label",
   ".lig-cfg",
   ".lig-cfg-value",
-  // img2img (0.8): die ganze Vorlagen-Zeile haengt am Modus. Der Denoise-Regler steht
-  // BEWUSST nicht hier — er haengt zusaetzlich daran, ob eine Vorlage gesetzt ist, und
-  // waere im Server-Modus ohne Vorlage korrekterweise unsichtbar. Ihn hier zu fuehren
-  // hiesse, die zweite Sichtbarkeitsstufe als Defekt zu melden.
-  ".lig-init-row",
-  ".lig-init-from-result",
+  // img2img: bis 0.10 hing die ganze Vorlagen-Zeile (.lig-init-row, .lig-init-from-result)
+  // am Modus und stand hier. Seit 0.11 kann auch die eingebaute Engine img2img — die Zeile
+  // ist in BEIDEN Modi sichtbar und gehoert deshalb NICHT mehr in diese Liste (hier gefuehrt,
+  // meldete Punkt 17 die gewollte Sichtbarkeit als Defekt; gemessen 2026-08-31, erster Lauf
+  // nach dem Caps-Flip). Der Denoise-Regler steht weiterhin BEWUSST nicht hier — er haengt
+  // zusaetzlich daran, ob eine Vorlage gesetzt ist, und waere im Server-Modus ohne Vorlage
+  // korrekterweise unsichtbar. Ihn hier zu fuehren hiesse, die zweite Sichtbarkeitsstufe als
+  // Defekt zu melden.
   // Zweite Modellstufe (0.9): `.lig-model-pick` steht aus demselben Grund NICHT hier wie
   // `.lig-denoise` — es haengt an ZWEI unabhaengigen Bedingungen (showModelPicker UND
   // downloadedModels.length > 1), nicht am Modus allein. Im Server-Modus waere es korrekt
@@ -658,6 +664,29 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
 
   await setzeModus("builtin");
   const drin = await reglerSicht(cdp);
+
+  // Erweiterung 2026-08-31 (Task-5-Review F1): der Denoise-Raster-Block des Panels steht auf
+  // der Zusage, dass der Browser den value eines range-Inputs bei einer min/step-Aenderung
+  // NEU rastet und die Beschriftung bedingungslos nachgezogen wird — fuer max ist das seit
+  // 2026-08-21 gemessen, fuer step war es bis hier nur aus der HTML-Spec abgeleitet. Messung:
+  // im builtin-Modus Steps auf 4, Denoise auf 0.75 (liegt auf dem 0.25er-Raster), dann Steps
+  // auf 3 — das Raster wird 1/3, der Browser muss 0.75 auf 2/3 ziehen (0.75 liegt naeher an
+  // 2/3 als an 1: kein Gleichstand), die Beschriftung muss "0.67" zeigen.
+  const denoiseVorLauf = await cdp.evaluate<string>(`
+    const steps = document.querySelector(".lig-steps");
+    const den = document.querySelector(".lig-denoise");
+    const alt = den.value;
+    steps.value = "4"; steps.dispatchEvent(new Event("input", { bubbles: true }));
+    den.value = "0.75"; den.dispatchEvent(new Event("input", { bubbles: true }));
+    steps.value = "3"; steps.dispatchEvent(new Event("input", { bubbles: true }));
+    return alt;
+  `);
+  const raster = await cdp.evaluate<{ min: string; step: string; wert: string; anzeige: string }>(`
+    const den = document.querySelector(".lig-denoise");
+    const span = document.querySelector(".lig-denoise-value");
+    return { min: den.min, step: den.step, wert: den.value, anzeige: span ? span.textContent.trim() : "" };
+  `);
+
   await setzeModus("server");
   const raus = await reglerSicht(cdp);
   // Zurückstellen: der Treiber gibt den Wirt so zurück, wie er ihn vorfand — auch in dem
@@ -666,6 +695,9 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
     const el = document.querySelector(".lig-steps");
     el.value = ${JSON.stringify(stepsVorLauf)};
     el.dispatchEvent(new Event("input", { bubbles: true }));
+    const den = document.querySelector(".lig-denoise");
+    den.value = ${JSON.stringify(denoiseVorLauf)};
+    den.dispatchEvent(new Event("input", { bubbles: true }));
     return true;
   `);
 
@@ -685,12 +717,18 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
   if (nichtDa.length > 0) teile.push(`server bleibt weg: ${nichtDa.map((r) => r.sel).join(", ")}`);
   if (stepsSchief.length > 0) teile.push(`Steps-Beschriftung ≠ Regler: ${stepsSchief.map((s) => `„${s.anzeige}" bei value ${s.wert} (max ${s.max})`).join(", ")}`);
   if (!geklemmt) teile.push(`Steps wurde nicht geklemmt (${vorher.steps.wert} → max ${drin.steps.max}) — die Beschriftung ist damit ungeprüft`);
+  const drittel = String(1 / 3);
+  const rasterSchief: string[] = [];
+  if (raster.min !== drittel || raster.step !== drittel) rasterSchief.push(`min/step ${raster.min}/${raster.step} (erwartet ${drittel})`);
+  if (Math.abs(Number(raster.wert) - 2 / 3) > 1e-6) rasterSchief.push(`value ${raster.wert} (erwartet ${2 / 3} — der Browser hat bei der step-Aenderung nicht neu gerastet)`);
+  if (raster.anzeige !== Number(raster.wert).toFixed(2)) rasterSchief.push(`Beschriftung „${raster.anzeige}" ≠ ${Number(raster.wert).toFixed(2)}`);
+  if (rasterSchief.length > 0) teile.push(`Denoise-Raster (Steps 4→3): ${rasterSchief.join(", ")}`);
 
   record(
     "17. Die modusabhängigen Regler sind auch GERENDERT weg — und kommen zurück",
     teile.length === 0,
     teile.length === 0
-      ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max}`
+      ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max} · Denoise-Raster 4→3: value ${raster.wert} → „${raster.anzeige}"`
       : teile.join(" · "),
   );
 }
@@ -1657,6 +1695,167 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
   }
 }
 
+
+/**
+ * Punkte 26/27: builtin-img2img am lebenden Renderer — die INHALTLICHE Pruefung des ganzen
+ * Weges Base64 → decodeInitImage (Crop/Kanalordnung) → VAE-Encoder → Teil-Denoising. Drei
+ * echte Laeufe pro Modell ueber die Provider-API (voller Weg inkl. Haertung):
+ * (A) txt2img-Basis · (B) img2img str 0.25 — muss NAH an A bleiben · (C) img2img str 1.0 —
+ * muss sich WEITER entfernen als B. C ist die eingebaute Gegenprobe: waere die Vorlage
+ * wirkungslos (Encoder liefert Rauschen, decodeInitImage vertauscht Kanaele), laegen B und C
+ * gleich weit von A weg und die nah-Schwelle risse. Ein NaN-Encoder (fp16-Ueberlauf) macht B
+ * schwarz — dieselbe Fehlerklasse wie Punkt 24/25, eine Stufe frueher in der Pipeline.
+ * Spike-Referenz (2026-08-30, Node/CPU, SD-Turbo, steps 4): RMSE str25 ≈ 19, str100 ≈ 51,
+ * Roundtrip-Boden 4,8. Punkt 27 ist zugleich der LIVE-Beweis fuer den fp32-VAE-Encoder von
+ * SDXL unter WebGPU (torch-Hooks massen 300k–500k Peak — ein Node/CPU-Test kann diesen
+ * Fehlermodus prinzipiell nicht sehen, s. tools/convert/convert_model.py).
+ * Base64-Bilder bleiben im Renderer (window-Slots) — ueber CDP wandern nur Zahlen.
+ */
+async function runBuiltinImg2ImgCheck(
+  cdp: Cdp,
+  model: BuiltinModelId,
+  name: string,
+  grenzen: { nah: number; fern: number },
+  generateTimeoutMs: number,
+): Promise<void> {
+  const geladen = await cdp.evaluate<BuiltinModelId[]>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].downloadedModels;`);
+  if (!geladen.includes(model)) {
+    const dl = await downloadModelViaMock(cdp, model, generateTimeoutMs);
+    if (!dl.ok) {
+      record(name, false, `${model} nicht ladbar: ${dl.detail}`);
+      return;
+    }
+  }
+  const original = await cdp.evaluate<{ builtinModel: BuiltinModelId; engine: string }>(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    return { builtinModel: p.settings.builtinModel, engine: p.settings.engine };
+  `);
+  try {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.builtinModel !== ${JSON.stringify(model)}) await p.setBuiltinModel(${JSON.stringify(model)});
+      if (p.settings.engine !== "builtin") await p.setEngine("builtin");
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 500));
+
+    // Mutation und Wartephase getrennt (AGENTS-Gotcha): Cdp.send bricht nach 30 s ab, eine
+    // Generierung (inkl. Session-Aufbau) darf laenger dauern. Ergebnis liegt im Renderer;
+    // die grossen Base64-Strings verlassen ihn nie — gepollt wird nur der Zustand.
+    const lauf = async (slot: string, req: string, kennung: string): Promise<{ ok: boolean; denoising?: number | null; reason?: string }> => {
+      await cdp.evaluate(`
+        const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
+        window[${JSON.stringify(slot)}] = { fertig: false };
+        if (!api) { window[${JSON.stringify(slot)}] = { fertig: true, ok: false, reason: "keine API" }; return true; }
+        api.generate(${req})
+          .then((r) => {
+            window[${JSON.stringify(slot)}] = r.ok
+              ? { fertig: true, ok: true, base64: r.image.base64, denoising: r.image.params.denoising }
+              : { fertig: true, ok: false, reason: r.reason };
+          })
+          .catch((e) => { window[${JSON.stringify(slot)}] = { fertig: true, ok: false, reason: String(e) }; });
+        return true;
+      `);
+      const r = await pollUntil(
+        () =>
+          cdp.evaluate<{ fertig: boolean; ok?: boolean; reason?: string; denoising?: number | null }>(
+            `const v = window[${JSON.stringify(slot)}] ?? { fertig: false }; return { fertig: v.fertig, ok: v.ok, reason: v.reason, denoising: v.denoising };`,
+          ),
+        (v) => v.fertig,
+        generateTimeoutMs,
+        kennung,
+        1000,
+      );
+      return r === null ? { ok: false, reason: "Zeitlimit" } : { ok: r.ok === true, denoising: r.denoising, reason: r.reason };
+    };
+
+    const basisPrompt = JSON.stringify(`${SMOKE_PROMPT}, i2i base (${model})`);
+    const variationPrompt = JSON.stringify(`${SMOKE_PROMPT}, i2i variation (${model})`);
+    const a = await lauf("__ligI2IA", `{ prompt: ${basisPrompt}, steps: 4, seed: 4711 }`, `warte auf txt2img-Basis (${name})`);
+    const b = a.ok
+      ? await lauf(
+          "__ligI2IB",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 0.25 }`,
+          `warte auf img2img str 0.25 (${name})`,
+        )
+      : { ok: false as const, reason: "Basis fehlt" };
+    const c = b.ok
+      ? await lauf(
+          "__ligI2IC",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 1 }`,
+          `warte auf img2img str 1.0 (${name})`,
+        )
+      : { ok: false as const, reason: "Vorlauf fehlt" };
+
+    if (!a.ok || !b.ok || !c.ok) {
+      record(name, false, `Lauf gescheitert: A ${a.ok ? "ok" : (a.reason ?? "?")} · B ${b.ok ? "ok" : (b.reason ?? "?")} · C ${c.ok ? "ok" : (c.reason ?? "?")}`);
+      return;
+    }
+
+    // Auswertung komplett im Renderer: RMSE(A,B), RMSE(A,C) + Inhalts-Statistik von B
+    // (Luma-Stddev + distinkte Stufen, dieselben Grenzen wie Punkt 24/25).
+    const mess = await cdp.evaluate<{ nah: number; fern: number; stddev: number; distinct: number }>(`
+      const load = (b64) => new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i);
+        i.onerror = () => rej(new Error("decode"));
+        i.src = "data:image/png;base64," + b64;
+      });
+      const [ia, ib, ic] = await Promise.all([load(window.__ligI2IA.base64), load(window.__ligI2IB.base64), load(window.__ligI2IC.base64)]);
+      const px = (img) => {
+        const cv = document.createElement("canvas");
+        cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        const g = cv.getContext("2d");
+        g.drawImage(img, 0, 0);
+        return g.getImageData(0, 0, cv.width, cv.height).data;
+      };
+      const pa = px(ia), pb = px(ib), pc = px(ic);
+      const rmse = (x, y) => {
+        let s = 0, n = 0;
+        for (let i = 0; i < x.length; i += 4) for (let k = 0; k < 3; k++) { const d = x[i + k] - y[i + k]; s += d * d; n++; }
+        return Math.sqrt(s / n);
+      };
+      let sum = 0, sq = 0;
+      const buckets = new Set();
+      const m = pb.length / 4;
+      for (let i = 0; i < pb.length; i += 4) {
+        const l = 0.2126 * pb[i] + 0.7152 * pb[i + 1] + 0.0722 * pb[i + 2];
+        sum += l; sq += l * l; buckets.add(Math.round(l));
+      }
+      const mean = sum / m;
+      return { nah: rmse(pa, pb), fern: rmse(pa, pc), stddev: Math.sqrt(Math.max(0, sq / m - mean * mean)), distinct: buckets.size };
+    `);
+
+    const teile: string[] = [];
+    if (b.denoising !== 0.25) teile.push(`B meldet denoising ${String(b.denoising)} (erwartet 0.25)`);
+    if (c.denoising !== 1) teile.push(`C meldet denoising ${String(c.denoising)} (erwartet 1)`);
+    if (mess.stddev < CONTENT_STDDEV_MIN || mess.distinct < CONTENT_LUMA_BUCKETS_MIN)
+      teile.push(`B ohne echten Inhalt: Luma-Stddev ${mess.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}), ${mess.distinct} Stufen (Grenze ${CONTENT_LUMA_BUCKETS_MIN})`);
+    if (mess.nah > grenzen.nah) teile.push(`str 0.25 zu weit von der Vorlage: RMSE ${mess.nah.toFixed(1)} (Grenze ${grenzen.nah})`);
+    if (mess.fern < grenzen.fern) teile.push(`str 1.0 zu nah an der Vorlage: RMSE ${mess.fern.toFixed(1)} (Mindestabstand ${grenzen.fern})`);
+    if (mess.fern <= mess.nah) teile.push(`keine Monotonie: str 1.0 (${mess.fern.toFixed(1)}) nicht weiter weg als str 0.25 (${mess.nah.toFixed(1)})`);
+
+    record(
+      name,
+      teile.length === 0,
+      teile.length === 0
+        ? `RMSE zur Vorlage: str 0.25 → ${mess.nah.toFixed(1)} (≤ ${grenzen.nah}) · str 1.0 → ${mess.fern.toFixed(1)} (≥ ${grenzen.fern}) · B: Luma-Stddev ${mess.stddev.toFixed(1)}, ${mess.distinct} Stufen · denoising ${String(b.denoising)}/${String(c.denoising)}`
+        : teile.join(" · "),
+    );
+  } finally {
+    await cdp.evaluate(`delete window.__ligI2IA; delete window.__ligI2IB; delete window.__ligI2IC; return true;`).catch(() => undefined);
+    await cdp
+      .evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        const before = ${JSON.stringify(original)};
+        if (p.settings.builtinModel !== before.builtinModel) await p.setBuiltinModel(before.builtinModel);
+        if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
+        return true;
+      `)
+      .catch(() => undefined);
+  }
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const flag = (name: string): string | undefined => {
@@ -2313,21 +2512,25 @@ async function main(): Promise<void> {
     // Fall zusätzlich 6,4 GB SDXL-Turbo, Punkt 25 baut zusätzlich eine echte SDXL-Turbo-Session
     // und generiert damit) — gegen das HF-Repo wäre das ein Missbrauch der Leitung, gegen den
     // lokalen Server dauert es Sekunden bis wenige Minuten.
+    const NAME_26 = "26. builtin-img2img (SD-Turbo): das Ergebnis bleibt nah an der Vorlage — str 1.0 entfernt sich";
+    const NAME_27 = "27. builtin-img2img (SDXL-Turbo): fp32-Encoder-Wächter — nah an der Vorlage, Inhalt echt";
     const ZWEITE_STUFE = [
       "20. Modellwechsel im Settings-Tab ändert die Download-Zeile",
       "21. Panel-Modell-Picker zeigt sich erst ab zwei geladenen Modellen",
       "22. Die Größen-Zeile folgt dem gewählten Modell",
       "23. Abbruch am Bestätigungsdialog lädt kein Byte",
       "25. SDXL-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform (VAE-fp16-Wächter)",
+      NAME_26,
+      NAME_27,
     ];
     if (!builtin) {
-      console.log("\n(ohne --builtin: Punkte 13–16, 18d, 20–25 übersprungen — sie brauchen den lokalen Asset-Server)");
+      console.log("\n(ohne --builtin: Punkte 13–16, 18d, 20–27 übersprungen — sie brauchen den lokalen Asset-Server)");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "ohne --builtin nicht erreicht");
       // 18d haengt am geprueften Zustand „not-downloaded", den nur Punkt 13 herstellt — ohne
       // ihn koennte der Punkt nur eine unbekannte Cache-Lage messen.
       skip(NAME_18D, "ohne --builtin nicht erreicht (braucht den von Punkt 13 hergestellten Zustand)");
     } else if (quick) {
-      console.log("\n(--quick: Punkte 13–16, 18d, 20–25 übersprungen — sie brauchen Download und/oder Generierung)");
+      console.log("\n(--quick: Punkte 13–16, 18d, 20–27 übersprungen — sie brauchen Download und/oder Generierung)");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "--quick: keine Generierung");
       skip(NAME_18D, "--quick: kein builtin-Zweig");
     } else {
@@ -2349,6 +2552,8 @@ async function main(): Promise<void> {
         await runBuiltinChecks(cdp, assetsBase, generateTimeoutMs);
         await runModelStageChecks(cdp, assetsBase, generateTimeoutMs);
         await runSdxlContentCheck(cdp, generateTimeoutMs);
+        await runBuiltinImg2ImgCheck(cdp, "sd-turbo", NAME_26, { nah: 35, fern: 40 }, generateTimeoutMs);
+        await runBuiltinImg2ImgCheck(cdp, "sdxl-turbo", NAME_27, { nah: 45, fern: 30 }, generateTimeoutMs);
       }
     }
 

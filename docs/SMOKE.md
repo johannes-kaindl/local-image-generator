@@ -103,6 +103,8 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 23 | Abbruch am Bestätigungsdialog vor SDXL-Turbo lädt **kein** Byte | am **Zähler des Asset-Mocks** gemessen (Spec §4: „ohne Klick fließt kein Byte" gilt auch für den falschen Knopf) |
 | 24 | SD-Turbo liefert ein Bild mit echtem **Inhalt** (Luma-Stddev + distinkte Farben) | billige Zusatzabsicherung, misst dasselbe Bild wie 15 |
 | 25 | SDXL-Turbo liefert ein Bild mit echtem **Inhalt**, nicht Schwarz/uniform | der eigentliche Regressionswächter aus Phase 4 des SDXL-Turbo-Debuggings — s. u. |
+| 26 | builtin-img2img (SD-Turbo): str 0.25 bleibt **nah** an der Vorlage (RMSE ≤ 35), str 1.0 entfernt sich (≥ 40) | die inhaltliche Prüfung des ganzen Weges Base64 → `decodeInitImage` → VAE-Encoder → Teil-Denoising; der C-Lauf (str 1.0) ist die **eingebaute Gegenprobe**: wäre die Vorlage wirkungslos, lägen beide Läufe gleich weit weg |
+| 27 | builtin-img2img (SDXL-Turbo): dasselbe mit Grenzen 45/30 | der **Live-Beweis** für den fp32-VAE-Encoder unter WebGPU — torch-Hooks maßen 300k–500k Aktivierungs-Peak, ein Node/CPU-Test kann diesen Fehlermodus prinzipiell nicht sehen |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -808,3 +810,39 @@ zurückgesetzt, Historie wieder bei 20 Einträgen ohne Smoke-Reste.
 das bräuchte einen vollen Lauf mit zurückgebautem Fix (~20 min). Strukturell ist er
 abgesichert (eigener `note === null`-Zweig, frischer Ordner pro Lauf, Vergleich gegen das
 Server-Orakel); die Gegenprobe steht beim nächsten vollständigen Lauf aus.
+
+### 2026-08-31 · 0.11.0-dev (builtin-img2img) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **31/31 grün**
+
+Neu: Punkte **26/27** (builtin-img2img, s. Tabelle) und die **Punkt-17-Erweiterung** (Denoise-Raster:
+Steps 4→3 schieben, `min`/`step`/Wert/Beschriftung von `.lig-denoise` messen — value rastet auf 2/3,
+Beschriftung „0.67"). Damit ist die bis dahin **unbelegte** Browser-Zusage gemessen, dass ein
+range-Input seinen `value` auch bei einer `step`-Änderung neu rastet (für `max` war das seit
+2026-08-21 gemessen, für `step` nur aus der HTML-Spec abgeleitet).
+
+**Gegenprobe der neuen Punkte (Mutation B-Lauf auf str 1.0, ein voller Lauf):** 26 und 27 fallen
+ROT an allen drei Bedingungen zugleich — gemeldeter `denoising`-Wert (1 statt 0.25), nah-Schwelle
+(51.2 > 35 bzw. 46.5 > 45) und Monotonie (fern == nah). Danach Mutation zurück → 31/31. Die
+Live-Werte (SD: 10.0/51.2 · SDXL: 9.1/46.5) liegen deutlich innerhalb der aus dem Spike
+(Node/CPU: str25 ≈ 19, str100 ≈ 51) abgeleiteten Schwellen; die Schwellen bleiben bewusst
+großzügig — sie sollen kaputte Encoder/Crops fangen, nicht Seed-Varianz.
+
+**Drei Befunde des ersten Laufs (28/31), alle behoben:**
+
+1. **Punkt 25 rot: „another WebGPU EP inference session is being created" — ein ECHTER
+   Produktions-Race, kein Treiber-Fehler.** Der WebGPU-EP von onnxruntime-web verträgt nur EINE
+   Session-Erzeugung zugleich (`webgpuRegisterDevice`-Flag im Emscripten-Glue wirft bei
+   Überlappung); `load()` erzeugte bis zu 5 Sessions parallel (`Promise.all` über `loadPart`).
+   Mit 4 Teilen ging das Rennen seit 0.9 zufällig gut — der 5. Teil (der kleine, schnell erzeugte
+   vae_encoder) hat es kippen lassen. Fix: Erzeugungs-Queue an der injizierten Grenze
+   (`e08b11d`), plus Ketten-Reset nach Session-Timeout (`68129b3`, Review-Fund: eine vergiftete
+   Kette hätte jeden Retry der gecachten Instanz blockiert).
+2. **Punkt 14 rot: „1 s · Fortschritt gesehen: false"** — der Treiber räumte den Cache nur bei
+   `kind === "ready"`. Nach der Manifest-Erweiterung ist eine Bestandslage `not-downloaded` MIT
+   fast vollem Cache; der Download war dann nur der 68-MB-Encoder und zu schnell für die
+   Fortschritts-Messung. Treiber-Fix: `removeModel()` bedingungslos. **Nebenbefund mit Wert:
+   genau dieser 1-s-Lauf ist der gemessene Beleg, dass Bestandsinstallationen beim 0.11-Upgrade
+   nur den Encoder nachladen** (68 MB / 137 MB), nicht 2,6/7,1 GB — der Bestätigungsdialog nennt
+   allerdings die Gesamtgröße (CHANGELOG-Hinweis).
+3. **Punkt 17 rot: `.lig-init-row`/`.lig-init-from-result` sichtbar im builtin** — kein Defekt,
+   sondern die seit 0.11 GEWOLLTE Sichtbarkeit (builtin kann img2img); die beiden Selektoren
+   standen noch in `MODUS_REGLER`. Aus der Liste entfernt.
