@@ -102,8 +102,8 @@ if (api?.apiVersion === 1) {
 
 `status().capabilities` sagt dir, was das aktive Backend wirklich kann. Die eingebaute Engine
 ist guidance-frei und fest auf 512×512 — ein CFG- oder Größenregler in deiner Oberfläche wäre
-in diesem Modus eine Attrappe. Dasselbe gilt für `capabilities.initImage`: nur das
-Server-Backend kann von einem vorhandenen Bild ausgehen.
+in diesem Modus eine Attrappe. `capabilities.initImage` ist in BEIDEN Modi `true` — beide
+Backends können von einem vorhandenen Bild ausgehen.
 
 Für einen Lauf mit Vorlage: das Bild als Base64 (ohne `data:`-Präfix) mitgeben, dazu
 optional `denoising` zwischen 0 und 1 (Vorgabe `0.75` — höher heißt weiter weg vom Original):
@@ -112,9 +112,15 @@ optional `denoising` zwischen 0 und 1 (Vorgabe `0.75` — höher heißt weiter w
 if (api.status().capabilities.initImage) {
   const r = await api.generate({ prompt: "derselbe See, in der Dämmerung", initImage: pngBase64, denoising: 0.4 });
   // r.image.params.denoising sagt, was tatsächlich angewandt wurde — null heißt, es wurde
-  // ignoriert (der eingebaute Modus streicht es still, statt es vorzutäuschen).
+  // ignoriert (es wurde keine Vorlage geschickt).
 }
 ```
+
+Die eingebaute Engine kann nur einen Teil ihres festen Schritte-Zeitplans neu durchrechnen und
+trifft deshalb nur `steps` unterschiedliche Denoising-Stärken (z. B. 4 Schritte →
+{0.25, 0.5, 0.75, 1}). Dein `denoising` wird auf den nächstgelegenen dieser Werte gerastert —
+das Server-Backend bleibt kontinuierlich. In beiden Fällen ist `r.image.params.denoising` der
+Wert, der tatsächlich gilt — als Quelle der Wahrheit behandeln, nicht den eingegebenen Wert.
 
 Die API startet nie selbst einen Download. Fehlt das Modell, bekommst du
 `{ ok: false, reason: "model-not-downloaded" }` — den Knopf muss der Nutzer selbst klicken.
