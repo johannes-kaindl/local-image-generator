@@ -15,13 +15,38 @@
  *
  * ## Voraussetzung
  *
- * Obsidian muss mit offenem Debug-Port laufen (der eine Handgriff, der Handarbeit bleibt —
- * die App muss dafür neu gestartet werden):
+ * Obsidian muss mit offenem Debug-Port laufen. ⚠️ **Zuerst pruefen, ob schon eines laeuft —
+ * Obsidian ist geteilte Infrastruktur, nicht das eigene Werkzeug:**
+ *
+ * ```bash
+ * lsof -nP -iTCP:9222 -sTCP:LISTEN
+ * ```
+ *
+ * **Hoert der Port, wird MITGENUTZT statt neu gestartet.** Ein `quit` trifft die Instanz, an
+ * der moeglicherweise eine andere Session arbeitet, und zerstoert deren Zustand (offene
+ * Fenster, laufende Indizierung, Messreihe) — der eigene Lauf ist danach sauber gruen, der
+ * Schaden entsteht woanders und faellt nicht auf. Anders als `scripts/shots.ts` braucht dieses
+ * Rezept den frischen Start NICHT: der Treiber deployt und laedt das Plugin selbst neu.
+ * Mitnutzen geht so — eigenes Fenster per IPC oeffnen, danach waehlt `--vault <name>` es aus
+ * (der Vault-Name waehlt, nicht die Reihenfolge der Fenster):
+ *
+ * ```js
+ * // in einem beliebigen Obsidian-Renderer, Vault-Pfad muss in obsidian.json stehen
+ * window.electron.ipcRenderer.send("vault-open", "<pfad zum staging-vault>")
+ * ```
+ *
+ * Erst wenn NICHTS laeuft, ist der Neustart der richtige Griff:
  *
  * ```bash
  * osascript -e 'quit app "Obsidian"'
  * open -a Obsidian --args --remote-debugging-port=9222
  * ```
+ *
+ * ⚠️ **Gefahren wird gegen den eigenen Staging-Vault (`$STAGING_VAULTS_DIR/<repo>`), nicht
+ * gegen den Produktivvault.** Dort liegt der installierte Store-Build, und `manifest.version`
+ * verraet den Unterschied nicht — beide tragen dieselbe Nummer. Ein Lauf gegen Pallas misst
+ * also im Zweifel fremden Code (gemessen im Dach am 2026-08-28: 4 von 8 gruenen Laeufen jenes
+ * Tages liefen auf Store-Builds).
  *
  * Dazu ein **laufender A1111-kompatibler Bildserver** (Draw Things, AUTOMATIC1111, Forge,
  * SD.Next) auf dem Endpunkt, der in den Plugin-Settings steht — ein fehlender Server ist kein
