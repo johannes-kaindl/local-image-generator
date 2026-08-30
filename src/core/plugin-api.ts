@@ -29,12 +29,14 @@ export interface ApiRequest {
    *  danach in `ApiParams.seed`, damit ein Konsument das Ergebnis reproduzieren kann. */
   seed?: number;
   /** Vorlage fuer img2img: Base64-PNG **ohne** `data:`-Praefix. Fehlt es, ist der Lauf
-   *  txt2img. Nur im Server-Modus wirksam — `capabilities.initImage` sagt vorher, ob es
-   *  ueberhaupt angeboten werden darf; im builtin-Modus wird es still gestrichen statt
-   *  abgelehnt (Keine-Attrappen-Linie). */
+   *  txt2img. Seit 0.11 in BEIDEN Modi wirksam — `capabilities.initImage` sagt vorher, ob
+   *  das aktuelle Backend es ueberhaupt anbietet. */
   initImage?: string;
   /** Wie stark die Vorlage geaendert werden darf, 0..1 (A1111: `denoising_strength`).
-   *  Ohne `initImage` ohne Wirkung. Fehlt es, gilt 0.75. */
+   *  Ohne `initImage` ohne Wirkung. Fehlt es, gilt 0.75. Im builtin-Modus quantisiert die
+   *  Haertung auf das Steps-Raster {1/steps … 1} (nur `steps` Einstiegspunkte fuer
+   *  Teil-Denoising); massgeblich ist der Wert in den zurueckgegebenen `ApiParams.denoising`,
+   *  nicht die Eingabe hier. Der Server-Modus bleibt kontinuierlich. */
   denoising?: number;
   /** `pct` ist null, wenn das Backend keinen Fortschritt liefert (Draw Things kennt
    *  /sdapi/v1/progress nicht). Die Phase kommt trotzdem — ein builtin-Lauf steht

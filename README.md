@@ -103,8 +103,8 @@ if (api?.apiVersion === 1) {
 
 `status().capabilities` tells you what the active backend can honour. The built-in engine
 is guidance-free and fixed at 512×512, so a CFG or size control in your UI would be a prop.
-The same applies to `capabilities.initImage`: only the server backend can start from an
-existing image.
+`capabilities.initImage` is `true` in both modes — both backends can start from an existing
+image.
 
 To generate from a reference image, pass it as base64 (no `data:` prefix) plus an optional
 `denoising` between 0 and 1 (default `0.75` — higher means further from the original):
@@ -113,9 +113,15 @@ To generate from a reference image, pass it as base64 (no `data:` prefix) plus a
 if (api.status().capabilities.initImage) {
   const r = await api.generate({ prompt: "the same lake, at dusk", initImage: pngBase64, denoising: 0.4 });
   // r.image.params.denoising tells you what was actually applied — null means it was
-  // ignored (built-in mode strips it silently rather than pretending to honour it).
+  // ignored (no reference image was sent).
 }
 ```
+
+The built-in engine only re-runs part of its fixed step schedule, so it can only land on
+`steps` distinct denoising strengths (e.g. 4 steps → {0.25, 0.5, 0.75, 1}). It quantizes your
+`denoising` to the nearest one of those — the server backend stays continuous. Either way,
+`r.image.params.denoising` is the value that governs; treat it as the source of truth, not
+the number you passed in.
 
 The API never starts a download. If the model is missing you get
 `{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button
