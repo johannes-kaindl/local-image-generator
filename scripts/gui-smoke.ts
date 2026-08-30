@@ -726,14 +726,14 @@ async function runApiCheck(cdp: Cdp, endpoint: string): Promise<void> {
     if (!api) return { version: null, keys: [], status: {} };
     return {
       version: api.apiVersion,
-      keys: ["status", "generate", "save"].filter((k) => typeof api[k] === "function"),
+      keys: ["status", "generate", "save", "recheck"].filter((k) => typeof api[k] === "function"),
       status: api.status(),
     };
   `);
 
   record(
     "18a. Die Provider-API ist registriert und formtreu",
-    form.version === IMAGE_GENERATION_API_VERSION && form.keys.length === 3,
+    form.version === IMAGE_GENERATION_API_VERSION && form.keys.length === 4,
     `apiVersion=${String(form.version)}, Methoden=${form.keys.join(",") || "keine"}`,
   );
 
@@ -745,6 +745,7 @@ async function runApiCheck(cdp: Cdp, endpoint: string): Promise<void> {
   );
 
   await runApiFailureCheck(cdp, endpoint);
+  await runRecheckCheck(cdp, endpoint);
 }
 
 /**
@@ -836,6 +837,91 @@ async function runApiFailureCheck(cdp: Cdp, endpoint: string): Promise<void> {
     );
   } finally {
     await setMockFailure(endpoint, false);
+  }
+}
+
+/**
+ * Punkt 18e: `recheck()` heilt einen VERALTETEN `unreachable`-Zustand.
+ *
+ * Der Fall, der die Methode ueberhaupt noetig macht: kommt der Bild-Server erst nach Obsidians
+ * Start hoch, steht `status().ready` auf false und `generate()` verweigert auf dem alten Stand —
+ * dauerhaft, denn `status()` ist per Vertrag netzfrei und synchron und kann das nicht heilen.
+ * Ein Konsument waere bis zum naechsten Panel-Klick des Nutzers ausgesperrt.
+ *
+ * Der Punkt misst in DREI Schritten, und der mittlere ist der wichtigste:
+ *   1. stale herstellen — Endpunkt auf einen toten Port, `checkServer()`, `reason` = unreachable;
+ *   2. Server wieder erreichbar machen, OHNE zu pruefen — `status()` muss WEITER unreachable
+ *      melden. Ohne diesen Schritt koennte Schritt 3 gruen sein, weil irgendetwas anderes den
+ *      Zustand nebenbei aufgefrischt hat, und der Punkt haette `recheck()` nie beruehrt;
+ *   3. `recheck()` — jetzt ready.
+ *
+ * Der builtin-Zweig wird hier NICHT gemessen: dort ist `recheck()` bewusst ein No-op (es gibt
+ * keinen entfernten Zustand), und das deckt `tests/plugin-api.test.ts` am injizierten Fake ab —
+ * eine Zaehlung, die am Wirt gar nicht moeglich waere.
+ */
+async function runRecheckCheck(cdp: Cdp, endpoint: string): Promise<void> {
+  const NAME = "18e. recheck() heilt einen veralteten unreachable-Zustand";
+  const zustand = () =>
+    cdp.evaluate<{ ready: unknown; reason: unknown; mode: string }>(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      const s = p.api.status();
+      return { ready: s.ready, reason: s.reason, mode: s.engine };
+    `);
+
+  // Vorbedingung HERSTELLEN: der Punkt braucht den Server-Modus. Ihn zu erben hiesse, ihn im
+  // builtin-Modus gegen ein No-op laufen zu lassen — gruen ohne Aussage.
+  const vorherigerModus = (await zustand()).mode;
+  try {
+    if (vorherigerModus !== "server") {
+      await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].setEngine("server"); return true;`);
+    }
+
+    const stale = await cdp.evaluate<{ reason: unknown }>(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.settings.endpoint = "http://127.0.0.1:1";
+      await p.saveSettings();
+      await p.checkServer();
+      return { reason: p.api.status().reason };
+    `);
+    if (stale.reason !== "unreachable") {
+      skip(NAME, `toter Endpunkt ergab reason=${JSON.stringify(stale.reason)} statt "unreachable" — Vorbedingung nicht herstellbar`);
+      return;
+    }
+
+    // Erreichbar machen, aber NICHT pruefen. `status()` darf das nicht von selbst merken.
+    const ohnePruefung = await cdp.evaluate<{ ready: unknown; reason: unknown }>(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.settings.endpoint = ${JSON.stringify(endpoint)};
+      await p.saveSettings();
+      const s = p.api.status();
+      return { ready: s.ready, reason: s.reason };
+    `);
+
+    const nachRecheck = await cdp.evaluate<{ ready: unknown; reason: unknown }>(`
+      const s = await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].api.recheck();
+      return { ready: s.ready, reason: s.reason };
+    `);
+
+    const bliebStale = ohnePruefung.reason === "unreachable" && ohnePruefung.ready === false;
+    const geheilt = nachRecheck.ready === true && nachRecheck.reason === null;
+    record(
+      NAME,
+      bliebStale && geheilt,
+      bliebStale
+        ? `status() blieb unreachable · recheck() → ready=${String(nachRecheck.ready)}, reason=${JSON.stringify(nachRecheck.reason)}`
+        : `status() heilte sich OHNE recheck() (${JSON.stringify(ohnePruefung)}) — der Punkt kann nichts belegen`,
+    );
+  } finally {
+    await cdp
+      .evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        p.settings.endpoint = ${JSON.stringify(endpoint)};
+        await p.saveSettings();
+        if (${JSON.stringify(vorherigerModus)} !== "server") await p.setEngine(${JSON.stringify(vorherigerModus)});
+        await p.checkServer();
+        return true;
+      `)
+      .catch(() => undefined);
   }
 }
 

@@ -287,6 +287,17 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   den gemeldeten Modellnamen als Statushinweis; es waehlt nie ein Modell aus.
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
   Provider-API 0.2 rastet darauf ein.
+- **`recheck()` ist im builtin-Modus ein NO-OP — und das ist die Zusage, nicht die Luecke.**
+  `status()` ist per Vertrag netzfrei und synchron und kann deshalb einen veralteten
+  `unreachable`-Zustand nicht heilen; `recheck()` (0.10.0, additiv, `apiVersion` bleibt 1) macht
+  GENAU EINEN Netzaufruf und liefert den frischen Stand. Im builtin-Modus unterbleibt der Aufruf,
+  weil es dort keinen entfernten Zustand gibt, der sich hinter unserem Ruecken aendern koennte —
+  ein „Neupruefen", das nichts prueft, waere dieselbe Attrappe wie ein CFG-Regler ohne Wirkung.
+  Die Modus-Entscheidung sitzt in der FASSADE (`src/core/plugin-api.ts`), nicht im Dep: nur dort
+  ist sie ohne Obsidian testbar (`tests/plugin-api.test.ts` zaehlt die Netzaufrufe am Fake, was
+  am Wirt gar nicht ginge). Der Server-Zweig wird am Wirt von GUI-Smoke-Punkt 18e gemessen.
+  ⚠️ `status()` wird dadurch NICHT asynchron — wer die Bequemlichkeit sucht und `recheck()` in
+  `status()` zieht, bricht die Zusage „synchron und netzfrei", auf die jeder Konsument baut.
 - **Die Provider-API laedt NIE nach.** `generate()` gibt bei fehlenden Assets
   `model-not-downloaded` zurueck. „Ohne Klick fliesst kein Byte" ist eine Zusage an den
   Nutzer — ein Fremdplugin darf sie nicht umgehen.

@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`api.recheck()` for consuming plugins.** `status()` is synchronous and makes no network
+  call, so a server that comes up *after* Obsidian started leaves it reporting a stale
+  `unreachable` — and `generate()` refusing — until the user reopens the panel. `recheck()`
+  makes one network call and returns the fresh status, which lets a consumer recover on its
+  own. Additive, so `apiVersion` stays `1`; in built-in mode it is deliberately a no-op that
+  returns the current status, because there is no remote state that could have changed.
+
 ## [0.9.0] — 2026-08-25
 
 ### Added

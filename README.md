@@ -121,11 +121,27 @@ The API never starts a download. If the model is missing you get
 `{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button
 themselves.
 
-**`status()` can be stale.** It is synchronous and makes no network call — in server mode it
-reports the *last known* reachability, checked on load, after a failed run, on a mode switch,
-or when the user clicks **Test connection**. If the server was down and has since come back up,
-`status().ready` stays `false` (and `generate()` keeps refusing) until the user reopens the
-panel and reconnects — there is currently no way to force a recheck from the API.
+**`status()` can be stale — use `recheck()` when it matters.** `status()` is synchronous and
+makes no network call: in server mode it reports the *last known* reachability, checked on load,
+after a failed run, on a mode switch, or when the user clicks **Test connection**. If the server
+was down and has since come back up, `status().ready` stays `false` — and `generate()` keeps
+refusing — until someone re-checks.
+
+`recheck()` is that re-check: one network call, then the fresh status.
+
+```ts
+let s = api.status();                   // free, may be stale
+if (!s.ready && s.reason === "unreachable") {
+  s = await api.recheck();              // one network call, now current
+}
+if (s.ready) { /* … */ }
+```
+
+Call it when a stale `unreachable` would block you — not before every generation. In built-in
+mode it is deliberately a no-op that returns the current status: there is no remote state that
+could have changed behind the plugin's back, and a "re-check" that checks nothing would be a
+prop. `recheck()` was added in 0.10.0; it is additive, so `apiVersion` stays `1` — guard for it
+with `typeof api.recheck === "function"` if you support older installs.
 
 `generate()`'s failure `reason`:
 

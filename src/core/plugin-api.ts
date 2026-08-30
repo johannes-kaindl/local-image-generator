@@ -107,6 +107,10 @@ export type ApiSaveResult =
 export interface ImageGenerationApi {
   readonly apiVersion: number;
   status(): ApiStatus;
+  /** Ermittelt die Bereitschaft NEU und liefert den frischen Stand — das Gegenstueck zu
+   *  `status()`, das per Vertrag netzfrei und synchron ist und deshalb einen veralteten
+   *  Serverzustand nicht heilen kann. */
+  recheck(): Promise<ApiStatus>;
   generate(req: ApiRequest): Promise<ApiResult>;
   /** Legt das Ergebnis nach den Ausgabeziel-Einstellungen des Nutzers ab (Ordner,
    *  Dateiname, Kollisions-Dedup, optional Ergebnis-Notiz). Der EINZIGE Vault-Write
@@ -133,6 +137,10 @@ export interface ApiDeps {
    *  ueber den status() und generate() verschieden urteilen muessten — der Typ macht ihn
    *  gar nicht erst konstruierbar. */
   readiness(): { ready: true } | { ready: false; reason: ApiFailure };
+  /** EIN Netzaufruf, der den Serverzustand neu ermittelt. Wirft nicht — ein nicht
+   *  erreichbarer Server ist ein Ergebnis, keine Ausnahme; `recheck()` liest den neuen
+   *  Stand danach ueber `readiness()`, nicht aus dem Rueckgabewert. */
+  recheckServer(): Promise<void>;
   isBusy(): boolean;
   harden(input: HardenInput): GenParams;
   /** Rechnet. Wirft nicht — Fehlschlaege kommen als message zurueck, damit der Vertrag
@@ -179,10 +187,9 @@ function unusableParams(p: ApiParams | undefined | null): string | null {
 }
 
 export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
-  return {
-    apiVersion: IMAGE_GENERATION_API_VERSION,
-
-    status(): ApiStatus {
+  // Als benannte Funktion statt als Methode, damit `recheck()` sie ohne `this` aufrufen kann:
+  // ein Konsument darf `const { recheck } = api` schreiben, und dann gaebe es kein `this`.
+  const readStatus = (): ApiStatus => {
       const caps = backendCapabilities(deps.getMode(), deps.builtinModel());
       const r = deps.readiness();
       // busy schlaegt jede andere Bereitschaft: das Backend mag geladen sein, aber es
@@ -202,6 +209,20 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
           sizes: caps.sizes,
         },
       };
+  };
+
+  return {
+    apiVersion: IMAGE_GENERATION_API_VERSION,
+
+    status: readStatus,
+
+    async recheck(): Promise<ApiStatus> {
+      // Nur der Server-Modus hat einen entfernten Zustand, der sich hinter unserem Ruecken
+      // aendern kann. GPU und Assets kennt das Plugin selbst, und `status()` liest sie
+      // ohnehin bei jedem Aufruf frisch — ein „Neupruefen", das dort nichts pruefte, waere
+      // genau die Attrappe, die dieses Plugin sonst weglaesst (Keine-Attrappen-Linie).
+      if (deps.getMode() === "server") await deps.recheckServer();
+      return readStatus();
     },
 
     async generate(req: ApiRequest): Promise<ApiResult> {

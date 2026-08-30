@@ -103,6 +103,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       getMode: () => this.settings.engine,
       builtinModel: () => this.settings.builtinModel,
       readiness: () => this.apiReadiness(),
+      // Der EINE Netzaufruf hinter `api.recheck()`. `checkServer()` schreibt `state.server`
+      // und wirft nicht — ein unerreichbarer Server ist dort ein Ergebnis; die Fassade liest
+      // den neuen Stand danach ueber `readiness()`, nicht aus dem Rueckgabewert.
+      recheckServer: async () => {
+        await this.checkServer();
+      },
       isBusy: () => this.isBusy(),
       harden: (input) => hardenParams(input, this.hardenContext()),
       run: async (params, onProgress, initImageData) => {

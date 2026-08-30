@@ -14,6 +14,7 @@ function deps(over: Partial<ApiDeps> = {}): ApiDeps {
     getMode: () => "builtin",
     builtinModel: () => "sd-turbo",
     readiness: () => ({ ready: true }),
+    recheckServer: async () => {},
     isBusy: () => false,
     harden: () => params,
     run: async () => ({ ok: true, base64: "PNGDATA" }),
@@ -57,6 +58,63 @@ describe("status()", () => {
     expect(s.capabilities).toEqual({
       negativePrompt: true, cfg: true, initImage: true, maxSteps: STEPS.max, fixedSize: null, sizes: null,
     });
+  });
+});
+
+describe("recheck()", () => {
+  it("heilt im Server-Modus ein veraltetes unreachable", async () => {
+    let erreichbar = false;
+    const api = createImageGenerationApi(
+      deps({
+        getMode: () => "server",
+        readiness: () => (erreichbar ? { ready: true } : { ready: false, reason: "unreachable" }),
+        recheckServer: async () => {
+          erreichbar = true;
+        },
+      }),
+    );
+    expect(api.status().reason).toBe("unreachable");
+
+    const s = await api.recheck();
+
+    expect(s.ready).toBe(true);
+    expect(s.reason).toBeNull();
+  });
+
+  it("macht im builtin-Modus KEINEN Netzaufruf — dort gibt es keinen entfernten Zustand", async () => {
+    let netzaufrufe = 0;
+    const api = createImageGenerationApi(
+      deps({
+        getMode: () => "builtin",
+        recheckServer: async () => {
+          netzaufrufe++;
+        },
+      }),
+    );
+
+    const s = await api.recheck();
+
+    expect(netzaufrufe).toBe(0);
+    expect(s).toEqual(api.status());
+  });
+
+  it("meldet weiter unreachable, wenn der Server auch beim Neupruefen schweigt", async () => {
+    let netzaufrufe = 0;
+    const api = createImageGenerationApi(
+      deps({
+        getMode: () => "server",
+        readiness: () => ({ ready: false, reason: "unreachable" }),
+        recheckServer: async () => {
+          netzaufrufe++;
+        },
+      }),
+    );
+
+    const s = await api.recheck();
+
+    expect(netzaufrufe).toBe(1);
+    expect(s.ready).toBe(false);
+    expect(s.reason).toBe("unreachable");
   });
 });
 
