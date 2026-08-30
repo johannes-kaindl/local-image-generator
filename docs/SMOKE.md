@@ -8,6 +8,22 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
 
 ## Voraussetzungen
 
+⚠️ **Zuerst prüfen, wer sonst an Obsidian hängt.** Obsidian ist Single-Instance — ein
+`quit` trifft die Instanz, an der möglicherweise eine andere Session arbeitet, und zerstört
+deren Zustand. Der eigene Lauf ist danach sauber grün; der Schaden entsteht woanders und
+fällt nicht auf.
+
+```bash
+lsof -nP -iTCP:9222 -sTCP:LISTEN >/dev/null && echo "läuft bereits — NICHT beenden"
+```
+
+Hört der Port schon, dann **mitnutzen statt neu starten**: ein eigenes Fenster per
+`vault-open` über IPC öffnen, dann `attachTo("workspace", port, vault)` — der Vault-Name
+wählt, nicht die Reihenfolge. ⚠️ Die Port-Prüfung ersetzt die Frage nicht: sie zeigt aktive
+CDP-Treiber, aber nicht, wer ein Fenster offen hält oder auf den Port wartet.
+
+Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt das Rezept unten.
+
 1. **Obsidian mit Debug-Port** — der eine Handgriff, der Handarbeit bleibt (Neustart nötig):
 
    ```bash
@@ -76,7 +92,9 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 15 | Die eingebaute Engine liefert ein Bild, die Notiz trägt `model: sd-turbo` und `steps ≤ 4` | Ende-zu-Ende ohne Server: Ladephase, Schritte, Rezept-Ehrlichkeit |
 | 16 | Zurück auf „Server" bringt die Regler zurück | der Wechsel darf nichts hinterlassen |
 | 17 | Die modusabhängigen Regler sind auch **gerendert** weg — und kommen zurück | `getComputedStyle`, nicht `classList`: die Klasse war beim Bug vom 2026-08-21 gesetzt, das CSS zog nicht |
-| 18 | Die Provider-API ist am laufenden Obsidian registriert und formtreu | `this.api` im onload und die Erreichbarkeit über `app.plugins.plugins` sieht man nur am Wirt |
+| 18a/b | Die Provider-API ist am laufenden Obsidian registriert und formtreu | `this.api` im onload und die Erreichbarkeit über `app.plugins.plugins` sieht man nur am Wirt |
+| 18c | Ein **gescheiterter** Fremdlauf hinterlässt keine Spur im Panel | die Entscheidung liegt in `main.ts` — der einzigen Schicht ohne Unit-Test-Ebene; gemessen wird die **gerenderte** Zeile gegen ihren Wert von **vorher**, nicht gegen „kein Fehlertext" |
+| 18d | `generate()` im builtin-Modus lädt ohne Klick **kein Byte** | „Ohne Klick fließt kein Byte" rechtfertigt den 2,5-GB-Download überhaupt; getragen wurde die Zusage bis dahin nur strukturell (`matchOrThrow` wirft, statt zu laden) |
 | 19 | Ein Lauf **mit Vorlage** geht an `/sdapi/v1/img2img` | am **Zähler des Servers** gemessen, nicht am Panel-Zustand — der kann korrekt sein, während die Anfrage am falschen Endpunkt landet |
 | 20 | Modellwechsel im Settings-Tab ändert die Download-Zeile (Name + Größe) | über das echte **Dropdown**, nicht über einen Settings-Write — nur `onChange` löst `setBuiltinModel()` + Re-Render aus |
 | 21 | `.lig-model-pick` zeigt sich erst ab **zwei geladenen** Modellen, nicht schon beim Toggle allein | zweite, unabhängige Sichtbarkeitsbedingung wie `.lig-denoise` — braucht einen echten Zwei-Modell-Cache-Zustand |
