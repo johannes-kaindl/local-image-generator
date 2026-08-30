@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hardenParams } from "../src/core/params";
+import { hardenParams, denoiseRaster } from "../src/core/params";
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { CFG, DEFAULT_SIZE, DENOISING, STEPS } from "../src/core/generation";
 
@@ -229,5 +229,20 @@ describe("eine Haertung, zwei Aufrufer", () => {
     expect(voll).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 4 });
     // nur was der Aufrufer wirklich sagen darf, unterscheidet sich
     expect(schmal.steps).toBe(4);
+  });
+});
+
+describe("denoiseRaster", () => {
+  it("rastert auf steps Stufen und liefert den Einstiegspunkt", () => {
+    expect(denoiseRaster(4, 1)).toEqual({ tStart: 0, effective: 1 });
+    expect(denoiseRaster(4, 0.75)).toEqual({ tStart: 1, effective: 0.75 });
+    expect(denoiseRaster(4, 0.6)).toEqual({ tStart: 2, effective: 0.5 });   // round(2.4)=2
+    expect(denoiseRaster(4, 0.7)).toEqual({ tStart: 1, effective: 0.75 });  // round(2.8)=3
+    expect(denoiseRaster(4, 0.25)).toEqual({ tStart: 3, effective: 0.25 });
+  });
+  it("klemmt auf mindestens einen Step", () => {
+    expect(denoiseRaster(4, 0)).toEqual({ tStart: 3, effective: 0.25 });
+    expect(denoiseRaster(1, 0)).toEqual({ tStart: 0, effective: 1 });
+    expect(denoiseRaster(1, 1)).toEqual({ tStart: 0, effective: 1 });
   });
 });
