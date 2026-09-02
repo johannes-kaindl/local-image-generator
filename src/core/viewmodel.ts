@@ -74,6 +74,12 @@ export interface PanelState {
    *  Vorschaubild UND den naechsten Lauf — die Bytes werden EINMAL gelesen, damit eine
    *  inzwischen geaenderte Datei das Rezept nicht unterlaeuft). null = txt2img. */
   initImage: { path: string; dataUrl: string } | null;
+  /** Bytes, die dem GEWAEHLTEN Modell noch fehlen — `null`, solange der Cache nicht gemessen
+   *  wurde (dann wird die Gesamtgroesse genannt, keine erfundene Teilzahl). Seit 0.11 ist der
+   *  Unterschied fuehlbar: eine Bestandsinstallation ist `not-downloaded`, obwohl ihr nur der
+   *  VAE-Encoder fehlt. Die Zahl liegt im State, weil nur der Wirt den Cache kennt — die
+   *  Rechnung selbst steht einmal in `missingBytes()` (model-manifest.ts). */
+  missingBytes: number | null;
   /** Welche eingebauten Modelle vollstaendig im Cache liegen — vom aktiven `mode` unabhaengig,
    *  bezieht sich immer auf alle Eintraege in BUILTIN_MODELS (Task 10). */
   downloadedModels: BuiltinModelId[];
@@ -141,6 +147,25 @@ export interface PanelViewModel {
 }
 
 /** Bytes als "812 MB" / "1.7 GB" — für Download-Fortschritt und Modell-Zeile. */
+/** Die fehlenden Bytes als Text — oder `null`, wenn sie dem Nutzer nichts Neues sagen und
+ *  deshalb die gewoehnliche Gesamtgroessen-Formulierung gilt. Zwei Faelle fuehren zu `null`:
+ *  ungemessen (dann waere jede Teilzahl geraten) und ANGEZEIGT gleich der Gesamtgroesse.
+ *
+ *  Der zweite Fall ist ein Live-Befund vom 2026-09-02 (GUI-Smoke Punkt 13) und kein Detail:
+ *  „alles fehlt" ist nie exakt alles — `removeModel()` laesst die ORT-WASM im Cache, also war
+ *  `missingBytes` auch bei leerem Modell-Cache echt kleiner als die Summe, und das Panel sagte
+ *  „Fehlende 2.6 GB herunterladen". Wahr, und trotzdem irrefuehrend. Verglichen wird deshalb,
+ *  was der Nutzer LIEST — ein Zahlenvergleich mit Toleranz waere eine willkuerliche Schwelle.
+ *
+ *  Steht hier und wird von Panel UND Bestaetigungsdialog (main.ts) benutzt: ein Dialog, der eine
+ *  andere Zahl nennt als der Knopf, der ihn geoeffnet hat, sieht wie ein Fehler aus. Dieselbe
+ *  Doktrin wie bei `denoiseRaster` und `hardenParams` — eine Entscheidung, eine Stelle. */
+export function partialDownloadLabel(missingBytes: number | null, totalBytesOfModel: number): string | null {
+  if (missingBytes === null) return null;
+  const fehlend = formatBytes(missingBytes);
+  return fehlend === formatBytes(totalBytesOfModel) ? null : fehlend;
+}
+
 export function formatBytes(n: number): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
   return `${Math.round(n / 1e6)} MB`;
@@ -240,7 +265,16 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
     // tatsaechlich 6,4 GB. `assetsFor(s.builtinModel)` traegt keine Runtime-WASM
     // (Vertrag von assetsFor, siehe AGENTS.md), die haengt jeder Aufrufer selbst an.
     const model = modelById(s.builtinModel);
-    const size = formatBytes(totalBytes([...assetsFor(s.builtinModel), RUNTIME_WASM]));
+    const gesamt = totalBytes([...assetsFor(s.builtinModel), RUNTIME_WASM]);
+    const size = formatBytes(gesamt);
+    const fehlend = partialDownloadLabel(s.missingBytes, gesamt);
+    if (fehlend !== null) {
+      return {
+        text: t("empty.notDownloadedPartial", model.label, fehlend, size),
+        ctaLabel: t("empty.downloadCtaPartial", fehlend),
+        ctaAction: "download",
+      };
+    }
     return {
       text: t("empty.notDownloaded", model.label, size),
       ctaLabel: t("empty.downloadCta", size),

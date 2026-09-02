@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The download prompt names what the click actually costs.** Since 0.11 made the VAE encoder
+  a required part, an installation from 0.6–0.10 counts as "not downloaded" even though only
+  that one file is missing — yet the panel, the button and the confirmation dialog all
+  announced the model's FULL size. An SDXL-Turbo user read "7.1 GB" for a 137 MB download
+  (SD-Turbo: "2.6 GB" for 68 MB) and might reasonably have cancelled. All three now say what
+  is missing, with the total kept as context ("137 MB of 7.1 GB"); the warning about the GPU
+  needing roughly double the model size on the first image stays in both cases, because the
+  first image still loads the whole model.
+  The wording falls back to the total whenever the missing amount is unmeasured or *reads*
+  the same as the total — "2.6 GB of 2.6 GB" would be noise, and a guessed partial figure
+  would be worse.
+
 ## [0.11.0] — 2026-08-30
 
 ### Added

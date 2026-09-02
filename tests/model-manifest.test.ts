@@ -10,7 +10,9 @@ import {
   isBuiltinModelId,
   modelById,
   RUNTIME_WASM,
+  missingBytes,
   totalBytes,
+  type AssetFile,
 } from "../src/core/model-manifest";
 
 describe("model-manifest", () => {
@@ -102,5 +104,28 @@ describe("Modellkatalog (Spec 0.9 §3.3)", () => {
         expect(f.path.startsWith(prefix)).toBe(false);
       }
     }
+  });
+});
+
+describe("missingBytes", () => {
+  const datei = (key: string, bytes: number): AssetFile => ({ key, path: `x/${key}`, bytes, sha256: "0".repeat(64), kind: "onnx" });
+
+  it("zaehlt nur die NICHT gecachten Dateien — das ist der Unterschied zu totalBytes", () => {
+    const files = [datei("a", 1000), datei("b", 200), datei("c", 30)];
+    expect(missingBytes(files, ["a", "c"])).toBe(200);
+    expect(totalBytes(files)).toBe(1230);
+  });
+
+  it("ist bei leerem Cache gleich totalBytes und bei vollstaendigem Cache 0", () => {
+    const files = [datei("a", 1000), datei("b", 200)];
+    expect(missingBytes(files, [])).toBe(totalBytes(files));
+    expect(missingBytes(files, ["a", "b"])).toBe(0);
+  });
+
+  it("ignoriert gecachte Schluessel, die gar nicht angefragt sind", () => {
+    // Der Cache traegt Dateien BEIDER Modelle. Wer die Differenz ueber die Cache-Groesse statt
+    // ueber die angefragte Liste rechnete, bekaeme hier eine negative oder zu kleine Zahl.
+    const files = [datei("sd/unet", 500)];
+    expect(missingBytes(files, ["sdxl/unet", "sdxl/vae"])).toBe(500);
   });
 });
