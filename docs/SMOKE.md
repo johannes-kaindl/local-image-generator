@@ -52,6 +52,32 @@ Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt
    OBSIDIAN_PLUGIN_DIR="<vault>/.obsidian/plugins/local-image-generator" npm run deploy
    ```
 
+   **Seit 2026-09-02 prüft der Treiber das selbst, statt es zu glauben** (`requireEigenerBuild`
+   aus `tools/obsidian-cdp/vault.ts`, zentral). Er vergleicht `main.js` **und** `styles.css` im
+   gemessenen Vault byteweise gegen den Repo-Stand und bricht bei nachgewiesener Abweichung ab —
+   mit beiden Größen im Text, weil „Repo 215.423 / Vault 209.118" beim Lesen sofort erklärt, was
+   passiert ist, während ein Hash-Mismatch nur „anders" sagt.
+
+   Drei Punkte, die den Guard tragen und beim Anfassen leicht verlorengehen:
+
+   - **Der Vault-Pfad kommt aus der laufenden Instanz** (`app.vault.adapter.basePath` +
+     `app.vault.configDir`), nicht aus `stagingVaultDir(...)`. Ein Treiber dockt per `--vault` an
+     ein beliebiges Fenster an; ein Check gegen den *konfigurierten* Ort prüft dann eine Datei,
+     die mit dem Lauf nichts zu tun hat — er versagt genau im Anlassfall (Lesson 2026-09-02,
+     kuro-gamification: **geprüft wird, was gemessen wird**).
+   - **`styles.css` wird mitgeprüft, obwohl der zentrale Guard nur `main.js` kennt.** Punkt 17
+     misst gerendertes CSS über `getComputedStyle`, und die `.is-hidden`-Reihenfolge ist ein
+     reiner Stylesheet-Defekt: ein altes Stylesheet neben frischer `main.js` erschiene als
+     Plugin-Befund.
+   - **Abbruch nur bei nachgewiesener Abweichung.** Fehlt der Vergleichsstand (kein gebautes
+     `main.js` im Repo), warnt der Guard und läuft weiter — eine fehlende Umgebung ist kein
+     Befund (CORE-TEST-02 g). Die Abschlusszeile trägt die Warnung dann mit, damit ein so
+     gelaufener Smoke nicht als Beleg für den Repo-Stand zitiert wird.
+
+   ⚠️ **Die Zeile „Plugin-Version im Vault: X" ist kein Ersatz und war nie einer.**
+   `enablePlugin` lädt den Code neu, das **Manifest nicht** — die Version stammt aus dem
+   Vault-Start. Der Treiber stellt deshalb den Plattenstand daneben, sobald beide auseinanderlaufen.
+
 4. **Für die eingebaute Engine (Punkte 13–16, seit 0.6) ein lokaler Asset-Server** — in einem
    zweiten Terminal `npm run smoke:assets` (serviert `dist-assets/`, also die eigene Konversion
    aus `tools/convert-model.sh sd-turbo` plus ORT-WASM, auf `http://127.0.0.1:7862` mit CORS). Die
@@ -381,6 +407,32 @@ aufräumen wollte.
 ## Durchläufe
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
+
+### 2026-09-02 · 0.11.0 · Staging-Vault · A1111-Mock (7861) · **18/18 grün, 2 übersprungen** — Build-Guard mit drei Gegenproben
+
+Anlass war nicht ein Prüfpunkt, sondern die Vorbedingung: der Treiber prüft seit heute selbst,
+ob er überhaupt diesen Checkout misst (s. § Voraussetzungen, Punkt 3). Ein Guard, der nur im
+Gutfall gesehen wurde, ist unbelegt — deshalb **alle drei Ausgänge einzeln hergestellt**:
+
+| Hergestellter Zustand | Erwartet | Gemessen |
+|---|---|---|
+| 58 Bytes an die `main.js` **im Vault** angehängt | Abbruch, beide Größen im Text | ✅ „im Vault: 215.481 / gebaut: 215.423", sha1 gekürzt daneben |
+| 29 Bytes an das `styles.css` **im Vault** angehängt | Abbruch, CSS-Begründung | ✅ „im Vault: 9.053 / gebaut: 9.024 · Punkt 17 misst gerendertes CSS" |
+| `main.js` im **Repo** weggenommen (kein Vergleichsstand) | Warnung, Lauf geht weiter | ✅ 11/11 grün **plus** „⚠️ Herkunft des gemessenen Builds UNGEPRUEFT" in der Abschlusszeile |
+
+Danach regulär deployt und voll gefahren: **18/18 grün**, übersprungen 24 und 18d (ohne
+`--builtin`). Im Gutfall sagt der Guard nichts — das ist Absicht: er meldet sich, wenn etwas
+nicht stimmt, nicht wenn alles stimmt.
+
+⚠️ **Das Fenster für den Staging-Vault ließ sich nicht per IPC öffnen.** `ipcRenderer.send(
+"vault-open", pfad, true)` aus dem Renderer eines fremden Fensters bewirkte nichts (die
+Fensterliste blieb unverändert) — der Weg, der funktioniert, ist `open
+"obsidian://open?vault=local-image-generator"`. Der Kopfkommentar des Treibers empfiehlt noch
+den IPC-Weg; das deckt sich mit dem Dach-Nachtrag vom 2026-09-01 und ist dort nachzuziehen.
+
+Nebenbefund aus demselben Lauf: an der Instanz hingen vier fremde Vaults
+(`10_Pallas`, `3d-codeblocks`, `json_viewer`, `koda-agent`) — der Lauf lief per Mitnutzung,
+ohne Quit, und der CDP-Lock ging danach an die wartende koda-agent-Session zurück.
 
 ### 2026-08-30 (abends) · 0.10.0-dev (`recheck()`) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **29/29 grün**
 
