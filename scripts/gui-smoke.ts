@@ -27,13 +27,19 @@
  * Fenster, laufende Indizierung, Messreihe) — der eigene Lauf ist danach sauber gruen, der
  * Schaden entsteht woanders und faellt nicht auf. Anders als `scripts/shots.ts` braucht dieses
  * Rezept den frischen Start NICHT: der Treiber deployt und laedt das Plugin selbst neu.
- * Mitnutzen geht so — eigenes Fenster per IPC oeffnen, danach waehlt `--vault <name>` es aus
- * (der Vault-Name waehlt, nicht die Reihenfolge der Fenster):
+ * Mitnutzen geht so — eigenes Fenster oeffnen, danach waehlt `--vault <name>` es aus (der
+ * Vault-Name waehlt, nicht die Reihenfolge der Fenster):
  *
- * ```js
- * // in einem beliebigen Obsidian-Renderer, Vault-Pfad muss in obsidian.json stehen
- * window.electron.ipcRenderer.send("vault-open", "<pfad zum staging-vault>")
+ * ```bash
+ * open "obsidian://open?vault=local-image-generator"   # Vault muss in obsidian.json stehen
+ * open "obsidian://open?path=<datei im vault>"         # sonst: registriert ihn dabei
  * ```
+ *
+ * ⚠️ **NICHT der IPC-Weg**, der hier bis 2026-09-02 stand: `window.electron.ipcRenderer.send(
+ * "vault-open", pfad, true)` aus dem Renderer eines FREMDEN Fensters bewirkt gemessen nichts —
+ * die Fensterliste blieb unveraendert (deckt sich mit dem Dach-AGENTS-Nachtrag vom 2026-09-01;
+ * dort ist auch belegt, dass ein Handeintrag in `obsidian.json` bei laufendem Obsidian nichts
+ * bewirkt, weil die Datei nur beim Start gelesen wird).
  *
  * Erst wenn NICHTS laeuft, ist der Neustart der richtige Griff:
  *
