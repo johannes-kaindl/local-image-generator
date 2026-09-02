@@ -97,7 +97,7 @@ import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
 import { buildHerkunft, requireEigenerBuild } from "../../tools/obsidian-cdp/vault.js";
 import { SIZES, STEPS } from "../src/core/generation";
-import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
+import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, cacheKey, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
 import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
 import { formatBytes } from "../src/core/viewmodel";
 import { registerI18n } from "../src/i18n/strings";
@@ -329,6 +329,90 @@ async function probeServer(endpoint: string): Promise<ServerProbe> {
  * Punkte 13–16: die eingebaute Engine — vom Modell-Download bis zur Ergebnis-Notiz. Läuft nach
  * den Server-Punkten im selben Panel; die Settings (Ordner, createMode) stehen noch auf Smoke.
  */
+const NAME_28 = "28. Eine Teil-Nachladung nennt die FEHLENDEN Bytes, nicht die Gesamtgroesse";
+
+/** Der 0.11-Migrationsfall, hergestellt statt abgewartet: EINE Datei aus dem Cache nehmen und
+ *  nachsehen, was das Panel dann verspricht. Bestandsinstallationen aus 0.6–0.10 sind seit dem
+ *  VAE-Encoder `not-downloaded`, obwohl ihnen genau diese eine Datei fehlt — Panel und Knopf
+ *  nannten bis 0.12 trotzdem die Gesamtgroesse (2,6 GB fuer 68 MB; bei SDXL 7,1 GB fuer 137 MB).
+ *
+ *  Warum am Wirt und nicht im Unit-Test: die RECHNUNG (`missingBytes`) und der TEXT
+ *  (`engineEmpty`) sind beide pure und getestet. Ungeprueft bleibt die VERDRAHTUNG in `main.ts`
+ *  — dass `refreshEngineState()` die Zahl ueberhaupt in den State schreibt. Genau dort sitzt der
+ *  Fehler, den kein vitest-Lauf sehen kann (dieselbe Lage wie bei Punkt 18c).
+ *
+ *  Der Punkt raeumt selbst auf: er laedt die entfernte Datei danach wieder und stellt `ready`
+ *  her, weil die Punkte danach sie brauchen. */
+async function runPartialDownloadCheck(cdp: Cdp): Promise<void> {
+  const files = [...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM];
+  const encoder = assetsFor(DEFAULT_BUILTIN_MODEL_ID).find((f) => f.key.includes("vae_encoder"));
+  if (!encoder) {
+    skip(NAME_28, `kein vae_encoder in assetsFor(${DEFAULT_BUILTIN_MODEL_ID}) — Manifest umbenannt?`);
+    return;
+  }
+  const gesamtText = formatBytes(totalBytes(files));
+  const fehlendText = formatBytes(encoder.bytes);
+  if (gesamtText === fehlendText) {
+    skip(NAME_28, `Gesamt- und Teilgroesse formatieren gleich (${gesamtText}) — der Punkt koennte nichts unterscheiden`);
+    return;
+  }
+
+  // Der Cache-Name ist im Plugin ein nicht exportiertes Modul-Literal (model-store.ts). Hier
+  // bewusst als Literal statt per Import: `model-store.ts` importiert `obsidian`, und der
+  // Treiber wird gebuendelt — der Import zoege den Wirt ins Bundle. Ein falscher Name faellt
+  // nicht still aus, sondern hier: `delete` meldet dann `false` und der Punkt wird rot.
+  const entfernt = await cdp.evaluate<boolean>(`
+    const c = await caches.open("local-image-generator-assets");
+    return await c.delete(${JSON.stringify(cacheKey(encoder))});
+  `);
+  try {
+    if (!entfernt) {
+      record(NAME_28, false, `Cache-Eintrag ${encoder.key} liess sich nicht entfernen — Cache-Name oder Schluesselform geaendert?`);
+      return;
+    }
+    await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].refreshEngineState(); return true;`);
+    const gemessen = await pollUntil(
+      () =>
+        cdp.evaluate<{ cta: string; text: string; kind: string }>(`
+          const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+          const b = document.querySelector(".lig-empty button");
+          const t = document.querySelector(".lig-empty");
+          return { cta: b ? b.textContent.trim() : "", text: t ? t.textContent.trim() : "", kind: p.getEngineState().kind };
+        `),
+      (m) => m.kind === "not-downloaded" && m.cta !== "",
+      20_000,
+      "warte auf den Teil-Download-Zustand",
+      500,
+    );
+    if (gemessen === null) {
+      record(NAME_28, false, "Panel kam nach dem Cache-Eingriff nicht in den Zustand „not-downloaded“ mit CTA");
+      return;
+    }
+    // Drei Aussagen, und jede einzeln begruendet: der KNOPF verspricht nur die Kosten des
+    // Klicks, er nennt die Gesamtgroesse NICHT (sonst waere der Befund ja unveraendert da), und
+    // der TEXT nennt beide Zahlen — die grosse als das, was danach daliegt.
+    const ctaNenntFehlend = gemessen.cta.includes(fehlendText);
+    const ctaOhneGesamt = !gemessen.cta.includes(gesamtText);
+    const textNenntBeide = gemessen.text.includes(fehlendText) && gemessen.text.includes(gesamtText);
+    record(
+      NAME_28,
+      ctaNenntFehlend && ctaOhneGesamt && textNenntBeide,
+      `fehlend ${fehlendText} / gesamt ${gesamtText} · CTA „${gemessen.cta}" · Knopf nennt Fehlendes: ${ctaNenntFehlend} · Knopf ohne Gesamt: ${ctaOhneGesamt} · Text nennt beide: ${textNenntBeide}`,
+    );
+  } finally {
+    // Aufraeumen gehoert dem Punkt, nicht dem naechsten: 15/16/24 und die img2img-Punkte
+    // brauchen `ready`. Gegen den lokalen Mock ist das eine Datei in etwa einer Sekunde.
+    await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].startDownload(); return true;`).catch(() => undefined);
+    await pollUntil(
+      () => cdp.evaluate<string>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].getEngineState().kind;`),
+      (k) => k === "ready",
+      120_000,
+      "warte auf die Wiederherstellung des Modells",
+      500,
+    );
+  }
+}
+
 async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs: number): Promise<void> {
   const readyText = t("status.ready");
   const engineState = () =>
@@ -368,6 +452,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         "16. Zurück auf „Server“ bringt die Regler zurück",
         NAME_18D,
         "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
+        NAME_28,
       ])
         skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
       return;
@@ -395,12 +480,19 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     `);
     const notDownloaded = t("status.notDownloaded");
     const status13 = await statusText();
+    // Der CTA wird GENAU verglichen, nicht auf „nicht leer" geprueft — Gegenprobe zum Befund
+    // vom 2026-09-02: nach `removeModel()` ist der Modell-Cache leer, die ORT-WASM aber NICHT
+    // (sie gehoert keinem Modell). Die erste Fassung der Teil-Anzeige hielt das fuer eine
+    // Teil-Nachladung und schrieb „Fehlende 2.6 GB herunterladen" — wahr und irrefuehrend
+    // zugleich. Hier steht die Erwartung, die das ausschliesst; die Teil-Formulierung misst
+    // Punkt 28 an dem Zustand, der sie verdient.
+    const ctaErwartet = t("empty.downloadCta", formatBytes(totalBytes([...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM])));
     record(
       "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
-      st?.kind === "not-downloaded" && status13 === notDownloaded && negHidden && ctaLabel !== "",
+      st?.kind === "not-downloaded" && status13 === notDownloaded && negHidden && ctaLabel === ctaErwartet,
       st?.kind !== "not-downloaded"
         ? `Engine-Zustand ${JSON.stringify(st)}`
-        : `Status „${status13}" · Negativ-Prompt ausgeblendet: ${negHidden} · CTA „${ctaLabel}"`,
+        : `Status „${status13}" · Negativ-Prompt ausgeblendet: ${negHidden} · CTA „${ctaLabel}"${ctaLabel === ctaErwartet ? "" : ` (erwartet „${ctaErwartet}")`}`,
     );
     if (st?.kind !== "not-downloaded") {
       skip("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
@@ -408,6 +500,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
       skip(NAME_18D, "Vorbedingung 13 nicht erreicht");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
+      skip(NAME_28, "Vorbedingung 13 nicht erreicht");
       return;
     }
 
@@ -454,6 +547,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 14 nicht erreicht");
       skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
+      skip(NAME_28, "Vorbedingung 14 nicht erreicht");
       return;
     }
 
@@ -542,6 +636,12 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     } else {
       skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
     }
+
+    // --- 28. Teil-Nachladung ---------------------------------------------------
+    // Hier und nicht spaeter: der Cache ist durch Punkt 14 nachweislich VOLL, also ist der
+    // Teil-Zustand mit einem einzigen `cache.delete` herstellbar. Nach Punkt 16 (Modus zurueck
+    // auf Server) waere das Panel gar kein builtin-Panel mehr.
+    await runPartialDownloadCheck(cdp);
 
     // --- 16. Zurück auf Server -------------------------------------------------
     await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].setEngine("server"); return true;`);
@@ -2607,12 +2707,14 @@ async function main(): Promise<void> {
     if (!builtin) {
       console.log("\n(ohne --builtin: Punkte 13–16, 18d, 20–27 übersprungen — sie brauchen den lokalen Asset-Server)");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "ohne --builtin nicht erreicht");
+      skip(NAME_28, "ohne --builtin nicht erreicht");
       // 18d haengt am geprueften Zustand „not-downloaded", den nur Punkt 13 herstellt — ohne
       // ihn koennte der Punkt nur eine unbekannte Cache-Lage messen.
       skip(NAME_18D, "ohne --builtin nicht erreicht (braucht den von Punkt 13 hergestellten Zustand)");
     } else if (quick) {
       console.log("\n(--quick: Punkte 13–16, 18d, 20–27 übersprungen — sie brauchen Download und/oder Generierung)");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "--quick: keine Generierung");
+      skip(NAME_28, "--quick: keine Generierung");
       skip(NAME_18D, "--quick: kein builtin-Zweig");
     } else {
       const assetsUp = await fetch(`${assetsBase.replace(/\/+$/, "")}/sd-turbo/tokenizer/vocab.json`, { method: "HEAD", signal: AbortSignal.timeout(3000) })
@@ -2626,6 +2728,7 @@ async function main(): Promise<void> {
           "16. Zurück auf „Server“ bringt die Regler zurück",
           NAME_18D,
           "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
+          NAME_28,
           ...ZWEITE_STUFE,
         ])
           skip(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);

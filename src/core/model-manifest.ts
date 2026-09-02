@@ -223,3 +223,13 @@ export function allAssets(): AssetFile[] {
 export function totalBytes(files: readonly AssetFile[]): number {
   return files.reduce((s, f) => s + f.bytes, 0);
 }
+
+/** Bytes der Dateien, die noch NICHT im Cache liegen — die Zahl, die ein Download wirklich
+ *  kostet. Bewusst neben `totalBytes` und mit derselben Signaturform: seit der VAE-Encoder in
+ *  0.11 Pflichtteil wurde, ist eine Bestandsinstallation `not-downloaded`, obwohl ihr nur eine
+ *  Datei fehlt (68 MB sd / 137 MB sdxl statt 2,6 / 7,1 GB). Gerechnet wird ueber die ANGEFRAGTE
+ *  Liste, nicht ueber den Cache-Umfang: der Cache traegt die Dateien beider Modelle. */
+export function missingBytes(files: readonly AssetFile[], cachedKeys: Iterable<AssetKey>): number {
+  const cached = new Set(cachedKeys);
+  return totalBytes(files.filter((f) => !cached.has(f.key)));
+}

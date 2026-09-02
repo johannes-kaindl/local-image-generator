@@ -408,6 +408,41 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-09-02 (abends) · 0.12-dev (Teil-Nachladung) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **32/32 grün** — und Punkt 13 hat den Fix korrigiert
+
+Neuer **Punkt 28**: er nimmt EINE Datei aus dem Cache (den `vae_encoder` — den echten
+0.11-Migrationsfall) und liest, was das Panel dann verspricht. Gemessen: CTA „Fehlende 68 MB
+herunterladen", Text nennt beide Zahlen, Knopf nennt die Gesamtgröße nicht. Er stellt den Zustand
+selbst her und räumt ihn wieder auf, weil die Punkte danach ein geladenes Modell brauchen.
+
+**Der eigentliche Ertrag des Laufs war aber ein Nebenbefund an Punkt 13** — und er ist ein
+Musterfall für „grün heißt nicht richtig":
+
+| Lauf | Punkt 13 (leerer Modell-Cache) | Bewertung |
+|---|---|---|
+| 1 | CTA „**Fehlende 2.6 GB** herunterladen" | grün — aber falsch |
+| 2 | CTA „Modell herunterladen (2.6 GB)" | grün und richtig |
+
+Punkt 13 lief im ersten Lauf **grün durch**, weil er den CTA nur auf „nicht leer" prüfte. Die
+Formulierung stimmte trotzdem nicht: `removeModel()` entfernt das Modell, **nicht die ORT-WASM** —
+die gehört keinem Modell und bleibt im Cache. Damit war `missingBytes` auch bei leerem
+Modell-Cache echt kleiner als die Summe, die Teil-Bedingung griff, und ein Nutzer vor einem
+Komplett-Download las „Fehlende 2.6 GB". Wahr und irreführend zugleich.
+
+Zwei Konsequenzen, beide im Code:
+
+- Die Entscheidung vergleicht jetzt, was der Nutzer **liest** (`partialDownloadLabel`:
+  `formatBytes(fehlend) !== formatBytes(gesamt)`), nicht die Zahlen. Ein Zahlenvergleich mit
+  Toleranz wäre eine willkürliche Schwelle gewesen.
+- **Punkt 13 vergleicht den CTA jetzt exakt** gegen die Gesamt-Formulierung. Ein Prüfpunkt, der
+  „irgendein Text" akzeptiert, kann eine falsche Formulierung nicht sehen — er war gegen genau
+  den Defekt blind, den der Fix daneben einführte.
+
+Nebenmessung, weil sie eine verbreitete Kostenannahme widerlegt (Anlass: Meldung aus der
+`epub-exporter`-Session): ein echtes builtin-Bild (SD-Turbo, 4 Steps, warmes Modell) braucht
+**11 s**, der komplette Modell-Download gegen den lokalen Mock **19 s**. „Braucht eine GPU und
+dauert Minuten" stimmt nirgends; die großen Zahlen im Treiber sind Obergrenzen, keine Erwartung.
+
 ### 2026-09-02 · 0.11.0 · Staging-Vault · A1111-Mock (7861) · **18/18 grün, 2 übersprungen** — Build-Guard mit drei Gegenproben
 
 Anlass war nicht ein Prüfpunkt, sondern die Vorbedingung: der Treiber prüft seit heute selbst,

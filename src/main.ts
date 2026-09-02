@@ -16,6 +16,7 @@ import {
   DEFAULT_BUILTIN_MODEL_ID,
   modelById,
   RUNTIME_WASM,
+  missingBytes,
   totalBytes,
   type AssetFile,
   type BuiltinModel,
@@ -32,7 +33,7 @@ import {
   type ImageGenerationApi,
 } from "./core/plugin-api";
 import { parseOptionsModel, ProgressPoller, A1111Client, type ImageBackend } from "./core/txt2img";
-import { formatBytes, type EngineState, type GenParams, type PanelState, type ServerState } from "./core/viewmodel";
+import { formatBytes, partialDownloadLabel, type EngineState, type GenParams, type PanelState, type ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
@@ -76,6 +77,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> = {
     initImage: null,
     denoising: null,
+    missingBytes: null,
     downloadedModels: [],
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
@@ -448,8 +450,15 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.setEngineState({ kind: "gpu-missing", reason: gpu });
       return;
     }
-    const complete = await this.modelStore.isComplete(this.activeFiles()).catch(() => false);
+    // EINE Cache-Abfrage fuer beide Aussagen: ob alles da ist UND was fehlt. `cachedKeys` ist
+    // das, worauf `isComplete` ohnehin aufbaut — zwei Abfragen waeren zwei Messungen, die
+    // auseinanderlaufen koennen. `null` heisst „nicht gemessen" und fuehrt in der Anzeige zur
+    // Gesamtgroesse, nicht zu einer geratenen Teilzahl.
+    const files = this.activeFiles();
+    const cached = await this.modelStore.cachedKeys(files).catch(() => null);
     if (this.unloaded) return;
+    const complete = cached !== null && cached.length === files.length;
+    this.state.missingBytes = cached === null ? null : missingBytes(files, cached);
     // Welche Modelle ueberhaupt im Cache liegen — unabhaengig vom aktiven, fuer den
     // Settings-Tab (Task 11). Ohne RUNTIME_WASM: die zaehlt nicht als Teil eines Modells.
     const geladen: BuiltinModelId[] = [];
@@ -470,10 +479,20 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     if (this.downloadAbort) return;
     const m = this.activeModel();
     if (m.id !== DEFAULT_BUILTIN_MODEL_ID) {
-      const bytes = totalBytes(this.activeFiles());
+      const gesamt = totalBytes(this.activeFiles());
+      // Zahl UND Entscheidung kommen von dort, wo der Knopf sie herhat: aus dem State und aus
+      // `partialDownloadLabel()`. Ein Dialog, der eine andere Zahl nennt als der Knopf, der ihn
+      // geoeffnet hat, sieht wie ein Fehler aus — und eine zweite Kopie der Bedingung waere
+      // genau der Weg dorthin.
+      const fehlend = partialDownloadLabel(this.state.missingBytes, gesamt);
       const ok = await confirmAction(this.app, {
         title: t("confirm.bigModel.title", m.label),
-        message: t("confirm.bigModel.body", formatBytes(bytes)),
+        // Die Warnung vor dem doppelten Speicher bleibt in BEIDEN Faellen richtig: geladen wird
+        // beim ersten Bild das ganze Modell, auch wenn der Download nur eine Datei nachholt.
+        message:
+          fehlend !== null
+            ? t("confirm.bigModel.bodyPartial", fehlend, formatBytes(gesamt))
+            : t("confirm.bigModel.body", formatBytes(gesamt)),
         confirmLabel: t("confirm.bigModel.cta"),
         cancelLabel: t("modal.cancel"),
         warning: false,

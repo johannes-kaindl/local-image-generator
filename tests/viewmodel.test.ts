@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
-import { buildViewModel, formatBytes, formatElapsed, type GenParams, type PanelState } from "../src/core/viewmodel";
+import { buildViewModel, formatBytes, formatElapsed, partialDownloadLabel, type GenParams, type PanelState } from "../src/core/viewmodel";
 import { assetsFor, RUNTIME_WASM, totalBytes } from "../src/core/model-manifest";
 
 beforeEach(() => {
@@ -26,6 +26,7 @@ const baseParams: GenParams = {
 const base: PanelState = {
   initImage: null,
   denoising: null,
+  missingBytes: null,
   downloadedModels: [],
   builtinModel: "sd-turbo",
   showModelPicker: false,
@@ -297,6 +298,60 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     expect(sdxlVm.empty?.ctaLabel).toContain(sdxlTurboSize);
     expect(sdxlVm.empty?.text).not.toContain(sdTurboSize);
   });
+  // 0.12-Befund aus dem 0.11.0-Final-Review: seit der VAE-Encoder Pflichtteil ist, gilt eine
+  // Bestandsinstallation als `not-downloaded`, obwohl ihr nur EINE Datei fehlt. Panel und Knopf
+  // nannten trotzdem die Gesamtgroesse — ein SDXL-Nutzer liest "7,1 GB" fuer 137 MB und bricht ab.
+  it("builtin/not-downloaded nennt die FEHLENDEN Bytes, wenn nur ein Teil nachzuladen ist", () => {
+    const gesamt = formatBytes(totalBytes([...assetsFor("sdxl-turbo"), RUNTIME_WASM]));
+    const fehlend = formatBytes(137_000_000);
+    expect(fehlend).not.toBe(gesamt);
+
+    const vm = buildViewModel({ ...builtin, builtinModel: "sdxl-turbo", missingBytes: 137_000_000 });
+    // Der Knopf verspricht, was der Klick wirklich kostet.
+    expect(vm.empty?.ctaLabel).toContain(fehlend);
+    expect(vm.empty?.ctaLabel).not.toContain(gesamt);
+    // Der Text nennt beides: die kleine Zahl als Kosten, die grosse als das, was danach daliegt.
+    expect(vm.empty?.text).toContain(fehlend);
+    expect(vm.empty?.text).toContain(gesamt);
+  });
+
+  it("faellt auf die Gesamtgroesse zurueck, wenn nichts im Cache liegt oder die Zahl unbekannt ist", () => {
+    const gesamt = formatBytes(totalBytes([...assetsFor("sdxl-turbo"), RUNTIME_WASM]));
+    const voll = totalBytes([...assetsFor("sdxl-turbo"), RUNTIME_WASM]);
+
+    // (a) unbekannt: der Zustand ist noch nicht gemessen — keine erfundene Teilzahl.
+    const unbekannt = buildViewModel({ ...builtin, builtinModel: "sdxl-turbo", missingBytes: null });
+    expect(unbekannt.empty?.ctaLabel).toContain(gesamt);
+
+    // (b) es fehlt ohnehin alles: dann waere "7,1 GB von 7,1 GB" nur Rauschen.
+    const alles = buildViewModel({ ...builtin, builtinModel: "sdxl-turbo", missingBytes: voll });
+    expect(alles.empty?.ctaLabel).toContain(gesamt);
+    expect(alles.empty?.text).toBe(unbekannt.empty?.text);
+
+    // (c) LIVE-BEFUND vom 2026-09-02 (GUI-Smoke Punkt 13): "alles" ist nie exakt alles.
+    // `removeModel()` entfernt das Modell, NICHT die ORT-WASM — die bleibt im Cache. Damit ist
+    // `missingBytes` echt kleiner als die Gesamtgroesse, und das Panel sagte bei leerem
+    // Modell-Cache "Fehlende 2.6 GB herunterladen". Wahr, aber irrefuehrend: wer beide Zahlen
+    // GLEICH liest, dem sagt die Teil-Formulierung nichts. Entscheidend ist deshalb nicht der
+    // Zahlenvergleich, sondern der ANGEZEIGTE Unterschied.
+    const fastAlles = buildViewModel({ ...builtin, builtinModel: "sdxl-turbo", missingBytes: voll - 24_254_953 });
+    expect(formatBytes(voll - 24_254_953)).toBe(gesamt); // Vorbedingung: formatiert nicht unterscheidbar
+    expect(fastAlles.empty?.ctaLabel).toBe(unbekannt.empty?.ctaLabel);
+    expect(fastAlles.empty?.text).toBe(unbekannt.empty?.text);
+  });
+
+  // EINE Entscheidung fuer Panel UND Bestaetigungsdialog: ein Dialog, der eine andere Zahl
+  // nennt als der Knopf, der ihn geoeffnet hat, sieht wie ein Fehler aus. Zwei Kopien derselben
+  // Bedingung waeren genau der Weg dorthin (vgl. `denoiseRaster`, `hardenParams`).
+  describe("partialDownloadLabel", () => {
+    it("nennt die fehlenden Bytes nur, wenn sie ANGEZEIGT etwas anderes sagen", () => {
+      expect(partialDownloadLabel(137_000_000, 7_100_000_000)).toBe(formatBytes(137_000_000));
+      expect(partialDownloadLabel(null, 7_100_000_000)).toBeNull();               // ungemessen
+      expect(partialDownloadLabel(7_100_000_000, 7_100_000_000)).toBeNull();      // alles fehlt
+      expect(partialDownloadLabel(7_099_000_000, 7_100_000_000)).toBeNull();      // formatiert gleich
+    });
+  });
+
   it("formatBytes", () => {
     expect(formatBytes(812e6)).toBe("812 MB");
     expect(formatBytes(1733e6)).toBe("1.7 GB");
