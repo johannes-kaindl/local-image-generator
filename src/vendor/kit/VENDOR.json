@@ -1,7 +1,7 @@
 {
   "source": "obsidian-kit",
   "version": "0.27.0",
-  "sha": "fbb42d4",
+  "sha": "548041b",
   "vendored": "cache-download.ts, endpoint.ts, frontmatter.ts, i18n.ts, num.ts, settings.ts, settings_schema.ts, sha256.ts, timeout.ts",
   "note": "Verbatim snapshot. Never hand-edit. Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien. num.ts kommt nur als Abhaengigkeit mit: settings_schema.ts importiert clampInt daraus. kit-obsidian/ siehe dortige VENDOR.json."
 }

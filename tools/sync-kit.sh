@@ -7,18 +7,35 @@
 #
 # Vorlage: koda-agent/tools/sync-kit.sh (Form-A-VENDOR.json + @version im Stempel),
 # ergaenzt um den KIT_DIR-Guard aus obsidian-transmute.
+#
+# GELESEN WIRD AUS EINER FESTEN REF (KIT_REF), NICHT AUS DEM ARBEITSSTAND DES NACHBAR-REPOS
+# (CORE-META-22, promotet 2026-08-30). Vorher kopierte das Skript per `cp` aus `$KIT/src/...`
+# und stempelte den Pin aus dessen `HEAD` — zwei verschiedene Messungen unter einer Behauptung.
+# Sichtbar war das an der eigenen VENDOR.json: sie behauptete 0.27.0 mit `fbb42d4`, waehrend der
+# Tag 0.27.0 auf `548041b` zeigt (`fbb42d4` ist ein spaeterer Doku-Commit — der HEAD-Stand des
+# Nachbar-Checkouts zum Zeitpunkt des letzten Laufs).
+#
+# Seit obsidian-kit 0.28.0 ist das kein Schoenheitsfehler mehr, sondern ein DEFEKT: die
+# pure-Module sind nach code-kit abgewandert, im Arbeitsstand von 0.29.0 existieren 8 der 9
+# unten gelisteten gar nicht mehr. Ein Lauf gegen den Arbeitsstand braeche also ab — und der
+# alte Guard `[ -d "$KIT/src/pure" ]` haette das NICHT gesehen, weil der Ordner weiter existiert,
+# nur mit anderem Inhalt. Aus dem Tag gelesen ist der Lauf reproduzierbar und stoert ausserdem
+# keine parallele Session im Nachbar-Repo (kein Zugriff auf dessen Arbeitsverzeichnis).
+#
+# Ein Kit-Upgrade ist deshalb ab jetzt eine BEWUSSTE Handlung: `KIT_REF=0.29.0 sh tools/sync-kit.sh`
+# (und dann pruefen, ob die Module dort noch liegen), nicht ein Nebeneffekt davon, dass jemand
+# im Nachbar-Checkout einen Branch ausgecheckt hat.
 set -e
 
 KIT="${KIT_DIR:-../obsidian-kit}"
-[ -d "$KIT/src/pure" ] || { echo "sync-kit: Kit nicht gefunden unter $KIT (KIT_DIR setzen)" >&2; exit 1; }
-VER=$(node -p "require('$KIT/package.json').version")
-SHA=$(git -C "$KIT" rev-parse --short HEAD)
-
-stamp() { # stamp <vendored-file> <kit-relative-path>
-  header="// vendored from obsidian-kit@$VER, $2 — do not hand-edit; re-vendor via tools/sync-kit.sh"
-  printf '%s\n' "$header" | cat - "$1" > "$1.tmp"
-  mv "$1.tmp" "$1"
-}
+KIT_REF="${KIT_REF:-0.27.0}"
+[ -d "$KIT/.git" ] || { echo "sync-kit: Kit-Repo nicht gefunden unter $KIT (KIT_DIR setzen)" >&2; exit 1; }
+git -C "$KIT" rev-parse --verify --quiet "$KIT_REF^{commit}" >/dev/null 2>&1 \
+  || { echo "sync-kit: Ref '$KIT_REF' existiert nicht in $KIT (KIT_REF setzen; git -C $KIT tag)" >&2; exit 1; }
+# `^{commit}` peelen: obsidian-kit taggt annotiert, ohne die Peelung stuende hier die SHA des
+# TAG-OBJEKTS statt die des Commits — ein Pin, den kein `git log` findet (Kit-Nachtrag 7c04a48).
+VER=$(git -C "$KIT" describe --tags --abbrev=0 "$KIT_REF")
+SHA=$(git -C "$KIT" rev-parse --short "$KIT_REF^{commit}")
 
 # Gegenprobe: im Kit liegen die Schichten als src/pure + src/obsidian nebeneinander, hier als
 # src/vendor/kit + src/vendor/kit-obsidian — ein kit-interner `../pure/`-Import zeigt hier ins
@@ -34,17 +51,37 @@ no_crossimport() { # no_crossimport <vendored-file>
 
 mkdir -p src/vendor/kit src/vendor/kit-obsidian
 
+# Erst in eine temporaere Datei, dann `mv` — und das ist NICHT die Vorsichtsform derselben Sache.
+# ⚠️ Die Vorlagen (koda-agent, audio-interface, vim-dojo, …) schreiben Stempel und Inhalt in EINER
+# Umleitung direkt aufs Ziel und behaupten im Kommentar, `set -e` breche ab, "bevor die Zieldatei
+# geschrieben ist". Am 2026-09-02 hier gegengeprobt: **das stimmt nicht.** Die Umleitung leert das
+# Ziel, BEVOR das erste Kommando laeuft; `printf` schreibt den Stempel, `git show` scheitert, und
+# zurueck bleibt eine 1-Zeilen-Datei, die nur aus dem Stempel besteht — mit der Versionsnummer der
+# ANGEFRAGTEN Ref. Also genau das Artefakt, gegen das der Kommentar zu schuetzen glaubt: es sieht
+# wie gueltiges Vendoring aus und ist ein Torso. Gemessen mit `KIT_REF=0.29.0` (dort fehlen die
+# abgewanderten pure-Module): `src/vendor/kit/cache-download.ts` hatte danach 1 Zeile und trug
+# `@0.29.0`. Der `mv` unten macht das Schreiben atomar — entweder ganz oder gar nicht.
+vendor() { # vendor <kit-relativer-pfad> <zielpfad>
+  tmp="$2.tmp"
+  if { printf '%s\n' "// vendored from obsidian-kit@$VER, $1 — do not hand-edit; re-vendor via tools/sync-kit.sh"
+       git -C "$KIT" show "$KIT_REF:$1"; } > "$tmp"; then
+    mv "$tmp" "$2"
+  else
+    rm -f "$tmp"
+    echo "sync-kit: '$1' fehlt in Ref $KIT_REF — Modul verschoben? (ab obsidian-kit 0.28.0 sind pure-Module nach code-kit abgewandert)" >&2
+    exit 1
+  fi
+}
+
 for m in cache-download endpoint frontmatter i18n num settings settings_schema sha256 timeout; do
-  cp "$KIT/src/pure/$m.ts" "src/vendor/kit/$m.ts"
+  vendor "src/pure/$m.ts" "src/vendor/kit/$m.ts"
   no_crossimport "src/vendor/kit/$m.ts"
-  stamp "src/vendor/kit/$m.ts" "src/pure/$m.ts"
   echo "vendored obsidian-kit@$VER/pure/$m.ts"
 done
 
 for m in confirm folder-suggest hub settings_walker; do
-  cp "$KIT/src/obsidian/$m.ts" "src/vendor/kit-obsidian/$m.ts"
+  vendor "src/obsidian/$m.ts" "src/vendor/kit-obsidian/$m.ts"
   no_crossimport "src/vendor/kit-obsidian/$m.ts"
-  stamp "src/vendor/kit-obsidian/$m.ts" "src/obsidian/$m.ts"
   echo "vendored obsidian-kit@$VER/obsidian/$m.ts"
 done
 
@@ -66,4 +103,4 @@ cat > src/vendor/kit-obsidian/VENDOR.json <<JSON
   "note": "Verbatim snapshot. Never hand-edit. Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien. Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
 }
 JSON
-echo "VENDOR.json → $VER ($SHA)"
+echo "VENDOR.json → $VER ($SHA, aus Ref $KIT_REF)"
