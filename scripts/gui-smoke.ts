@@ -86,6 +86,10 @@ import { join } from "node:path";
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
 import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
+// Der Build-Guard liegt ebenfalls zentral: `requireEigenerBuild` bricht ab, wenn der Build im
+// Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
+// hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
+import { buildHerkunft, requireEigenerBuild } from "../../tools/obsidian-cdp/vault.js";
 import { SIZES, STEPS } from "../src/core/generation";
 import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
 import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
@@ -1856,6 +1860,21 @@ async function runBuiltinImg2ImgCheck(
   }
 }
 
+/**
+ * Version aus einer `manifest.json` auf Platte — `null`, wenn sie fehlt oder unlesbar ist.
+ * Gegenstueck zu `plugin.manifest.version` aus dem Renderer, die etwas anderes meint (s. u.).
+ */
+function manifestVersion(pfad: string): string | null {
+  if (!existsSync(pfad)) return null;
+  try {
+    const roh: unknown = JSON.parse(readFileSync(pfad, "utf8"));
+    const version = (roh as { version?: unknown }).version;
+    return typeof version === "string" ? version : null;
+  } catch {
+    return null;
+  }
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const flag = (name: string): string | undefined => {
@@ -1891,6 +1910,8 @@ async function main(): Promise<void> {
   // im Lauf zurückschreiben können — sonst bliebe der Vault im Smoke-Zustand stehen.
   let previous: { createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string; builtinModel: string; showModelPicker: boolean } | null = null;
   let createdFolder = false;
+  /** Gesetzt, wenn der Build-Guard die Herkunft nicht belegen konnte — s. Abschlusszeile. */
+  let herkunftsWarnung: string | null = null;
 
   try {
     // Ohne Fokus drosselt Chromium den Renderer. `Page.bringToFront` allein genuegt auf
@@ -1906,16 +1927,70 @@ async function main(): Promise<void> {
       }
     }
 
-    const vaultName = await cdp.evaluate<string>(`return window.app?.appId ? app.vault.getName() : "";`);
-    if (!vaultName) throw new Error("Obsidians `app` ist im Renderer nicht erreichbar.");
-    console.log(`Vault: ${vaultName}`);
+    // Der Pfad des gemessenen Vaults kommt aus der LAUFENDEN Instanz, nicht aus
+    // `stagingVaultDir(...)`: ein Treiber dockt per `--vault` an ein beliebiges Fenster an, und
+    // ein Check gegen den KONFIGURIERTEN Ort prueft dann eine Datei, die mit dem Lauf nichts zu
+    // tun hat — er versagt genau in dem Fall, fuer den er gebaut ist (Lesson 2026-09-02,
+    // kuro-gamification: geprueft wird, was gemessen wird).
+    const vaultInfo = await cdp.evaluate<{ name: string; basePath: string; configDir: string } | null>(`
+      if (!window.app?.appId) return null;
+      return { name: app.vault.getName(), basePath: app.vault.adapter.basePath, configDir: app.vault.configDir };
+    `);
+    if (!vaultInfo) throw new Error("Obsidians `app` ist im Renderer nicht erreichbar.");
+    console.log(`Vault: ${vaultInfo.name}`);
+
+    // Misst dieser Lauf ueberhaupt DIESEN Checkout? Die Frage, gegen die die Versionszeile
+    // unten strukturell blind ist: Store-Build, vergessener Deploy und Repo-Stand tragen
+    // dieselbe Nummer. Gemessen im Dach am 2026-08-30 — 69 von 150 gruenen Pruefpunkten einer
+    // ganzen Runde standen auf einem Build, der nicht belegt der Repo-Stand war; in
+    // 3d-codeblocks lag dabei ein zwei Wochen alter Build im richtigen Vault.
+    const deployedDir = join(vaultInfo.basePath, vaultInfo.configDir, "plugins", PLUGIN_ID);
+    requireEigenerBuild(
+      join(deployedDir, "main.js"),
+      // Der Vergleichsstand muss frisch sein — `npm run deploy` baut ihn unmittelbar davor.
+      // Fehlt er, bleibt nur die billige Aussage (Store-Suffix ja/nein) und es WARNT.
+      join(process.cwd(), "main.js"),
+      (meldung) => {
+        herkunftsWarnung = meldung;
+        console.warn(meldung);
+      },
+    );
+
+    // Zweiter Vergleich, repo-eigen: `npm run deploy` kopiert AUCH `styles.css`, und dieses
+    // Repo misst gerendertes CSS (Punkt 17 ueber `getComputedStyle`; die `.is-hidden`-Reihenfolge
+    // in AGENTS.md ist ein reiner Stylesheet-Defekt). Ein veraltetes Stylesheet neben einer
+    // frischen main.js waere derselbe Fehlstand in der Haelfte, die der zentrale Guard nicht
+    // anfasst — und Punkt 17 meldete ihn als Plugin-Befund.
+    const cssHerkunft = buildHerkunft(join(deployedDir, "styles.css"), join(process.cwd(), "styles.css"));
+    if (cssHerkunft.art === "fehlt") {
+      throw new Error(`Im Vault liegt kein styles.css: ${cssHerkunft.pfad}\nZuerst deployen (npm run deploy).`);
+    }
+    if (cssHerkunft.art === "fremd") {
+      const zahl = (n: number) => n.toLocaleString("de-DE");
+      throw new Error(
+        `Das styles.css im Vault ist nicht der gebaute Repo-Stand: ${cssHerkunft.pfad}\n` +
+          `  im Vault: ${zahl(cssHerkunft.bytes)} Bytes\n` +
+          `  gebaut:   ${zahl(cssHerkunft.erwarteteBytes)} Bytes\n` +
+          "Punkt 17 misst gerendertes CSS. Zuerst deployen, dann erneut laufen.",
+      );
+    }
 
     const plugin = await cdp.evaluate<{ ok: boolean; version?: string; endpoint?: string }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
       return p ? { ok: true, version: p.manifest.version, endpoint: p.settings.endpoint } : { ok: false };
     `);
     if (!plugin.ok) throw new Error(`Plugin ${PLUGIN_ID} ist nicht aktiv. Erst \`npm run deploy\`.`);
-    console.log(`Plugin-Version im Vault: ${plugin.version}`);
+    // ⚠️ `plugin.manifest.version` meldet den VAULT-START, nicht die Datei auf Platte:
+    // `enablePlugin` laedt den Code neu, das Manifest NICHT (gemessen 2026-09-02 im Dach —
+    // der Renderer sagte 1.3.0, waehrend `manifest.json` im selben Vault 1.4.0 trug). Der
+    // Plattenstand steht deshalb daneben, sobald beide auseinanderlaufen.
+    const versionAufPlatte = manifestVersion(join(deployedDir, "manifest.json"));
+    console.log(
+      `Plugin-Version im Vault: ${plugin.version}` +
+        (versionAufPlatte !== null && versionAufPlatte !== plugin.version
+          ? ` (im Speicher seit dem Vault-Start — auf Platte liegt ${versionAufPlatte})`
+          : ""),
+    );
 
     // Den Prueflig HERSTELLEN, nicht annehmen: `npm run deploy` kopiert Dateien, Obsidian laedt
     // sie nicht nach. Ohne diesen Neustart misst der Lauf den Code, der beim letzten Start des
@@ -2616,6 +2691,9 @@ async function main(): Promise<void> {
   // beim Zitieren ein bestandener Smoke, obwohl ein Drittel nie gemessen wurde.
   const summe = `${results.length - failed.length}/${results.length} grün`;
   console.log(`\n${summe}${skipped.length > 0 ? ` · ${skipped.length} übersprungen (NICHT gemessen)` : ""}`);
+  if (herkunftsWarnung !== null) {
+    console.log("⚠️  Herkunft des gemessenen Builds UNGEPRUEFT — s. Warnung oben. Der Lauf belegt den Repo-Stand nicht.");
+  }
   if (skipped.length > 0) {
     console.log("Übersprungen:");
     for (const check of skipped) console.log(`  – ${check.name}: ${check.detail}`);
