@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-09-02
+
 ### Fixed
 
 - **The download prompt names what the click actually costs.** Since 0.11 made the VAE encoder
