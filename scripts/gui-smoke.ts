@@ -2258,26 +2258,49 @@ async function main(): Promise<void> {
             ? "(Settings-Tab offen, aber kein Knopf " + ${JSON.stringify(testLabel)} + ")"
             : "(falscher Settings-Tab aktiv: " + tab + ")";
         }
-        // Alte Notices erst abräumen — sonst liest der Vergleich unten womöglich eine
-        // Meldung, die schon vor dem Klick dastand (Prüfpunkt ohne Gegenstand).
-        for (const d of docs()) d.querySelectorAll(".notice").forEach((n) => n.remove());
+        // ACHTUNG beim Bearbeiten: dieser Block steht IN einem Template-Literal — ein Backtick
+        // im Kommentar beendet es und der Fehler kommt als TS1005 an ganz anderer Stelle an.
+        // Die Klasse .notice gehoert ALLEN Plugins. Die vorherige Fassung raeumte die Leiste
+        // vor dem Klick leer (remove() auf jede gefundene) und nahm danach die erste Notice im
+        // DOM — zwei Fehler in einer Zeile: sie loeschte FREMDE Meldungen (an einer Instanz mit
+        // siebzehn offenen Fenstern ein echter Eingriff in eine andere Session) und haette eine
+        // fremde Notice als eigene gelesen. Stattdessen: die vorhandenen Elemente merken und
+        // danach nur betrachten, was NEU dazukam — Identitaet, nicht Text, damit eine
+        // gleichlautende alte Meldung nicht als Treffer durchgeht.
+        // Referenzform: koda-agent/scripts/gui-smoke.ts (e907f4c, Fremdzaehler + pop() +
+        // Titelpruefung statt "nimm das erste Element").
+        const vorher = new Set();
+        for (const d of docs()) for (const n of d.querySelectorAll(".notice")) vorher.add(n);
         button.click();
         ${waitFor(
           `
-          for (const d of docs()) {
-            const notice = d.querySelector(".notice");
-            if (notice) return notice.textContent.trim();
+          const neu = [];
+          for (const d of docs()) for (const n of d.querySelectorAll(".notice")) {
+            if (!vorher.has(n)) neu.push(n.textContent.trim());
           }
-          return 0;
+          return neu.length > 0 ? JSON.stringify(neu) : 0;
         `,
           15_000,
         )}
       `);
-      record(
-        "2. „Verbindung testen“ meldet den Modellnamen des Servers",
-        noticeText !== null && noticeText.includes(expectedModel),
-        noticeText === null ? "keine Notice erschienen" : noticeText,
-      );
+      // Mehrere neue Notices im selben Zeitfenster heissen: ein fremdes Plugin hat dazwischen
+      // gemeldet. Dann wird der Punkt NICHT geraten — die Referenz nennt das "nicht
+      // entscheidbar", und das ist ehrlicher als ein Treffer per Textsuche (der Modellname ist
+      // genau das, was hier gemessen wird; ihn als Filter zu benutzen waere zirkulaer).
+      const neueNotices: string[] = noticeText === null ? [] : (JSON.parse(noticeText) as string[]);
+      if (neueNotices.length > 1) {
+        skip(
+          "2. „Verbindung testen“ meldet den Modellnamen des Servers",
+          `${neueNotices.length} neue Notices im Messfenster — fremdes Plugin hat mitgemeldet, Punkt nicht entscheidbar: ${JSON.stringify(neueNotices)}`,
+        );
+      } else {
+        const meine = neueNotices[0] ?? null;
+        record(
+          "2. „Verbindung testen“ meldet den Modellnamen des Servers",
+          meine !== null && meine.includes(expectedModel),
+          meine === null ? "keine Notice erschienen" : meine,
+        );
+      }
       await cdp.evaluate(`app.setting.close(); return true;`);
 
       // --- 3. DER BEFUND: das Generate-Panel zeigt den echten Modellnamen -----
