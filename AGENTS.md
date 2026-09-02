@@ -303,6 +303,15 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Endpunkte auf Port 7861 (`/progress` → 404, zaehlt Anfragen in `.mock-a1111-counts.json`);
   Plugin-Endpunkt darauf stellen, `npm run smoke:gui` fahren. Draw Things' API-Server ist ein
   Schalter in der App-Oberflaeche — `open -a "Draw Things"` allein oeffnet Port 7860 nicht.
+- ⚠️ **`scripts/mock-a1111.mjs` hat seit 2026-09-02 einen FREMDEN Konsumenten.** Der Naht-Lauf
+  von `epub-exporter` (`npm run smoke:e2e` dort) startet den Mock selbst und faehrt die
+  Provider-API v1 ueber die Plugin-Grenze — er belegt damit, was beide Halbe-Seite-Smokes
+  ueberspringen (REGISTRY, Zeile „Eine Faehigkeit fuer andere Obsidian-Plugins bereitstellen").
+  Praktische Folge fuer dieses Repo: **wer die Endpunkte, den Fehlerschalter `/mock/fail?on=`
+  oder die Antwortform des Mocks aendert, bricht einen Treiber im Nachbar-Repo** — und zwar
+  still, weil er hier nicht mitlaeuft. Dasselbe gilt fuer die Vertragszusagen, die der Lauf
+  misst: `apiVersion` am Plugin-Objekt, `recheck()` heilt `unreachable`, `capabilities.sizes`
+  meldet im builtin-Modus GENAU eine Groesse, ein Backend-Fehlschlag kommt als Wert.
 - **Der Server bestimmt das Modell.** Das Plugin schickt generische Parameter und zeigt
   den gemeldeten Modellnamen als Statushinweis; es waehlt nie ein Modell aus.
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
