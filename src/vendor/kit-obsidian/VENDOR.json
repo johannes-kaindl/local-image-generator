@@ -1,7 +1,7 @@
 {
   "source": "obsidian-kit",
   "version": "0.27.0",
-  "sha": "fbb42d4",
+  "sha": "548041b",
   "vendored": "confirm.ts, folder-suggest.ts, hub.ts, settings_walker.ts",
   "note": "Verbatim snapshot. Never hand-edit. Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien. Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
 }

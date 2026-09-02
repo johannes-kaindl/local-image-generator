@@ -53,7 +53,19 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   (Cache API), ebenfalls obsidian-frei — nicht vom Gate erfasst, manuell halten.
 - **Vendoring (nie von Hand):** `sh tools/sync-kit.sh` kopiert die Kit-Module byte-identisch aus
   `../obsidian-kit` (`KIT_DIR` ueberschreibbar), setzt die Stempelzeile und schreibt beide
-  `VENDOR.json`. **Zielordner ist Vertrag, nicht Geschmack:** `obsidian-kit/src/pure/*` →
+  `VENDOR.json`. **Gelesen wird aus einer festen Ref (`KIT_REF`, Default `0.27.0`), nicht aus dem
+  Arbeitsstand des Nachbar-Checkouts** (CORE-META-22) — ein Kit-Upgrade ist damit eine bewusste
+  Handlung (`KIT_REF=0.29.0 sh tools/sync-kit.sh`) und kein Nebeneffekt davon, dass jemand
+  nebenan einen Branch auscheckt. Bis 2026-09-02 war es umgekehrt, und das war seit Kit 0.28.0
+  ein DEFEKT, keine Ungenauigkeit: die pure-Module sind nach `code-kit` abgewandert, im
+  Arbeitsstand von 0.29.0 fehlen 8 der 9 gelisteten — ein Lauf waere abgebrochen. Der alte Guard
+  (`[ -d "$KIT/src/pure" ]`) sah das nicht, weil der ORDNER weiter existiert, nur mit anderem
+  Inhalt: **eine Existenzpruefung auf den Ordner beantwortet die Frage nach dem Inhalt nicht.**
+  ⚠️ Und die Vorlage, aus der die anderen Repos das Muster haben, traegt einen falschen Satz:
+  Stempel und Inhalt in EINER Umleitung aufs Ziel zu schreiben laesst bei fehlgeschlagenem
+  `git show` sehr wohl einen **Torso** zurueck (1 Zeile, nur der Stempel — und mit der Version
+  der ANGEFRAGTEN Ref, sieht also wie gueltiges Vendoring aus). Hier gemessen und behoben:
+  erst `.tmp`, dann `mv`. **Zielordner ist Vertrag, nicht Geschmack:** `obsidian-kit/src/pure/*` →
   `src/vendor/kit/`, `obsidian-kit/src/obsidian/*` → `src/vendor/kit-obsidian/` — ein
   obsidian-importierendes Modul unter `src/vendor/kit/` bricht `npm run check:pure` und damit das
   Gate. Ein neues Modul kommt in die Modulliste des Skripts, nicht per `cp` in den Baum; danach
