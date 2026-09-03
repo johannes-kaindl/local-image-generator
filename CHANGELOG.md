@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.2] — 2026-09-03
+
 ### Fixed
 
 - **The model dropdown in the panel now has a visible label.** It sat unlabelled next to the
