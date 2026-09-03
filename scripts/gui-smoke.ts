@@ -1528,10 +1528,23 @@ async function runModelPickerCheck(cdp: Cdp, assetsBase: string, generateTimeout
   if (an1 !== "none") teile.push(`ein geladenes Modell: display ${an1} (erwartet none)`);
   if (an2 === "none" || an2 === null) teile.push(`zwei geladene Modelle: display ${an2} (erwartet sichtbar)`);
 
+  // Die Beschriftung (seit 2026-09-03) muss GENAUSO verschwinden wie das Dropdown. Ein Label
+  // ohne sein Bedienelement ist schlimmer als gar keines — es behauptet eine Einstellung, die
+  // nicht da ist. Deshalb hier mitgemessen und nicht in einem eigenen Punkt: die beiden gehoeren
+  // zusammen, und getrennte Punkte koennten auseinanderlaufen, ohne dass einer rot wird.
+  const labelAn = await displayOf(".lig-model-pick-label");
+  await setPicker(false);
+  const labelAus = await displayOf(".lig-model-pick-label");
+  await setPicker(true);
+  if (labelAn === "none" || labelAn === null) teile.push(`Beschriftung bei sichtbarem Picker: display ${labelAn} (erwartet sichtbar)`);
+  if (labelAus !== "none") teile.push(`Beschriftung bei verborgenem Picker: display ${labelAus} (erwartet none)`);
+
   record(
     NAME,
     teile.length === 0,
-    teile.length === 0 ? `aus:${aus} · 1 Modell:${an1} · 2 Modelle:${an2}` : teile.join(" · "),
+    teile.length === 0
+      ? `aus:${aus} · 1 Modell:${an1} · 2 Modelle:${an2} · Label an:${labelAn}/aus:${labelAus}`
+      : teile.join(" · "),
   );
 }
 

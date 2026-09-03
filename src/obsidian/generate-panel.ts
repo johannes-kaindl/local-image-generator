@@ -26,6 +26,7 @@ export class GeneratePanel implements HubPanel<TabId> {
    *  tatsaechlicher Aenderung (Modellwechsel builtin↔builtin, Modus-Wechsel). */
   private renderedSizeIds = "";
   private modelPickEl!: HTMLSelectElement;
+  private modelPickLabelEl!: HTMLElement;
   /** Optionssignatur des zuletzt gezeichneten Modell-Dropdowns — ein select verliert bei
    *  jedem Neuzeichnen seine Auswahl, deshalb nur bei tatsaechlicher Aenderung neu bauen. */
   private renderedModelIds = "";
@@ -110,6 +111,11 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.sizeRowEl = controls.createSpan({ cls: "lig-size-slot" });
     // Modell-Dropdown (Task 12, Spec 0.9 §6.2): NUR geladene Modelle als Optionen — ein
     // Panel-Klick darf nie einen Download ausloesen (vm.modelOptions filtert das bereits vor).
+    // Sichtbare Beschriftung wie beim Groessen-Dropdown daneben (UI-STANDARD: ein
+    // Bedienelement ohne zugaengliches Label ist derselbe Fall wie ein Icon-only-Button).
+    // Eigene Klasse, weil es MIT dem Dropdown verschwinden muss — ein blosses `.lig-label`
+    // waere von den anderen nicht zu unterscheiden, dieselbe Loesung wie bei `.lig-cfg-label`.
+    this.modelPickLabelEl = controls.createSpan({ text: t("generate.model"), cls: "lig-label lig-model-pick-label" });
     this.modelPickEl = controls.createEl("select", { cls: "dropdown lig-model-pick" });
     this.modelPickEl.addEventListener("change", () => {
       // KEIN this.refresh() direkt danach (anders als bei den uebrigen Controls hier):
@@ -367,6 +373,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     // Modell-Dropdown (Task 12): NUR bei sichtbarem Picker sind die Optionen ueberhaupt
     // relevant, aber toggleClass laeuft immer — dieselbe Regel wie bei den anderen Zeilen.
     this.modelPickEl.toggleClass("is-hidden", !vm.controls.modelPicker);
+    this.modelPickLabelEl.toggleClass("is-hidden", !vm.controls.modelPicker);
     const modelIds = vm.modelOptions.map((o) => o.id).join(",");
     if (modelIds !== this.renderedModelIds) {
       this.renderedModelIds = modelIds;
@@ -375,7 +382,12 @@ export class GeneratePanel implements HubPanel<TabId> {
     }
     // vm hat kein eigenes builtinModel-Feld (nur modelLabel/modelOptions) — die Auswahl kommt
     // aus dem State, nicht dem ViewModel (Divergenz vom Brief-Snippet, siehe Taskbericht).
-    this.modelPickEl.value = state.builtinModel;
+    // NUR setzen, wenn es die Option gibt: ein `select.value` ohne passende `<option>` setzt
+    // die Auswahl auf LEER, und das Feld zeigte dann nichts an, statt beim bisherigen Wert zu
+    // bleiben. Heute unsichtbar (in genau dem Fall ist der Picker verborgen) — aber die
+    // Bedingung dafuer ist `downloadedModels`, nicht dieser Code hier, und die kann sich
+    // aendern (Nachlese 0.9.0).
+    if (vm.modelOptions.some((o) => o.id === state.builtinModel)) this.modelPickEl.value = state.builtinModel;
     // Zwei getrennte Fragen (Spec §3): kann das BACKEND ein Ausgangsbild (ganze Zeile), und
     // gibt es ueberhaupt eine Vorlage zu aendern (nur der Regler)?
     this.initRowEl.toggleClass("is-hidden", !vm.controls.initImage);

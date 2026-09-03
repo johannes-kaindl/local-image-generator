@@ -408,6 +408,26 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-09-03 · 0.11.1 + Nachlese · Staging-Vault · beide Mocks · **32/32 grün**, Punkt 21 mit Gegenprobe
+
+Das Modell-Dropdown im Panel hatte keine sichtbare Beschriftung, während das Größen-Dropdown
+direkt daneben eine hat (Nachlese 0.9.0). Ergänzt als `t("generate.model")` mit eigener Klasse
+`.lig-model-pick-label` — eigene Klasse, weil sie **mit** dem Dropdown verschwinden muss: ein
+Label ohne sein Bedienelement ist schlimmer als gar keines, es behauptet eine Einstellung, die
+nicht da ist. Dieselbe Lösung wie bei `.lig-cfg-label`.
+
+**Punkt 21 misst die Beschriftung mit, statt sie in einen eigenen Punkt zu legen.** Zwei
+getrennte Punkte könnten auseinanderlaufen, ohne dass einer rot wird — genau die Lage, die hier
+überhaupt erst entstanden ist.
+
+| Lauf | Punkt 21 | |
+|---|---|---|
+| mit Label-Toggle | `aus:none · 1 Modell:none · 2 Modelle:block · Label an:block/aus:none` | ✅ 32/32 |
+| Toggle ausgebaut (Gegenprobe) | „Beschriftung bei verborgenem Picker: display block (erwartet none)" | ✅ rot, 31/32 |
+
+Die Gegenprobe ist der Punkt: ohne sie wäre die neue Zeile eine Behauptung. Sie hat auch den
+richtigen Defekt benannt — nicht „irgendetwas stimmt nicht", sondern welche Hälfte.
+
 ### 2026-09-03 (nachts) · 0.11.1 · Staging-Vault · A1111-Mock (7861) · `--quick` **11/11 grün** — Notices sind eine geteilte Region
 
 Punkt 2 räumte vor dem Klick jede vorhandene `.notice` per `remove()` weg und las danach die
