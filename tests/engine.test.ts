@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SdTurboEngine, type OrtValue, type Session } from "../src/core/engine";
+import { runDiffusion, SdTurboEngine, type OrtValue, type Session } from "../src/core/engine";
 import { f16ArrayToF32 } from "../src/core/pipeline/f16";
 import { denoiseRaster } from "../src/core/params";
 import { gaussianArray } from "../src/core/pipeline/prng";
@@ -289,5 +289,41 @@ describe("SdTurboEngine", () => {
     const unet: Session = { ...base.unet, run: async (feeds) => { seen.push(feeds["timestep"]!.dims); return { out_sample: { data: new Uint16Array(4 * 64 * 64), dims: [1, 4, 64, 64] } }; } };
     await new SdTurboEngine({ ...base, unet }, tokData).generate({ prompt: "cat", steps: 1, seed: 1 });
     expect(seen[0]).toEqual([1]);
+  });
+});
+
+describe("runDiffusion — Feed-Konstruktion", () => {
+  // Nachlese 0.9.0: `extraFeeds` wurde NACH `sample`/`timestep` gespreadet. Kein heutiger
+  // Aufrufer trägt diese Schlüssel — aber wer es täte, überschriebe still die gemeinsame
+  // Feed-Konstruktion samt der 0-d-`timestep`-Regel (AGENTS-Gotcha: `dims [1]` bricht das UNet
+  // mit „Gemm: must be 2 dimensional"). Der Fehler wäre ein Modellabbruch weit weg von seiner
+  // Ursache. Dieser Test nagelt die Reihenfolge fest.
+  it("laesst extraFeeds die Kern-Feeds sample/timestep NICHT ueberschreiben", async () => {
+    const gesehen: Record<string, OrtValue | undefined> = {};
+    const dims = [1, 4, 8, 8];
+    const n = 4 * 8 * 8;
+    const unet: Session = {
+      inputNames: ["sample", "timestep", "encoder_hidden_states"],
+      outputNames: ["out_sample"],
+      inputTypes: { sample: "float32", timestep: "int64", encoder_hidden_states: "float32" },
+      inputShapes: { timestep: [] },
+      run: async (feeds) => {
+        gesehen["sample"] = feeds["sample"];
+        gesehen["timestep"] = feeds["timestep"];
+        return { out_sample: { data: new Float32Array(n), dims } };
+      },
+      release: async () => {},
+    };
+    const gift: OrtValue = { data: new Float32Array([42]), dims: [1] };
+    await runDiffusion(unet, makeSchedule(1), 7, dims, {
+      encoder_hidden_states: { data: new Float32Array(77 * 8), dims: [1, 77, 8] },
+      // Ein Aufrufer, der es falsch macht — die Schleife muss ihn ignorieren:
+      sample: gift,
+      timestep: gift,
+    });
+    expect(gesehen["sample"]).not.toBe(gift);
+    expect(gesehen["sample"]!.dims).toEqual(dims);
+    expect(gesehen["timestep"]).not.toBe(gift);
+    expect(gesehen["timestep"]!.data).toBeInstanceOf(BigInt64Array);
   });
 });

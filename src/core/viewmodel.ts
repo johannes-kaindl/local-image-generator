@@ -2,7 +2,7 @@
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
 import { backendCapabilities, type SizeOption } from "./generation";
-import { assetsFor, modelById, RUNTIME_WASM, totalBytes, type BuiltinModelId } from "./model-manifest";
+import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -265,7 +265,7 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
     // tatsaechlich 6,4 GB. `assetsFor(s.builtinModel)` traegt keine Runtime-WASM
     // (Vertrag von assetsFor, siehe AGENTS.md), die haengt jeder Aufrufer selbst an.
     const model = modelById(s.builtinModel);
-    const gesamt = totalBytes([...assetsFor(s.builtinModel), RUNTIME_WASM]);
+    const gesamt = totalBytes(filesFor(s.builtinModel));
     const size = formatBytes(gesamt);
     const fehlend = partialDownloadLabel(s.missingBytes, gesamt);
     if (fehlend !== null) {

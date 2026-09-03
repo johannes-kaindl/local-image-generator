@@ -97,7 +97,7 @@ import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
 import { buildHerkunft, requireEigenerBuild } from "../../tools/obsidian-cdp/vault.js";
 import { SIZES, STEPS } from "../src/core/generation";
-import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, cacheKey, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
+import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, cacheKey, filesFor, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
 import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
 import { formatBytes } from "../src/core/viewmodel";
 import { registerI18n } from "../src/i18n/strings";
@@ -344,7 +344,7 @@ const NAME_28 = "28. Eine Teil-Nachladung nennt die FEHLENDEN Bytes, nicht die G
  *  Der Punkt raeumt selbst auf: er laedt die entfernte Datei danach wieder und stellt `ready`
  *  her, weil die Punkte danach sie brauchen. */
 async function runPartialDownloadCheck(cdp: Cdp): Promise<void> {
-  const files = [...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM];
+  const files = filesFor(DEFAULT_BUILTIN_MODEL_ID);
   const encoder = assetsFor(DEFAULT_BUILTIN_MODEL_ID).find((f) => f.key.includes("vae_encoder"));
   if (!encoder) {
     skip(NAME_28, `kein vae_encoder in assetsFor(${DEFAULT_BUILTIN_MODEL_ID}) — Manifest umbenannt?`);
@@ -486,7 +486,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // Teil-Nachladung und schrieb „Fehlende 2.6 GB herunterladen" — wahr und irrefuehrend
     // zugleich. Hier steht die Erwartung, die das ausschliesst; die Teil-Formulierung misst
     // Punkt 28 an dem Zustand, der sie verdient.
-    const ctaErwartet = t("empty.downloadCta", formatBytes(totalBytes([...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM])));
+    const ctaErwartet = t("empty.downloadCta", formatBytes(totalBytes(filesFor(DEFAULT_BUILTIN_MODEL_ID))));
     record(
       "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
       st?.kind === "not-downloaded" && status13 === notDownloaded && negHidden && ctaLabel === ctaErwartet,
@@ -517,7 +517,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // Frist proportional zum Modell — Punkt 13 hat es oben auf DEFAULT_BUILTIN_MODEL_ID
     // (sd-turbo) ETABLIERT, hier nicht erneut aus data.json lesen. Siehe downloadDeadlineMs()
     // für die Herleitung.
-    const downloadDeadline14 = downloadDeadlineMs(totalBytes([...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM]));
+    const downloadDeadline14 = downloadDeadlineMs(totalBytes(filesFor(DEFAULT_BUILTIN_MODEL_ID)));
     await clickReal(cdp, `document.querySelector(".lig-empty button")`);
     let sawProgress = false;
     const done14 = await pollUntil(
@@ -1251,7 +1251,7 @@ function mockAssetCounts(): Record<string, number> | null {
  *  (`t("settings.model.name", label, formatBytes(totalBytes(modelFiles(id))))`) — dieselbe
  *  Quelle wie das Plugin selbst, kein zweiter, driftender Erwartungswert im Treiber. */
 function modelRowName(id: BuiltinModelId): string {
-  const bytes = totalBytes([...assetsFor(id), RUNTIME_WASM]);
+  const bytes = totalBytes(filesFor(id));
   return t("settings.model.name", BUILTIN_MODELS[id].label, formatBytes(bytes));
 }
 
@@ -2081,9 +2081,9 @@ async function main(): Promise<void> {
       );
     }
 
-    const plugin = await cdp.evaluate<{ ok: boolean; version?: string; endpoint?: string }>(`
+    const plugin = await cdp.evaluate<{ ok: boolean; version?: string }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-      return p ? { ok: true, version: p.manifest.version, endpoint: p.settings.endpoint } : { ok: false };
+      return p ? { ok: true, version: p.manifest.version } : { ok: false };
     `);
     if (!plugin.ok) throw new Error(`Plugin ${PLUGIN_ID} ist nicht aktiv. Erst \`npm run deploy\`.`);
     // ⚠️ `plugin.manifest.version` meldet den VAULT-START, nicht die Datei auf Platte:
@@ -2119,7 +2119,18 @@ async function main(): Promise<void> {
     if (reloaded === null) throw new Error(`Plugin ${PLUGIN_ID} kam nach dem Neuladen nicht zurueck.`);
     console.log("Plugin neu geladen — gemessen wird der deployte Stand");
 
-    const endpoint = (plugin.endpoint ?? "").trim();
+    // NACH dem Reload lesen, nicht davor. Der Wert oben stammt aus der Plugin-Instanz, die beim
+    // letzten Fensterstart geladen wurde — wer die Settings zwischen zwei Laeufen aendert (etwa
+    // den Endpunkt eintraegt), bekaeme hier einen Abbruch, obwohl der Wert laengst in der
+    // data.json steht. Und der naechste Lauf ginge „von selbst" durch, was die Ursache
+    // verschleiert. Dieselbe Lesson, die dieser Treiber zwanzig Zeilen weiter oben selbst
+    // zitiert: den Pruefling HERSTELLEN, dann messen — das gilt fuer seine Einstellungen genauso
+    // wie fuer seinen Code (Nachlese 0.9.0).
+    const endpoint = (
+      await cdp.evaluate<string>(`
+        return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.settings?.endpoint ?? "";
+      `)
+    ).trim();
     if (endpoint === "") throw new Error("Kein Server-Endpunkt in den Plugin-Settings — erst in den Settings eintragen.");
 
     // Die Sprache des Wirts übernehmen, damit die Label-Vergleiche unten gegen genau die

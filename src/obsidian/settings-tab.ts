@@ -21,7 +21,7 @@
 // FolderSuggest ein.
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { STEPS } from "../core/generation";
-import { assetsFor, BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, isBuiltinModelId, modelById, RUNTIME_WASM, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
+import { BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, filesFor, isBuiltinModelId, modelById, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type LigSettings } from "../core/settings";
 import { formatBytes, type EngineState } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
@@ -337,7 +337,7 @@ export class LigSettingTab extends PluginSettingTab {
    *  private activeFiles(), hier fuer ein beliebiges (nicht nur das aktive) Modell, weil der
    *  Settings-Tab die Groesse in Name/Beschreibung UND im Loesch-Bestaetigungstext braucht. */
   private modelFiles(id: BuiltinModelId): AssetFile[] {
-    return [...assetsFor(id), RUNTIME_WASM];
+    return filesFor(id);
   }
 
   /** Einmal pro Tab-Öffnen prüfen, ob alte Gewichte im Cache-API-Speicher liegen. hide()

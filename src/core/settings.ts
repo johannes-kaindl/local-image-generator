@@ -2,7 +2,7 @@
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
-import { DEFAULT_ASSET_BASE_URL, type BuiltinModelId } from "./model-manifest";
+import { DEFAULT_ASSET_BASE_URL, DEFAULT_BUILTIN_MODEL_ID, type BuiltinModelId } from "./model-manifest";
 import {
   arrayOf,
   arrayThen,
@@ -118,7 +118,9 @@ export const DEFAULT_SETTINGS: LigSettings = {
   mfluxPath: "",
   modelsDir: "",
   sectionsCollapsed: {},
-  builtinModel: "sd-turbo",
+  // Nicht als Literal: der Default steht in model-manifest.ts, und zwei Quellen fuer
+  // denselben Wert laufen beim naechsten Modellwechsel auseinander (Nachlese 0.9.0).
+  builtinModel: DEFAULT_BUILTIN_MODEL_ID,
   showModelPicker: false,
 };
 

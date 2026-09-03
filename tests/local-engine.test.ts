@@ -97,8 +97,14 @@ describe("LocalEngineBackend", () => {
     expect(log.filter((l) => l === "initRuntime")).toHaveLength(1);
     expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(4);
     expect(log).toContain(`buffer:${RUNTIME_WASM.key}`);
-    expect(log).toContain("buffer:sd-turbo/vae_encoder");
-    expect(log).toContain("text:sd-turbo/vocab");
+    // Keys aus dem Manifest ableiten, nicht abschreiben — die Zeile darueber macht es mit
+    // `RUNTIME_WASM.key` schon richtig, diese beiden hingen als Literale daneben (Nachlese
+    // 0.9.0). Ein Literal prueft nicht mit, wenn sich der Schluesselaufbau aendert: es bricht
+    // zwar, aber es kann auch gegen einen laengst veralteten Schluessel gruen bleiben, solange
+    // die Engine ihn zufaellig noch bildet.
+    const sd = BUILTIN_MODELS["sd-turbo"];
+    expect(log).toContain(`buffer:${sd.parts.vaeEncoder.file.key}`);
+    expect(log).toContain(`text:${sd.parts.tokenizer.vocab.key}`);
     expect(phases[0]).toBe("loading-model");
     expect(be.loaded).toBe(true);
     const before = log.length;
