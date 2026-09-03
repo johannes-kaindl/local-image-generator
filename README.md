@@ -256,9 +256,11 @@ line and settings both show the server's active model name once connected.
   discrete GPUs. Disk and peak GPU memory depend on which model you pick:
   **SD-Turbo** needs ≈ 2.6 GB of disk and roughly 4 GB of free memory while
   an image is being made; **SDXL-Turbo** needs ≈ 7.1 GB of disk, and briefly
-  needs about *double* that in GPU memory the first time its session is
-  built (the weights sit in both the JS heap and on the GPU until loading
-  finishes) — roughly 13 GB peak. That can get tight on a 16 GB machine. The
+  needs about *double* that while its session is built for the first time
+  (the weights sit in the JS heap **and** on the GPU until loading finishes)
+  — roughly 13 GB peak. On Apple Silicon, where CPU and GPU share one pool,
+  those 13 GB come out of the same memory; on a discrete GPU the JS half sits
+  in host RAM instead. That can get tight on a 16 GB machine. The
   panel tells you if the GPU does not qualify at all; the server mode is the
   way out then.
 - **Server mode:** any A1111-compatible local image server, running and

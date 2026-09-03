@@ -97,8 +97,14 @@ describe("LocalEngineBackend", () => {
     expect(log.filter((l) => l === "initRuntime")).toHaveLength(1);
     expect(log.filter((l) => l.startsWith("session:"))).toHaveLength(4);
     expect(log).toContain(`buffer:${RUNTIME_WASM.key}`);
-    expect(log).toContain("buffer:sd-turbo/vae_encoder");
-    expect(log).toContain("text:sd-turbo/vocab");
+    // Keys aus dem Manifest ableiten, nicht abschreiben — die Zeile darueber macht es mit
+    // `RUNTIME_WASM.key` schon richtig, diese beiden hingen als Literale daneben (Nachlese
+    // 0.9.0). Ein Literal prueft nicht mit, wenn sich der Schluesselaufbau aendert: es bricht
+    // zwar, aber es kann auch gegen einen laengst veralteten Schluessel gruen bleiben, solange
+    // die Engine ihn zufaellig noch bildet.
+    const sd = BUILTIN_MODELS["sd-turbo"];
+    expect(log).toContain(`buffer:${sd.parts.vaeEncoder.file.key}`);
+    expect(log).toContain(`text:${sd.parts.tokenizer.vocab.key}`);
     expect(phases[0]).toBe("loading-model");
     expect(be.loaded).toBe(true);
     const before = log.length;
@@ -254,6 +260,51 @@ describe("LocalEngineBackend", () => {
     expect(sessionCalls).toContain(ROLE_BYTES.vaeEncoder);
   });
 
+  // Nachlese 0.9.0: das Fabrik-Routing (`kind: "sdxl"` → SdxlTurboEngine) war ungetestet.
+  // ⚠️ Die naheliegende Assertion waere bedeutungslos: „liefert 512x512" gilt fuer BEIDE
+  // Engines und war genau das Verhalten, das der C1-Bug erzeugte. Gemessen wird deshalb der
+  // einzige von aussen sichtbare Unterschied, den keine falsch geroutete Engine nachmachen
+  // kann: SDXL braucht ZWEI Text-Encoder und ruft beide auf. Eine faelschlich gebaute
+  // SdTurboEngine liesse den zweiten unberuehrt — und faende ihn gar nicht erst in ihren
+  // Sessions.
+  it("routet kind:sdxl auf eine Engine, die BEIDE Text-Encoder benutzt", async () => {
+    const gerufen: string[] = [];
+    const deps = makeDeps([]);
+    const ROLE_BYTES = { textEncoder: 21, textEncoder2: 22, unet: 23, vaeDecoder: 24, vaeEncoder: 25 } as const;
+    const model = BUILTIN_MODELS["sdxl-turbo"];
+    if (model.kind !== "sdxl") throw new Error("unreachable: sdxl-turbo ist immer kind sdxl");
+    deps.store = {
+      getBuffer: async (f: AssetFile) => {
+        for (const [rolle, bytes] of Object.entries(ROLE_BYTES)) {
+          const teil = (model.parts as Record<string, { file?: AssetFile }>)[rolle];
+          if (teil?.file?.key === f.key) return new ArrayBuffer(bytes);
+        }
+        return new ArrayBuffer(1);
+      },
+      getText: async (f: AssetFile) =>
+        f.key.endsWith("/vocab") || f.key.endsWith("/vocab_2") ? JSON.stringify({ "hund</w>": 1 }) : "#version\n",
+    } as unknown as ModelStore;
+    const protokolliert = (name: string, s: Session): Session => ({
+      ...s,
+      run: async (f) => { gerufen.push(name); return s.run(f); },
+    });
+    const byRole: Record<string, Session> = {
+      textEncoder: protokolliert("textEncoder", multiSessionOf(hiddenOutputs(13, 768))),
+      textEncoder2: protokolliert("textEncoder2", multiSessionOf({ ...hiddenOutputs(33, 1280), text_embeds: [1, 1280] })),
+      unet: multiSessionOf({ out_sample: [1, 4, 4, 4] }),
+      vaeDecoder: multiSessionOf({ sample: [1, 3, 8, 8] }),
+      vaeEncoder: multiSessionOf({ latent_parameters: [1, 8, 4, 4] }),
+    };
+    deps.createSession = async (buf) => {
+      const role = Object.entries(ROLE_BYTES).find(([, len]) => len === buf.byteLength)?.[0];
+      return role ? byRole[role]! : byRole.vaeDecoder!;
+    };
+    const be = new LocalEngineBackend(deps, model);
+    await be.generate({ ...req, width: 1024, height: 1024 });
+    expect(gerufen).toContain("textEncoder");
+    expect(gerufen).toContain("textEncoder2");
+  });
+
   it("dispose gibt die Sessions frei; danach lädt generate neu", async () => {
     const log: string[] = [];
     const deps = makeDeps(log);
@@ -320,9 +371,19 @@ describe("LocalEngineBackend", () => {
     };
     const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sdxl-turbo"]);
     await be.generate(reqOf("hund")).catch(() => undefined);
-    expect(seen.map((s) => s.path)).toEqual(
-      BUILTIN_MODELS["sdxl-turbo"].parts.unet.data.map((d) => d.path.split("/").pop()),
-    );
+    const buckets = BUILTIN_MODELS["sdxl-turbo"].parts.unet.data;
+    // Der VERTRAG statt der Formel: die Erwartung hier hat bis 2026-09-03 denselben Ausdruck
+    // gebaut wie die Implementierung (`path.split("/").pop()`) — ein Test, der die
+    // Implementierung spiegelt, faellt mit ihr gemeinsam um. Gemessen wird deshalb, was ORT
+    // verlangt (AGENTS-Gotcha): ein reiner DATEINAME, kein Ordner, und weder Cache-Schluessel
+    // noch HF-Pfad. Reichte man einen davon durch, faende ORT die Bucket-Daten nicht — mit
+    // einer Meldung, die nach einem Datenfehler aussieht, nicht nach einem Pfadfehler.
+    expect(seen).toHaveLength(buckets.length);
+    for (const s of seen) expect(s.path).not.toContain("/");
+    expect(seen.map((s) => s.path)).not.toEqual(buckets.map((d) => d.key));
+    expect(seen.map((s) => s.path)).not.toEqual(buckets.map((d) => d.path));
+    // Die REIHENFOLGE ist Teil des Vertrags: sie muss der Manifest-Reihenfolge folgen.
+    for (const [i, s] of seen.entries()) expect(buckets[i]!.path.endsWith(`/${s.path}`)).toBe(true);
   });
 
   it("monolithische Modelle bekommen kein externalData", async () => {

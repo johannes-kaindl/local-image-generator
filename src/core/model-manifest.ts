@@ -216,8 +216,18 @@ export function legacyCacheKey(f: AssetFile): string {
   return `https://lig-asset.invalid/${legacyPart}/${f.sha256.slice(0, 16)}/${base}`;
 }
 
+/** Alles, was ein Lauf mit diesem Modell braucht: dessen Dateien PLUS die Runtime-WASM.
+ *  `assetsFor` traegt die WASM bewusst nicht (sie gehoert keinem Modell — daran haengt, dass
+ *  `removeModel()` sie stehen laesst und dass die Modell-Groessenzeile sie nicht mitzaehlt),
+ *  also musste jeder Aufrufer sie anhaengen: acht Stellen, jede eine Gelegenheit, es zu
+ *  vergessen (Nachlese 0.9.0). Ein vergessenes `RUNTIME_WASM` faellt nicht als Fehler auf,
+ *  sondern als zu kleine Zahl in einer Groessenangabe. */
+export function filesFor(id: BuiltinModelId): AssetFile[] {
+  return [...assetsFor(id), RUNTIME_WASM];
+}
+
 export function allAssets(): AssetFile[] {
-  return [...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM];
+  return filesFor(DEFAULT_BUILTIN_MODEL_ID);
 }
 
 export function totalBytes(files: readonly AssetFile[]): number {

@@ -156,9 +156,15 @@ export async function runDiffusion(
     const sigma = schedule.sigmas[i]!;
     const scaled = scaleInput(latents, sigma);
     const unetOut = await unet.run({
+      // Spread ZUERST: die beiden Kern-Feeds gewinnen gegen einen Aufrufer, der `sample` oder
+      // `timestep` in `extraFeeds` mitschickt. Andersherum ueberschriebe er still die
+      // gemeinsame Konstruktion samt der 0-d-`timestep`-Regel (dims [1] bricht das UNet mit
+      // „Gemm: must be 2 dimensional") — ein Modellabbruch weit weg von seiner Ursache.
+      // Kein heutiger Aufrufer tut das; die Reihenfolge ist der billige Teil der Vorsorge,
+      // festgenagelt in tests/engine.test.ts (Nachlese 0.9.0).
+      ...extraFeeds,
       sample: floatFeed(unet, "sample", scaled, latentDims),
       timestep: timestepFeed(unet, "timestep", schedule.timesteps[i]!),
-      ...extraFeeds,
     });
     const noisePred = toF32(firstOutput(unet, unetOut));
     const stepNoise = gaussianArray(seed + 1000 + i, n); // Ancestral-Noise, seed-abgeleitet

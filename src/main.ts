@@ -12,10 +12,10 @@ import { buildImageNote } from "./core/note";
 import { isOutOfMemoryError } from "./core/engine-errors";
 import {
   assetsFor,
+  filesFor,
   BUILTIN_MODELS,
   DEFAULT_BUILTIN_MODEL_ID,
   modelById,
-  RUNTIME_WASM,
   missingBytes,
   totalBytes,
   type AssetFile,
@@ -315,7 +315,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *  refreshEngineState()/startDownload(). removeModel() nutzt bewusst NUR assetsFor(id): die
    *  Runtime gehoert keinem Modell allein und darf beim Loeschen eines Modells nicht mit weg. */
   private activeFiles(): AssetFile[] {
-    return [...assetsFor(this.settings.builtinModel), RUNTIME_WASM];
+    return filesFor(this.settings.builtinModel);
   }
 
   /** Welche eingebauten Modelle vollstaendig im Cache liegen — fuer den Settings-Tab (Task 11),
@@ -429,7 +429,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.cancelDownload();
       const e = this.localEngine;
       this.localEngine = null;
-      void e?.dispose();
+      // AWAIT, nicht `void`: die GPU-Sessions sind erst danach wirklich frei. Das
+      // strukturgleiche `setBuiltinModel()`/`removeModel()` wartet schon immer — die zwei
+      // liefen auseinander (Nachlese 0.9.0), und die wartende Fassung ist die richtige:
+      // wer direkt danach in den builtin-Modus zurueckwechselt, baut sonst eine zweite
+      // Session neben einer noch nicht freigegebenen auf.
+      await e?.dispose();
       await this.checkServer();
     } else {
       await this.refreshEngineState();

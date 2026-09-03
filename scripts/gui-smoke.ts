@@ -97,7 +97,7 @@ import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
 import { buildHerkunft, requireEigenerBuild } from "../../tools/obsidian-cdp/vault.js";
 import { SIZES, STEPS } from "../src/core/generation";
-import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, cacheKey, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
+import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, cacheKey, filesFor, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
 import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
 import { formatBytes } from "../src/core/viewmodel";
 import { registerI18n } from "../src/i18n/strings";
@@ -151,7 +151,16 @@ function istFehler(text: string): boolean {
   return praefix !== "" && text.startsWith(praefix);
 }
 
-/** Im Renderer: warten, bis `check()` wahr wird (Rendering ist asynchron). */
+/** Im Renderer: warten, bis `check()` wahr wird (Rendering ist asynchron).
+ *
+ * ⚠️ Zwei Dinge, die jeden treffen, der hiermit oder daneben Renderer-Code schreibt:
+ * 1. **Kein Backtick in Kommentaren innerhalb eines Renderer-Blocks.** Der Block IST ein
+ *    Template-Literal; ein Backtick beendet es, und der Fehler kommt als `TS1005` an ganz
+ *    anderer Stelle an. Zweimal passiert (2026-09-02, 2026-09-03).
+ * 2. **`waitFor` erzeugt ein `return`** und ist damit nur als LETZTE Anweisung eines
+ *    evaluate-Blocks brauchbar. Wer danach im selben Durchlauf weitermessen muss, schreibt
+ *    zurecht eine eigene Schleife (siehe Punkt 20) — das ist kein Rückstand.
+ */
 const waitFor = (body: string, timeoutMs = 8000): string => `
   const deadline = Date.now() + ${timeoutMs};
   while (Date.now() < deadline) {
@@ -164,6 +173,14 @@ const waitFor = (body: string, timeoutMs = 8000): string => `
 
 /**
  * Node-seitiges Warten für alles, was länger dauern kann als ein CDP-Aufruf leben darf.
+ *
+ * ⚠️ **Namensgleich mit `pollUntil` aus der zentralen Brücke, aber NICHT dasselbe** — und das
+ * ist die Falle, nicht die Doppelung. Die zentrale Fassung nimmt `(cdp, ausdruck)` und liefert,
+ * sobald der Ausdruck truthy wird; diese hier nimmt eine `read`-Funktion und ein `done`-PRÄDIKAT
+ * und kann deshalb auf Bedingungen warten, die kein truthy-Wert ausdrückt (`kind === "ready" ||
+ * kind === "error"`), und meldet alle 15 s, worauf sie wartet. 20 Aufrufe hängen daran. Wer sie
+ * durch den Import ersetzt, weil der Name gleich ist, bricht sie alle — die richtige Bewegung
+ * wäre umgekehrt: diese Form in die Brücke heben (Kit-Kandidat, im Dach vermerkt).
  *
  * ABWEICHUNG zur 3d-codeblocks-Vorlage (Material für die spätere Kit-Extraktion): dort
  * genügt `waitFor` im Renderer, weil jede Prüfung in Millisekunden fällt. Hier dauert eine
@@ -344,7 +361,7 @@ const NAME_28 = "28. Eine Teil-Nachladung nennt die FEHLENDEN Bytes, nicht die G
  *  Der Punkt raeumt selbst auf: er laedt die entfernte Datei danach wieder und stellt `ready`
  *  her, weil die Punkte danach sie brauchen. */
 async function runPartialDownloadCheck(cdp: Cdp): Promise<void> {
-  const files = [...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM];
+  const files = filesFor(DEFAULT_BUILTIN_MODEL_ID);
   const encoder = assetsFor(DEFAULT_BUILTIN_MODEL_ID).find((f) => f.key.includes("vae_encoder"));
   if (!encoder) {
     skip(NAME_28, `kein vae_encoder in assetsFor(${DEFAULT_BUILTIN_MODEL_ID}) — Manifest umbenannt?`);
@@ -486,7 +503,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // Teil-Nachladung und schrieb „Fehlende 2.6 GB herunterladen" — wahr und irrefuehrend
     // zugleich. Hier steht die Erwartung, die das ausschliesst; die Teil-Formulierung misst
     // Punkt 28 an dem Zustand, der sie verdient.
-    const ctaErwartet = t("empty.downloadCta", formatBytes(totalBytes([...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM])));
+    const ctaErwartet = t("empty.downloadCta", formatBytes(totalBytes(filesFor(DEFAULT_BUILTIN_MODEL_ID))));
     record(
       "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
       st?.kind === "not-downloaded" && status13 === notDownloaded && negHidden && ctaLabel === ctaErwartet,
@@ -517,7 +534,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // Frist proportional zum Modell — Punkt 13 hat es oben auf DEFAULT_BUILTIN_MODEL_ID
     // (sd-turbo) ETABLIERT, hier nicht erneut aus data.json lesen. Siehe downloadDeadlineMs()
     // für die Herleitung.
-    const downloadDeadline14 = downloadDeadlineMs(totalBytes([...assetsFor(DEFAULT_BUILTIN_MODEL_ID), RUNTIME_WASM]));
+    const downloadDeadline14 = downloadDeadlineMs(totalBytes(filesFor(DEFAULT_BUILTIN_MODEL_ID)));
     await clickReal(cdp, `document.querySelector(".lig-empty button")`);
     let sawProgress = false;
     const done14 = await pollUntil(
@@ -1251,7 +1268,7 @@ function mockAssetCounts(): Record<string, number> | null {
  *  (`t("settings.model.name", label, formatBytes(totalBytes(modelFiles(id))))`) — dieselbe
  *  Quelle wie das Plugin selbst, kein zweiter, driftender Erwartungswert im Treiber. */
 function modelRowName(id: BuiltinModelId): string {
-  const bytes = totalBytes([...assetsFor(id), RUNTIME_WASM]);
+  const bytes = totalBytes(filesFor(id));
   return t("settings.model.name", BUILTIN_MODELS[id].label, formatBytes(bytes));
 }
 
@@ -1351,6 +1368,11 @@ async function runModelSwitchCheck(cdp: Cdp): Promise<void> {
     const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype, "value").set;
     setter.call(select, ${JSON.stringify(other)});
     select.dispatchEvent(new Event("change", { bubbles: true }));
+    // Eigene Warteschleife statt des waitFor-Helfers derselben Datei — kein Versehen
+    // (Nachlese 0.9.0 fuehrte es als eines): waitFor erzeugt ein return, ist also nur als
+    // LETZTE Anweisung eines evaluate-Blocks verwendbar. Hier wird danach weitergearbeitet
+    // (die alte Zeile muss zusätzlich als ABWESEND gemessen und der Settings-Dialog geschlossen
+    // werden), und beides gehört in denselben Renderer-Durchlauf wie der Wechsel.
     let nachherAlle = vorherAlle;
     const grenze = Date.now() + 8000;
     while (Date.now() < grenze) {
@@ -1506,10 +1528,23 @@ async function runModelPickerCheck(cdp: Cdp, assetsBase: string, generateTimeout
   if (an1 !== "none") teile.push(`ein geladenes Modell: display ${an1} (erwartet none)`);
   if (an2 === "none" || an2 === null) teile.push(`zwei geladene Modelle: display ${an2} (erwartet sichtbar)`);
 
+  // Die Beschriftung (seit 2026-09-03) muss GENAUSO verschwinden wie das Dropdown. Ein Label
+  // ohne sein Bedienelement ist schlimmer als gar keines — es behauptet eine Einstellung, die
+  // nicht da ist. Deshalb hier mitgemessen und nicht in einem eigenen Punkt: die beiden gehoeren
+  // zusammen, und getrennte Punkte koennten auseinanderlaufen, ohne dass einer rot wird.
+  const labelAn = await displayOf(".lig-model-pick-label");
+  await setPicker(false);
+  const labelAus = await displayOf(".lig-model-pick-label");
+  await setPicker(true);
+  if (labelAn === "none" || labelAn === null) teile.push(`Beschriftung bei sichtbarem Picker: display ${labelAn} (erwartet sichtbar)`);
+  if (labelAus !== "none") teile.push(`Beschriftung bei verborgenem Picker: display ${labelAus} (erwartet none)`);
+
   record(
     NAME,
     teile.length === 0,
-    teile.length === 0 ? `aus:${aus} · 1 Modell:${an1} · 2 Modelle:${an2}` : teile.join(" · "),
+    teile.length === 0
+      ? `aus:${aus} · 1 Modell:${an1} · 2 Modelle:${an2} · Label an:${labelAn}/aus:${labelAus}`
+      : teile.join(" · "),
   );
 }
 
@@ -2081,9 +2116,9 @@ async function main(): Promise<void> {
       );
     }
 
-    const plugin = await cdp.evaluate<{ ok: boolean; version?: string; endpoint?: string }>(`
+    const plugin = await cdp.evaluate<{ ok: boolean; version?: string }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-      return p ? { ok: true, version: p.manifest.version, endpoint: p.settings.endpoint } : { ok: false };
+      return p ? { ok: true, version: p.manifest.version } : { ok: false };
     `);
     if (!plugin.ok) throw new Error(`Plugin ${PLUGIN_ID} ist nicht aktiv. Erst \`npm run deploy\`.`);
     // ⚠️ `plugin.manifest.version` meldet den VAULT-START, nicht die Datei auf Platte:
@@ -2119,7 +2154,18 @@ async function main(): Promise<void> {
     if (reloaded === null) throw new Error(`Plugin ${PLUGIN_ID} kam nach dem Neuladen nicht zurueck.`);
     console.log("Plugin neu geladen — gemessen wird der deployte Stand");
 
-    const endpoint = (plugin.endpoint ?? "").trim();
+    // NACH dem Reload lesen, nicht davor. Der Wert oben stammt aus der Plugin-Instanz, die beim
+    // letzten Fensterstart geladen wurde — wer die Settings zwischen zwei Laeufen aendert (etwa
+    // den Endpunkt eintraegt), bekaeme hier einen Abbruch, obwohl der Wert laengst in der
+    // data.json steht. Und der naechste Lauf ginge „von selbst" durch, was die Ursache
+    // verschleiert. Dieselbe Lesson, die dieser Treiber zwanzig Zeilen weiter oben selbst
+    // zitiert: den Pruefling HERSTELLEN, dann messen — das gilt fuer seine Einstellungen genauso
+    // wie fuer seinen Code (Nachlese 0.9.0).
+    const endpoint = (
+      await cdp.evaluate<string>(`
+        return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.settings?.endpoint ?? "";
+      `)
+    ).trim();
     if (endpoint === "") throw new Error("Kein Server-Endpunkt in den Plugin-Settings — erst in den Settings eintragen.");
 
     // Die Sprache des Wirts übernehmen, damit die Label-Vergleiche unten gegen genau die

@@ -326,4 +326,31 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     const expected = scaleInput(new Float32Array([2 * vaeScaling + noise0 * sigma]), sigma)[0]!;
     expect(seenFirstSample[0]![0]).toBeCloseTo(expected, 4);
   });
+
+  // Nachlese 0.9.0: beide Wuerfe waren ungetestet. Sie sind die Umsetzung der
+  // Wirf-nicht-verschlechtere-Doktrin dieses Moduls (wie `pickHidden`): ein falscher Rang oder
+  // zwei ungleiche seq-Laengen wuerden sonst still ein schlechteres Bild erzeugen statt eines
+  // Fehlers — und ein stiller Qualitaetsverlust ist genau das, was hier niemand merken wuerde.
+  it("wirft, wenn ein hidden_states-Ausgang nicht Rang 3 hat, statt still 0 zu ergaenzen", async () => {
+    const rec: Rec = { feeds: [] };
+    const s = sessions(rec, 512);
+    // Rang 2 statt 3 — der vorletzte Ausgang des ERSTEN Encoders, also genau der genommene.
+    s.textEncoder = multiSession(rec, { ...hiddenOutputs(13, 77, 768), "hidden_states.11": [[77, 768], 11] });
+    const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
+    await expect(e.generate({ prompt: "hund", steps: 1, seed: 1, size: 512 })).rejects.toThrow(/Rang 3/);
+  });
+
+  it("wirft, wenn die seq-Laengen der beiden Encoder auseinanderlaufen", async () => {
+    const rec: Rec = { feeds: [] };
+    const s = sessions(rec, 512);
+    // 64 statt 77 beim ZWEITEN Encoder: `concatLastDim` bekaeme sonst zwei unvereinbare
+    // Laengen und liefe ueber den kuerzeren — ein halb gefuellter Kontext ohne Fehlerbild.
+    s.textEncoder2 = multiSession(rec, {
+      ...hiddenOutputs(33, 64, 1280),
+      text_embeds: [[1, 1280], 999],
+      last_hidden_state: [[1, 64, 1280], -1],
+    });
+    const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
+    await expect(e.generate({ prompt: "hund", steps: 1, seed: 1, size: 512 })).rejects.toThrow(/seq-Laenge weicht/);
+  });
 });

@@ -10,6 +10,7 @@ import {
   isBuiltinModelId,
   modelById,
   RUNTIME_WASM,
+  filesFor,
   missingBytes,
   totalBytes,
   type AssetFile,
@@ -127,5 +128,26 @@ describe("missingBytes", () => {
     // ueber die angefragte Liste rechnete, bekaeme hier eine negative oder zu kleine Zahl.
     const files = [datei("sd/unet", 500)];
     expect(missingBytes(files, ["sdxl/unet", "sdxl/vae"])).toBe(500);
+  });
+});
+
+describe("filesFor", () => {
+  // Die Komposition „Modell-Dateien PLUS Runtime-WASM" stand an acht Stellen (Nachlese 0.9.0).
+  // Getestet wird der VERTRAG, nicht die Zusammensetzung: `assetsFor` traegt die WASM
+  // absichtlich NICHT (sie gehoert keinem Modell — davon haengt ab, dass `removeModel()` sie
+  // stehen laesst und dass die Modell-Groessenzeile sie nicht mitzaehlt), `filesFor` traegt sie.
+  it("ergaenzt die Modell-Dateien um die Runtime-WASM, die assetsFor bewusst nicht traegt", () => {
+    for (const id of ["sd-turbo", "sdxl-turbo"] as const) {
+      const modell = assetsFor(id);
+      const alle = filesFor(id);
+      expect(modell.some((f) => f.key === RUNTIME_WASM.key)).toBe(false);
+      expect(alle.some((f) => f.key === RUNTIME_WASM.key)).toBe(true);
+      expect(alle.length).toBe(modell.length + 1);
+      expect(totalBytes(alle)).toBe(totalBytes(modell) + RUNTIME_WASM.bytes);
+    }
+  });
+
+  it("liefert fuer jedes Modell dessen eigene Dateien, nicht die des Defaults", () => {
+    expect(filesFor("sdxl-turbo").map((f) => f.key)).not.toEqual(filesFor("sd-turbo").map((f) => f.key));
   });
 });
