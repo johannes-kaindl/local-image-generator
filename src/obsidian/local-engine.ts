@@ -185,7 +185,12 @@ export class LocalEngineBackend implements ImageBackend {
     const ext = p.data.map((d, i) => {
       const bytes = data[i];
       if (bytes === undefined) throw new Error(`loadPart: fehlender Bucket-Puffer fuer "${d.path}"`);
-      return { path: d.path.split("/").pop() ?? d.path, data: bytes };
+      // `slice(lastIndexOf+1)` statt `split("/").pop() ?? d.path`: der Fallback dort war
+      // unerreichbar (split liefert nie ein leeres Array) und befriedigte nur die Typpruefung —
+      // eine tote Verzweigung, die aussieht, als gaebe es einen Fall dafuer. Diese Form braucht
+      // keine und ist fuer Pfade ohne "/" exakt dasselbe (lastIndexOf gibt -1, slice(0) den
+      // ganzen String). ORT verlangt hier den reinen DATEINAMEN (AGENTS-Gotcha).
+      return { path: d.path.slice(d.path.lastIndexOf("/") + 1), data: bytes };
     });
     // Wachhund (Spec §8 Punkt 2): `deps.createSession()` bekommt hoechstens
     // `SESSION_BUILD_TIMEOUT_MS`, bevor der Aufruf als haengend gilt. Ein spaetes Aufloesen

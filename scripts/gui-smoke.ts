@@ -151,7 +151,16 @@ function istFehler(text: string): boolean {
   return praefix !== "" && text.startsWith(praefix);
 }
 
-/** Im Renderer: warten, bis `check()` wahr wird (Rendering ist asynchron). */
+/** Im Renderer: warten, bis `check()` wahr wird (Rendering ist asynchron).
+ *
+ * ⚠️ Zwei Dinge, die jeden treffen, der hiermit oder daneben Renderer-Code schreibt:
+ * 1. **Kein Backtick in Kommentaren innerhalb eines Renderer-Blocks.** Der Block IST ein
+ *    Template-Literal; ein Backtick beendet es, und der Fehler kommt als `TS1005` an ganz
+ *    anderer Stelle an. Zweimal passiert (2026-09-02, 2026-09-03).
+ * 2. **`waitFor` erzeugt ein `return`** und ist damit nur als LETZTE Anweisung eines
+ *    evaluate-Blocks brauchbar. Wer danach im selben Durchlauf weitermessen muss, schreibt
+ *    zurecht eine eigene Schleife (siehe Punkt 20) — das ist kein Rückstand.
+ */
 const waitFor = (body: string, timeoutMs = 8000): string => `
   const deadline = Date.now() + ${timeoutMs};
   while (Date.now() < deadline) {
@@ -164,6 +173,14 @@ const waitFor = (body: string, timeoutMs = 8000): string => `
 
 /**
  * Node-seitiges Warten für alles, was länger dauern kann als ein CDP-Aufruf leben darf.
+ *
+ * ⚠️ **Namensgleich mit `pollUntil` aus der zentralen Brücke, aber NICHT dasselbe** — und das
+ * ist die Falle, nicht die Doppelung. Die zentrale Fassung nimmt `(cdp, ausdruck)` und liefert,
+ * sobald der Ausdruck truthy wird; diese hier nimmt eine `read`-Funktion und ein `done`-PRÄDIKAT
+ * und kann deshalb auf Bedingungen warten, die kein truthy-Wert ausdrückt (`kind === "ready" ||
+ * kind === "error"`), und meldet alle 15 s, worauf sie wartet. 20 Aufrufe hängen daran. Wer sie
+ * durch den Import ersetzt, weil der Name gleich ist, bricht sie alle — die richtige Bewegung
+ * wäre umgekehrt: diese Form in die Brücke heben (Kit-Kandidat, im Dach vermerkt).
  *
  * ABWEICHUNG zur 3d-codeblocks-Vorlage (Material für die spätere Kit-Extraktion): dort
  * genügt `waitFor` im Renderer, weil jede Prüfung in Millisekunden fällt. Hier dauert eine
@@ -1351,6 +1368,11 @@ async function runModelSwitchCheck(cdp: Cdp): Promise<void> {
     const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype, "value").set;
     setter.call(select, ${JSON.stringify(other)});
     select.dispatchEvent(new Event("change", { bubbles: true }));
+    // Eigene Warteschleife statt des waitFor-Helfers derselben Datei — kein Versehen
+    // (Nachlese 0.9.0 fuehrte es als eines): waitFor erzeugt ein return, ist also nur als
+    // LETZTE Anweisung eines evaluate-Blocks verwendbar. Hier wird danach weitergearbeitet
+    // (die alte Zeile muss zusätzlich als ABWESEND gemessen und der Settings-Dialog geschlossen
+    // werden), und beides gehört in denselben Renderer-Durchlauf wie der Wechsel.
     let nachherAlle = vorherAlle;
     const grenze = Date.now() + 8000;
     while (Date.now() < grenze) {

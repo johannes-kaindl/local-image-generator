@@ -49,7 +49,6 @@ def split_external_data(
     model = onnx.load(str(model_path), load_external_data=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    buckets: list[Path] = []
     handle = None
     offset = 0
     written: list[Path] = []
