@@ -2229,6 +2229,13 @@ async function main(): Promise<void> {
       // Gegriffen wird deshalb am Tab-Container selbst (fenster-unabhängig) und, für die Notice,
       // über alle beteiligten Dokumente. Geprüft wird dadurch unverändert die echte Kette:
       // Obsidians Settings-Maschine baut den Tab, wir klicken den echten Knopf.
+      // Die Herkunft einer Notice steht nicht im DOM — sie laesst sich aber aus der eigenen
+      // Textvorlage ABLEITEN statt duplizieren: `t(key, SENTINEL)` gespalten am Sentinel gibt
+      // genau das Praefix vor der Einsetzstelle ("Server OK — Modell: "). Das ist NICHT
+      // zirkulaer: die Herkunft erkennt das Praefix, gemessen wird der Modellname dahinter.
+      const SENTINEL = "\u0000";
+      const serverOkPrefix = t("notice.serverOk", SENTINEL).split(SENTINEL)[0] ?? "";
+      if (serverOkPrefix === "") throw new Error("notice.serverOk hat keine Einsetzstelle {0} mehr — Punkt 2 kann seine Notice nicht mehr zuordnen");
       const noticeText = await cdp.evaluate<string | null>(`
         app.setting.open();
         app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
@@ -2274,33 +2281,26 @@ async function main(): Promise<void> {
         button.click();
         ${waitFor(
           `
-          const neu = [];
+          const neu = [], fremde = [];
           for (const d of docs()) for (const n of d.querySelectorAll(".notice")) {
-            if (!vorher.has(n)) neu.push(n.textContent.trim());
+            if (vorher.has(n)) continue;
+            const text = n.textContent.trim();
+            (text.startsWith(${JSON.stringify(serverOkPrefix)}) || text === ${JSON.stringify(t("notice.serverFail"))} ? neu : fremde).push(text);
           }
-          return neu.length > 0 ? JSON.stringify(neu) : 0;
+          return neu.length > 0 ? JSON.stringify({ meine: neu, fremde }) : 0;
         `,
           15_000,
         )}
       `);
-      // Mehrere neue Notices im selben Zeitfenster heissen: ein fremdes Plugin hat dazwischen
-      // gemeldet. Dann wird der Punkt NICHT geraten — die Referenz nennt das "nicht
-      // entscheidbar", und das ist ehrlicher als ein Treffer per Textsuche (der Modellname ist
-      // genau das, was hier gemessen wird; ihn als Filter zu benutzen waere zirkulaer).
-      const neueNotices: string[] = noticeText === null ? [] : (JSON.parse(noticeText) as string[]);
-      if (neueNotices.length > 1) {
-        skip(
-          "2. „Verbindung testen“ meldet den Modellnamen des Servers",
-          `${neueNotices.length} neue Notices im Messfenster — fremdes Plugin hat mitgemeldet, Punkt nicht entscheidbar: ${JSON.stringify(neueNotices)}`,
-        );
-      } else {
-        const meine = neueNotices[0] ?? null;
-        record(
-          "2. „Verbindung testen“ meldet den Modellnamen des Servers",
-          meine !== null && meine.includes(expectedModel),
-          meine === null ? "keine Notice erschienen" : meine,
-        );
-      }
+      const gemeldet: { meine: string[]; fremde: string[] } =
+        noticeText === null ? { meine: [], fremde: [] } : (JSON.parse(noticeText) as { meine: string[]; fremde: string[] });
+      const meine = gemeldet.meine[0] ?? null;
+      const fremdHinweis = gemeldet.fremde.length > 0 ? ` · ${gemeldet.fremde.length} fremde Notice(s) ignoriert: ${JSON.stringify(gemeldet.fremde)}` : "";
+      record(
+        "2. „Verbindung testen“ meldet den Modellnamen des Servers",
+        meine !== null && meine.includes(expectedModel),
+        (meine === null ? "keine eigene Notice erschienen" : meine) + fremdHinweis,
+      );
       await cdp.evaluate(`app.setting.close(); return true;`);
 
       // --- 3. DER BEFUND: das Generate-Panel zeigt den echten Modellnamen -----

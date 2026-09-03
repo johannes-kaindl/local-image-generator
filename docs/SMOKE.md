@@ -408,6 +408,40 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-09-03 (nachts) · 0.11.1 · Staging-Vault · A1111-Mock (7861) · `--quick` **11/11 grün** — Notices sind eine geteilte Region
+
+Punkt 2 räumte vor dem Klick jede vorhandene `.notice` per `remove()` weg und las danach die
+erste im DOM. Der zweite Teil war bekannt (Dach-Task, 10 von 16 Treibern); **der erste ist der
+schlimmere und stand in keiner Task**: die Klasse gehört allen Plugins, das Leerräumen löscht
+also fremde Meldungen — an einer Instanz mit siebzehn offenen Fenstern ein Eingriff in eine
+fremde Session, den niemand bemerkt, weil der eigene Lauf danach grün ist.
+
+Drei Läufe, drei hergestellte Zustände:
+
+| Zustand | Erwartet | Gemessen |
+|---|---|---|
+| fremde Notice steht **vor** dem Klick da | Punkt grün, fremde Notice **unversehrt** | ✅ grün; danach im DOM nachgesehen: `{"fremd":1}` — sie lebt |
+| fremde Notice erscheint **im Messfenster** | Punkt grün, fremde ignoriert | ✅ „Server OK — Modell: mock-model.ckpt · 1 fremde Notice(s) ignoriert" |
+| kein Eingriff | Punkt grün, keine Hinweise | ✅ 11/11 |
+
+**Die zweite Gegenprobe hat die erste Lösung widerlegt** — der eigentliche Ertrag der Nacht. Der
+erste Entwurf sammelte alle *neuen* Notices und übersprang den Punkt als „nicht entscheidbar",
+wenn mehrere auftauchten (Referenzform aus `koda-agent`, `e907f4c`). Gemessen wurde er dabei
+**rot mit „fremde Meldung"**: das `waitFor` bricht bei der ersten neuen Notice ab, und eine
+fremde, die vor der eigenen erscheint, ist dann der einzige Treffer. Die
+„mehrere-neue"-Erkennung greift nur, wenn beide im selben Poll-Fenster landen — ein Zufall.
+
+Die tragfähige Lösung erkennt die **Herkunft**, und zwar ohne sie zu duplizieren: `t(key,
+SENTINEL)` am Sentinel gespalten liefert das Präfix vor der Einsetzstelle („Server OK — Modell:
+"). Der Punkt wartet auf eine Notice mit diesem Präfix (oder auf den `serverFail`-Text) und
+ignoriert alles andere, protokolliert es aber. Das ist **nicht** zirkulär: die Herkunft erkennt
+das Präfix, gemessen wird der Modellname dahinter. Bricht die Vorlage (kein `{0}` mehr), wirft
+der Treiber — eine stille Rückkehr zum Raten ist ausgeschlossen.
+
+⚠️ Falle des String-Splicing-Entwurfs, hier zum zweiten Mal: der Block steht **in** einem
+Template-Literal. Ein Backtick im Kommentar beendet es, und der Fehler kommt als `TS1005` an
+ganz anderer Stelle an. Steht jetzt als Warnung über dem Block.
+
 ### 2026-09-02 (abends) · 0.12-dev (Teil-Nachladung) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **32/32 grün** — und Punkt 13 hat den Fix korrigiert
 
 Neuer **Punkt 28**: er nimmt EINE Datei aus dem Cache (den `vae_encoder` — den echten
