@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **The model dropdown in the panel now has a visible label.** It sat unlabelled next to the
+  size dropdown, which has one — a control without an accessible label is the same problem as
+  an icon-only button. The label hides together with the dropdown: a label without its control
+  is worse than none, because it claims a setting that is not there.
+- **Switching from the built-in engine back to the server now waits for the GPU sessions to be
+  released** instead of letting the disposal run unobserved. Switching straight back would
+  otherwise build a second set of sessions alongside ones that were not free yet. The
+  equivalent path when changing models already waited; the two had drifted apart.
+
 ## [0.11.1] — 2026-09-02
 
 ### Fixed
