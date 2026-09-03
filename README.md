@@ -176,10 +176,38 @@ no progress (Draw Things has no progress endpoint) — show an indeterminate spi
 
 ## Installation
 
-1. Install and enable the plugin from Obsidian's Community Plugins browser
-   (or manually — see
-   [Releases](https://github.com/johannes-kaindl/local-image-generator/releases)).
-2. **Built-in engine (default):** open the generator and click **Download
+This plugin is **not distributed through the community store**. It lives on its own forge,
+and there are two ways to get it.
+
+**Recommended — via [AnySource Sideloader](https://git.jkaindl.de/jkaindl/anysource-sideloader)**,
+which installs and updates plugins from any git forge. Subscribe to this catalog once:
+
+```
+https://git.jkaindl.de/jkaindl/obsidian-plugin-catalog/raw/branch/main/catalog.json
+```
+
+Local Image Generator then appears in the sideloader's plugin list and updates like any other
+plugin — no manual copying, and every download is checksum-verified. To install just this one
+plugin without the catalog, add its repository URL as a source instead:
+`https://git.jkaindl.de/jkaindl/local-image-generator`.
+
+**By hand**, if you would rather not add another plugin:
+
+1. Download `main.js`, `manifest.json` and `styles.css` from the
+   [latest release](https://git.jkaindl.de/jkaindl/local-image-generator/releases).
+2. Copy them into `<vault>/.obsidian/plugins/local-image-generator/`.
+3. Obsidian → Settings → Community plugins → enable **Local Image Generator**.
+
+Updates then have to be repeated by hand — the sideloader route exists to avoid exactly that.
+
+> [!warning] BRAT does not work for this plugin right now
+> BRAT installs from GitHub, and this project's GitHub mirror is not publicly readable at the
+> moment — the account is flagged, so anonymous requests get a 404. The sideloader route above
+> does not depend on GitHub at all.
+
+Once installed:
+
+1. **Built-in engine (default):** open the generator and click **Download
    model** — or do it from **Settings → Local Image Generator → Engine**.
    The button names the size of the currently selected model (SD-Turbo,
    ≈ 2.6 GB, by default); pick SDXL-Turbo there first if you want the

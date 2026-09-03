@@ -42,8 +42,15 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   (`johannes-kaindl/local-image-generator-models`, per `HF_MODELS_REPO` ueberschreibbar).
   **Der Namespace ist eine Vertrauenszusage, kein Detail:** die URL steht als Platzhalter der
   Settings-Zeile „Download source" im Bild, und wer 2,6 GB laedt, gleicht den Namen mit dem
-  Plugin-Autor ab — er ist deshalb seit 2026-08-21 identisch mit dem GitHub-Profil, auf das
-  `authorUrl` zeigt. Das alte `v6t2b9/…` bleibt online: `assetBaseUrl` ist ein GESPEICHERTES
+  Plugin-Autor ab — er wurde deshalb am 2026-08-21 auf `johannes-kaindl` gezogen, damals
+  identisch mit dem GitHub-Profil.
+  ⚠️ **Diese Kopplung ist seit 2026-09-03 gebrochen, und das ist in Ordnung:** `authorUrl` zeigt
+  jetzt auf `https://git.jkaindl.de/jkaindl`, weil das GitHub-Konto geflaggt und anonym 404 ist.
+  **HuggingFace ist davon NICHT betroffen** — eigener Dienst, eigenes Konto; das Modell-Repo
+  antwortet unveraendert (gemessen 2026-09-03: 200 auf das Repo, 307 aufs CDN). Der HF-Namespace
+  bleibt deshalb, wie er ist: ein Umzug wuerde jede Bestandsinstallation ins Leere laden
+  (`assetBaseUrl` ist ein gespeichertes Setting, s. u.) und loeste ein Problem, das es nicht
+  gibt. Das alte `v6t2b9/…` bleibt online: `assetBaseUrl` ist ein GESPEICHERTES
   Setting, eine 0.6.0-Installation traegt die alte URL in ihrer `data.json` und wuerde nach
   einem Repo-Umzug ins Leere laden.
   Nach jedem `onnxruntime-web`-Upgrade: `npm run assets` + Manifest mitcommitten, WASM neu
@@ -426,6 +433,22 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   fuer Panel und API, und eine Doppel-Zeitstempel-Setzung wuerde die zwei berichten
   unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
   Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
+
+## Vertrieb: Sideloader statt Community-Store (seit 2026-09-02)
+
+Das GitHub-Konto ist geflaggt (anonym 404), alle Plugins sind aus dem Community-Store geflogen.
+**Der Vertriebsweg ist seither der eigene:** `anysource-sideloader` installiert aus Releases
+jeder Forge, dieses Plugin steht im Katalog
+`git.jkaindl.de/jkaindl/obsidian-plugin-catalog` (`catalog.json`), und `npm run release`
+erzeugt den noetigen Forgejo-Release mit `main.js`/`manifest.json`/`styles.css`/`checksums.sha256`
+von sich aus. **Ein Release ist deshalb NICHT mehr zu blockieren, nur weil GitHub zu ist** —
+0.11.1 und 0.11.2 sind so ausgeliefert worden.
+
+⚠️ **Was weiterhin gesperrt bleibt: der Rescan im Developer Dashboard.** Ein Scan ohne
+GitHub-Release meldet „Unable to find a release with the tag" und gilt als DURCHGEFALLEN — das
+nimmt das Plugin binnen 24 h aus der Store-Suche. Der Abschnitt unten beschreibt also einen Weg,
+der derzeit nicht offen ist; er bleibt stehen, weil die gemessenen Kostensaetze weiter gelten,
+falls das Konto wieder freigegeben wird.
 
 ## Store-Scorecard (gemessen 2026-08-30, Release 0.10.0)
 
