@@ -162,15 +162,43 @@ das Plugin wurde zwischen deinem `generate()`- und `save()`-Aufruf deaktiviert).
 
 ## Installation
 
-1. Das Plugin über Obsidians Community-Plugin-Browser installieren und aktivieren (oder
-   manuell — siehe
-   [Releases](https://github.com/johannes-kaindl/local-image-generator/releases)).
-2. **Eingebaute Engine (Standard):** den Generator öffnen und **Modell herunterladen**
+Dieses Plugin wird **nicht über den Community-Store verteilt**. Es liegt auf einer eigenen
+Forge, und es gibt zwei Wege dorthin.
+
+**Empfohlen — über den [AnySource Sideloader](https://git.jkaindl.de/jkaindl/anysource-sideloader)**,
+der Plugins von jeder git-Forge installiert und aktuell hält. Diesen Katalog einmal abonnieren:
+
+```
+https://git.jkaindl.de/jkaindl/obsidian-plugin-catalog/raw/branch/main/catalog.json
+```
+
+Local Image Generator taucht danach in der Plugin-Liste des Sideloaders auf und aktualisiert
+sich wie jedes andere Plugin — kein Kopieren von Hand, und jeder Download wird gegen seine
+Prüfsumme geprüft. Wer nur dieses eine Plugin will, trägt statt des Katalogs seine
+Repository-URL als Quelle ein: `https://git.jkaindl.de/jkaindl/local-image-generator`.
+
+**Von Hand**, wer sich kein weiteres Plugin dafür installieren möchte:
+
+1. `main.js`, `manifest.json` und `styles.css` aus dem
+   [letzten Release](https://git.jkaindl.de/jkaindl/local-image-generator/releases) laden.
+2. Nach `<vault>/.obsidian/plugins/local-image-generator/` kopieren.
+3. Obsidian → Einstellungen → Community-Plugins → **Local Image Generator** aktivieren.
+
+Aktualisieren heißt dann: dasselbe noch einmal. Genau dafür gibt es den Sideloader-Weg.
+
+> [!warning] BRAT funktioniert für dieses Plugin derzeit nicht
+> BRAT installiert von GitHub, und der GitHub-Spiegel dieses Projekts ist momentan nicht
+> öffentlich lesbar — das Konto ist geflaggt, anonyme Zugriffe bekommen ein 404. Der
+> Sideloader-Weg oben hängt gar nicht von GitHub ab.
+
+Nach der Installation:
+
+1. **Eingebaute Engine (Standard):** den Generator öffnen und **Modell herunterladen**
    klicken — oder in **Einstellungen → Local Image Generator → Engine**. Der Knopf nennt
    die Größe des gerade gewählten Modells (Vorgabe SD-Turbo, ≈ 2,6 GB); dort zuerst
    SDXL-Turbo wählen, wenn stattdessen das schärfere, größere Modell gewünscht ist. Sobald
    der Status *Bereit* meldet, generieren. Das ist die ganze Einrichtung.
-3. **Lieber ein Server?** **Engine** auf *Server (Draw Things / A1111)* stellen, die URL
+2. **Lieber ein Server?** **Engine** auf *Server (Draw Things / A1111)* stellen, die URL
    des Servers unter **Server-Endpunkt** eintragen und **Verbindung testen** klicken.
 
 <p align="center">
