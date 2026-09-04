@@ -45,7 +45,9 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Plugin-Autor ab — er wurde deshalb am 2026-08-21 auf `johannes-kaindl` gezogen, damals
   identisch mit dem GitHub-Profil.
   ⚠️ **Diese Kopplung ist seit 2026-09-03 gebrochen, und das ist in Ordnung:** `authorUrl` zeigt
-  jetzt auf `https://git.jkaindl.de/jkaindl`, weil das GitHub-Konto geflaggt und anonym 404 ist.
+  seit 2026-09-04 auf `https://jkaindl.de`, weil das GitHub-Konto geflaggt und anonym 404 ist
+  (Zwischenstand 2026-09-03 war `git.jkaindl.de/jkaindl` — die Domain gewinnt, weil sie nicht an
+  einem Git-Host-Pfad haengt; gemessen 2026-09-04: 200).
   **HuggingFace ist davon NICHT betroffen** — eigener Dienst, eigenes Konto; das Modell-Repo
   antwortet unveraendert (gemessen 2026-09-03: 200 auf das Repo, 307 aufs CDN). Der HF-Namespace
   bleibt deshalb, wie er ist: ein Umzug wuerde jede Bestandsinstallation ins Leere laden
@@ -443,6 +445,15 @@ jeder Forge, dieses Plugin steht im Katalog
 erzeugt den noetigen Forgejo-Release mit `main.js`/`manifest.json`/`styles.css`/`checksums.sha256`
 von sich aus. **Ein Release ist deshalb NICHT mehr zu blockieren, nur weil GitHub zu ist** —
 0.11.1 und 0.11.2 sind so ausgeliefert worden.
+
+**Seit 2026-09-04 ist der Ausstieg vollzogen, nicht nur beschrieben:** das `github`-Remote ist
+entfernt und `npm run release` faehrt fest mit `--no-github` (im `package.json` verdrahtet, nicht
+als Tipp-Disziplin). ⚠️ **Die Reihenfolge ist Teil der Sache:** ohne das Flag ist ein fehlendes
+`github`-Remote ein HARTER ABBRUCH von `release.mjs` — wer nur das Remote loescht, zerstoert die
+Releases. Erst das Flag, dann das Remote. Im Dach steht das Repo dafuer in
+`tools/mirror_drift_check.py::AUSNAHMEN`; ein fehlender Mirror ist hier kein Drift, sondern der
+Zielzustand. `.github/workflows/release.yml` bleibt liegen (Byte-Gleichheit bewacht
+`tools/template_drift_check.py`) — sie laeuft nur nicht mehr.
 
 ⚠️ **Was weiterhin gesperrt bleibt: der Rescan im Developer Dashboard.** Ein Scan ohne
 GitHub-Release meldet „Unable to find a release with the tag" und gilt als DURCHGEFALLEN — das
