@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { makeSchedule, scaleInput, schedulerStep } from "../src/core/pipeline/scheduler";
+import { denoiseEntry, makeSchedule, scaleInput, schedulerStep } from "../src/core/pipeline/scheduler";
 
 describe("scheduler (Euler-Ancestral, sd-turbo)", () => {
   it("initNoiseSigma ≈ 14.6146 (Golden-Wert aus dem MS-Demo)", () => {
@@ -28,5 +28,86 @@ describe("scheduler (Euler-Ancestral, sd-turbo)", () => {
     const prev = schedulerStep(modelOutput, sample, 0, s.sigmas, noise);
     const predOriginal = 1.0 - s.sigmas[0]! * 0.5;
     expect(Math.abs(prev[0]! - predOriginal)).toBeLessThan(1e-4);
+  });
+});
+
+describe("denoiseEntry — Einstiegspunkt fuer Teil-Denoising", () => {
+  const sched = (steps: number) => makeSchedule(steps);
+
+  // ---- R1 aus der Spec: Rasterwerte muessen EXAKT bleiben. Ohne diesen Test ist die
+  // Zusage „alte Rezepte reproduzieren sich unveraendert" eine Behauptung.
+  it.each([
+    [4, 0.25, 3], [4, 0.5, 2], [4, 0.75, 1], [4, 1.0, 0],
+    [8, 0.125, 7], [8, 0.5, 4], [8, 0.625, 3], [8, 1.0, 0],
+  ])("steps=%i d=%f trifft Index %i exakt (kein Bruchteil)", (steps, d, erwartet) => {
+    const s = sched(steps);
+    const e = denoiseEntry(steps, d, s.sigmas, s.timesteps);
+    expect(e.startAt).toBe(erwartet);
+    expect(e.sigma).toBe(s.sigmas[erwartet]);      // identisch, nicht nur nah
+    expect(e.timestep).toBe(s.timesteps[erwartet]);
+  });
+
+  // ---- Der eigentliche Zugewinn: Zwischenwerte
+  it("interpoliert zwischen zwei Sigma-Stufen", () => {
+    const s = sched(4);
+    // d = 0.625 → t = (1-0.625)*4 = 1.5 → Anker 1, Bruchteil 0.5
+    const e = denoiseEntry(4, 0.625, s.sigmas, s.timesteps);
+    expect(e.startAt).toBe(1);
+    expect(e.sigma).toBeCloseTo((s.sigmas[1]! + s.sigmas[2]!) / 2, 10);
+    expect(e.sigma).not.toBe(s.sigmas[1]);
+    expect(e.sigma).not.toBe(s.sigmas[2]);
+  });
+
+  it("interpoliert den Timestep mit, nicht nur die Sigma", () => {
+    // Sonst bekommt das UNet den Timestep des Ankers, waehrend der Rauschpegel
+    // dazwischen liegt — ein Konditionierungsfehler von bis zu einem halben Schritt.
+    const s = sched(4);
+    const e = denoiseEntry(4, 0.625, s.sigmas, s.timesteps);
+    expect(e.timestep).toBe(Math.round((s.timesteps[1]! + s.timesteps[2]!) / 2));
+  });
+
+  it("ist monoton: mehr denoising heisst hoehere Sigma", () => {
+    const s = sched(8);
+    const werte = [0.2, 0.3, 0.45, 0.6, 0.8, 1.0]
+      .map((d) => denoiseEntry(8, d, s.sigmas, s.timesteps).sigma);
+    for (let i = 1; i < werte.length; i++) expect(werte[i]!).toBeGreaterThan(werte[i - 1]!);
+  });
+
+  // ---- Raender
+  it("klemmt den Anker auf steps-1, damit der Rest-Zeitplan nie leer ist", () => {
+    const s = sched(4);
+    // d = 0 hiesse t = 4, also Index 4 — dort gibt es keinen timestep mehr.
+    const e = denoiseEntry(4, 0, s.sigmas, s.timesteps);
+    expect(e.startAt).toBe(3);
+  });
+
+  it("liefert bei denoising 0 Sigma 0 — das Bild bleibt praktisch unveraendert", () => {
+    // Bewusste Verhaltensaenderung gegenueber denoiseRaster (bis 0.11): dort blieb bei
+    // d=0 Restrauschen uebrig (sigmas[steps-1]), waehrend der gemeldete Wert 0 lautete.
+    // „denoising 0 heisst nichts veraendern" ist die Semantik des Server-Modus (A1111);
+    // die alte Fassung war die unehrlichere.
+    const s = sched(4);
+    const e = denoiseEntry(4, 0, s.sigmas, s.timesteps);
+    expect(e.startAt).toBe(3);
+    expect(e.sigma).toBe(0);
+    expect(e.timestep).toBe(0);
+  });
+
+  it("interpoliert am letzten Anker gegen sigma 0 und timestep 0", () => {
+    const s = sched(4);
+    // d = 0.125 → t = 3.5 → Anker 3, Bruchteil 0.5, Nachfolger ist das Folgen-Ende.
+    const e = denoiseEntry(4, 0.125, s.sigmas, s.timesteps);
+    expect(e.startAt).toBe(3);
+    expect(e.sigma).toBeCloseTo(s.sigmas[3]! / 2, 10);   // gegen sigmas[4] === 0
+    expect(e.timestep).toBe(Math.round(s.timesteps[3]! / 2));
+  });
+
+  it("steps=1 macht den Regler echt statt einpositionig", () => {
+    const s = sched(1);
+    const voll = denoiseEntry(1, 1.0, s.sigmas, s.timesteps);
+    const halb = denoiseEntry(1, 0.5, s.sigmas, s.timesteps);
+    expect(voll.startAt).toBe(0);
+    expect(halb.startAt).toBe(0);
+    expect(halb.sigma).toBeLessThan(voll.sigma);   // frueher identisch
   });
 });
