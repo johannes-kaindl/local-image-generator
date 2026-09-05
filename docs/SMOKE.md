@@ -408,6 +408,46 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-09-05 · 0.12-dev (img2img-Steuerung A+B) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **34/34 grün**, zwei neue Punkte mit Gegenprobe
+
+Task 7 des Plans `2026-09-05-img2img-steuerung-plan`: Tasks 1–4 haben den Steps-Katalog auf
+`max: 8` erweitert (statt 4), `denoiseEntry` interpolieren lassen, `hardenParams` reicht
+`denoising` seither unquantisiert durch, und `controls.denoiseRaster`/`rasterFor()` sind
+ersatzlos entfernt (der Denoise-Regler nutzt seither konstant `DENOISING.min`/`.step`, nicht
+mehr `1/steps`). Zwei neue Punkte messen das am Wirt:
+
+- **29. Steps-Regler erreicht 8.** Gemessen am gerenderten `max`-Attribut von `.lig-steps`
+  (nicht am Zustand) — direkt nach dem Umschalten auf „Eingebaut“, unabhängig vom GPU-Zustand,
+  weil `stepsMax` rein aus dem Katalog kommt (`backendCapabilities`).
+- **30. Denoise-Wert (0.6) kommt UNVERÄNDERT in der Ergebnis-Notiz an.** Baut auf dem Bild aus
+  Punkt 15 auf: „als Vorlage“ (`.lig-init-from-result`) speichert es und macht es zur Vorlage,
+  danach ist `.lig-denoise` sichtbar. Regler auf 0.6, „Generieren“, „Speichern & als Vorlage“
+  (Knopf-Label `generate.button.create`) — Ergebnis-Notiz gelesen, `denoising:`-Zeile geprüft.
+  Bis 0.11 hätte hier 0.75 gestanden (1/steps-Raster).
+
+**Beide Gegenproben rot gesehen, danach zurückgenommen (`git diff` leer):**
+
+| Eingriff | Ergebnis |
+|---|---|
+| `sd-turbo.steps.max` in `model-manifest.ts` auf `4` zurückgesetzt | `✗ 29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1) — max=4` |
+| in `params.ts` nach `const rawDenoising = …` die Quantisierung wieder eingebaut: `const denoising = rawDenoising === null ? null : Math.round(rawDenoising * steps) / steps;` | `✗ 30. Denoise-Wert (0.6) kommt UNVERAENDERT in der Ergebnis-Notiz an — 4 s · denoising: 0.5 in der Notiz` (0.6 aufs 1/4-Raster gerundet) |
+
+**Dritter Befund, kein neuer Punkt, sondern eine Reparatur an Punkt 17.** Dessen
+Denoise-Raster-Teilmessung (seit 2026-08-31) prüfte genau die jetzt entfernte Kopplung: Steps
+4→3 sollte den Denoise-Regler auf ein 1/3-Raster ziehen. Nach Task 4 ist das Gegenteil richtig
+— eine Steps-Änderung darf `.lig-denoise` gar nicht mehr anfassen —, und der erste volle Lauf
+dieser Runde bestätigte das als echten Fund, nicht als Treiber-Defekt: `✗ 17 … Denoise-Raster
+(Steps 4→3): min/step 0/0.05 (erwartet 0.3333…), value 0.75 (erwartet 0.6666…)`. Die
+Teilmessung ist umgedreht: Steps 4→3, Denoise auf 0.75, danach müssen min/step/value/Beschriftung
+unverändert bleiben (`0`/`0.05`/`0.75`/„0.75"). Kein Treiber-Nebenbefund im Sinne von
+`docs/SMOKE.md`s sonstigen Einträgen — die Reparatur folgt direkt aus der in Task 4
+dokumentierten Verhaltensänderung, nicht aus einem Bug im Treiber selbst.
+
+Punkte **26/27** (RMSE zur Vorlage, die Regressionsbremse für den Engine-Umbau) blieben in
+allen drei vollen Läufen dieser Runde unverändert grün (SD-Turbo 10.0/51.2, SDXL-Turbo
+9.1/46.5 — identisch zum 2026-08-31-Lauf): der Umbau von Task 1–4 hat die Bildwirkung nicht
+verändert.
+
 ### 2026-09-03 · 0.11.1 + Nachlese · Staging-Vault · beide Mocks · **32/32 grün**, Punkt 21 mit Gegenprobe
 
 Das Modell-Dropdown im Panel hatte keine sichtbare Beschriftung, während das Größen-Dropdown

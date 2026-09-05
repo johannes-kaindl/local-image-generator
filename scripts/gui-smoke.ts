@@ -96,7 +96,7 @@ import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
 import { buildHerkunft, requireEigenerBuild } from "../../tools/obsidian-cdp/vault.js";
-import { SIZES, STEPS } from "../src/core/generation";
+import { DENOISING, SIZES, STEPS } from "../src/core/generation";
 import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, cacheKey, filesFor, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
 import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
 import { formatBytes } from "../src/core/viewmodel";
@@ -108,6 +108,10 @@ const PLUGIN_ID = "local-image-generator";
  *  Konstante, weil ein abweichend getippter Name den Punkt aus der Abschlusszeile fallen
  *  liesse, ohne dass irgendetwas rot wird. */
 const NAME_18D = "18d. generate() im builtin-Modus laedt ohne Klick KEIN Byte";
+/** Namen von Punkt 29/30 — an mehreren Stellen gebraucht (Messung + Auslass-Pfade), aus
+ *  demselben Grund wie NAME_18D. */
+const NAME_29 = "29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1)";
+const NAME_30 = "30. Denoise-Wert (0.6) kommt UNVERAENDERT in der Ergebnis-Notiz an";
 /** Zielordner für Bild + Ergebnis-Notiz. Wird angelegt und am Ende wieder entfernt
  *  (außer mit `--keep`) — so muss der Treiber keine Dateien aus fremden Ordnern fischen. */
 const SMOKE_FOLDER = "_lig-gui-smoke";
@@ -460,9 +464,19 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       }
       return true;
     `);
+
+    // --- 29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1) --------------
+    // Unabhaengig vom GPU-Zustand: stepsMax kommt aus backendCapabilities(mode, builtinModel)
+    // (src/core/generation.ts) und damit rein aus dem Katalog (model-manifest.ts), nicht aus
+    // dem GPU-Check — deshalb hier gemessen, VOR dem `gpu-checking`-Poll. Am gerenderten
+    // ATTRIBUT, nicht am Zustand: beide Anzeigefehler vom 2026-08-21 waren nur ueber die
+    // gerenderte Darstellung sichtbar (AGENTS.md-Gotcha zum Steps-Regler).
+    const stepsMax29 = await cdp.evaluate<string>(`return document.querySelector(".lig-steps")?.getAttribute("max") ?? "";`);
+    record(NAME_29, stepsMax29 === "8", `max=${stepsMax29}`);
+
     let st = await pollUntil(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", 500);
     if (st?.kind === "gpu-missing") {
-      record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24 gegenstandslos`);
+      record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24, 30 gegenstandslos`);
       for (const n of [
         "14. Download über den Panel-Knopf endet auf „bereit“",
         "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
@@ -470,6 +484,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         NAME_18D,
         "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
         NAME_28,
+        NAME_30,
       ])
         skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
       return;
@@ -518,6 +533,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       skip(NAME_18D, "Vorbedingung 13 nicht erreicht");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
       skip(NAME_28, "Vorbedingung 13 nicht erreicht");
+      skip(NAME_30, "Vorbedingung 13 nicht erreicht");
       return;
     }
 
@@ -565,6 +581,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
       skip(NAME_28, "Vorbedingung 14 nicht erreicht");
+      skip(NAME_30, "Vorbedingung 14 nicht erreicht");
       return;
     }
 
@@ -652,6 +669,95 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       );
     } else {
       skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
+    }
+
+    // --- 30. Denoise-Wert kommt UNVERAENDERT in der Ergebnis-Notiz an ----------
+    // Kern von Teil B am Wirt (Task 3: hardenParams reicht `denoising` seit dem Umbau
+    // unquantisiert durch, Task 4 hat `rasterFor()`/`controls.denoiseRaster` entfernt). Ein
+    // Unit-Test sieht die Haertung, nicht den Weg bis in die Notiz — bis 0.11 stand hier 0.75
+    // statt des am Regler eingestellten Werts (Quantisierung auf ein 1/steps-Raster).
+    // Baut auf dem Bild von Punkt 15 auf statt einen eigenen Lauf zu generieren: „als
+    // Vorlage" (`.lig-init-from-result`) speichert es und macht es zur Vorlage — danach ist
+    // der Denoise-Regler sichtbar (`controls.denoising` haengt an einer gesetzten Vorlage).
+    if (image15 !== null && !istFehler(image15.status)) {
+      await clickReal(cdp, `document.querySelector(".lig-init-from-result")`);
+      const denoiseSichtbar = await pollUntil(
+        () =>
+          cdp.evaluate<boolean>(`
+            const el = document.querySelector(".lig-denoise");
+            return !!el && getComputedStyle(el).display !== "none";
+          `),
+        (v) => v === true,
+        15_000,
+        "warte auf den sichtbaren Denoise-Regler",
+        500,
+      );
+      if (denoiseSichtbar !== true) {
+        record(NAME_30, false, "Denoise-Regler wurde nach „als Vorlage“ nicht sichtbar — Vorlage nicht gesetzt?");
+      } else {
+        await cdp.evaluate(`
+          const den = document.querySelector(".lig-denoise");
+          den.value = "0.6"; den.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        `);
+        const notesBefore30 = await cdp.evaluate<number>(
+          `return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`,
+        );
+        const imageBefore30 = await cdp.evaluate<string>(
+          `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
+        );
+        const t30 = Date.now();
+        await clickReal(cdp, `document.querySelector(".lig-generate")`);
+        const image30 = await pollUntil(
+          () =>
+            cdp.evaluate<{ length: number; status: string; sig: string }>(`
+              const img = document.querySelector(".lig-image");
+              const status = document.querySelector(".lig-status-text");
+              return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
+            `),
+          (r) => (r.length > 5000 && r.sig !== imageBefore30 && r.status === readyText) || istFehler(r.status),
+          generateTimeoutMs,
+          "warte auf das Bild des Denoise-Laufs",
+          500,
+        );
+        if (image30 === null || istFehler(image30.status)) {
+          record(
+            NAME_30,
+            false,
+            image30 === null ? "kein Bild innerhalb der Frist" : `Lauf gescheitert, gemeldet vom Plugin: „${image30.status}“`,
+          );
+        } else {
+          const createLabel = t("generate.button.create");
+          await cdp.evaluate(`
+            const button = [...document.querySelectorAll(".lig-actions button")].find((b) => b.textContent.trim() === ${JSON.stringify(createLabel)});
+            if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
+            button.click(); return true;
+          `);
+          const body30 = await pollUntil(
+            () =>
+              cdp.evaluate<string | null>(`
+                const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
+                if (files.length <= ${notesBefore30}) return null;
+                files.sort((a, b) => b.stat.ctime - a.stat.ctime);
+                return await app.vault.cachedRead(files[0]);
+              `),
+            (b) => b !== null,
+            60_000,
+            "warte auf die Ergebnis-Notiz (Denoise-Lauf)",
+            1000,
+          );
+          const denoisingLine = body30?.match(/^denoising:\s*(.+)$/m)?.[1]?.trim() ?? null;
+          record(
+            NAME_30,
+            denoisingLine === "0.6",
+            body30 === null
+              ? "keine Notiz innerhalb der Frist"
+              : `${Math.round((Date.now() - t30) / 1000)} s · denoising: ${denoisingLine ?? "(fehlt)"} in der Notiz`,
+          );
+        }
+      }
+    } else {
+      skip(NAME_30, "Vorbedingung 15 nicht erreicht (kein Bild)");
     }
 
     // --- 28. Teil-Nachladung ---------------------------------------------------
@@ -792,13 +898,12 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
   await setzeModus("builtin");
   const drin = await reglerSicht(cdp);
 
-  // Erweiterung 2026-08-31 (Task-5-Review F1): der Denoise-Raster-Block des Panels steht auf
-  // der Zusage, dass der Browser den value eines range-Inputs bei einer min/step-Aenderung
-  // NEU rastet und die Beschriftung bedingungslos nachgezogen wird — fuer max ist das seit
-  // 2026-08-21 gemessen, fuer step war es bis hier nur aus der HTML-Spec abgeleitet. Messung:
-  // im builtin-Modus Steps auf 4, Denoise auf 0.75 (liegt auf dem 0.25er-Raster), dann Steps
-  // auf 3 — das Raster wird 1/3, der Browser muss 0.75 auf 2/3 ziehen (0.75 liegt naeher an
-  // 2/3 als an 1: kein Gleichstand), die Beschriftung muss "0.67" zeigen.
+  // Bis 0.11 stand hier eine Messung, dass der Browser den Denoise-Regler bei einer
+  // Steps-Aenderung NEU rastert (min/step liefen bis dahin auf 1/steps). Task 4
+  // (0.12-img2img-Steuerung) hat genau diese Kopplung ERSATZLOS entfernt: min/step kommen
+  // seither immer aus `DENOISING.min`/`DENOISING.step` (0 und 0.05), unabhaengig vom
+  // Steps-Regler. Die Messung prueft jetzt das GEGENTEIL — die neue Zusage —: eine
+  // Steps-Aenderung veraendert min/step/value/Beschriftung des Denoise-Reglers NICHT.
   const denoiseVorLauf = await cdp.evaluate<string>(`
     const steps = document.querySelector(".lig-steps");
     const den = document.querySelector(".lig-denoise");
@@ -844,18 +949,21 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
   if (nichtDa.length > 0) teile.push(`server bleibt weg: ${nichtDa.map((r) => r.sel).join(", ")}`);
   if (stepsSchief.length > 0) teile.push(`Steps-Beschriftung ≠ Regler: ${stepsSchief.map((s) => `„${s.anzeige}" bei value ${s.wert} (max ${s.max})`).join(", ")}`);
   if (!geklemmt) teile.push(`Steps wurde nicht geklemmt (${vorher.steps.wert} → max ${drin.steps.max}) — die Beschriftung ist damit ungeprüft`);
-  const drittel = String(1 / 3);
+  // Seit 0.12 (Task 4): min/step bleiben KONSTANT (DENOISING.min/step), unabhaengig von
+  // Steps — eine Aenderung der Steps darf den Denoise-Regler nicht mehr anfassen.
+  const dMin = String(DENOISING.min);
+  const dStep = String(DENOISING.step);
   const rasterSchief: string[] = [];
-  if (raster.min !== drittel || raster.step !== drittel) rasterSchief.push(`min/step ${raster.min}/${raster.step} (erwartet ${drittel})`);
-  if (Math.abs(Number(raster.wert) - 2 / 3) > 1e-6) rasterSchief.push(`value ${raster.wert} (erwartet ${2 / 3} — der Browser hat bei der step-Aenderung nicht neu gerastet)`);
-  if (raster.anzeige !== Number(raster.wert).toFixed(2)) rasterSchief.push(`Beschriftung „${raster.anzeige}" ≠ ${Number(raster.wert).toFixed(2)}`);
-  if (rasterSchief.length > 0) teile.push(`Denoise-Raster (Steps 4→3): ${rasterSchief.join(", ")}`);
+  if (raster.min !== dMin || raster.step !== dStep) rasterSchief.push(`min/step ${raster.min}/${raster.step} (erwartet ${dMin}/${dStep} — konstant seit Task 4)`);
+  if (raster.wert !== "0.75") rasterSchief.push(`value ${raster.wert} (erwartet 0.75 — eine Steps-Aenderung darf den Denoise-Wert nicht mehr veraendern)`);
+  if (raster.anzeige !== "0.75") rasterSchief.push(`Beschriftung „${raster.anzeige}" ≠ 0.75`);
+  if (rasterSchief.length > 0) teile.push(`Denoise-Regler auf Steps-Aenderung reagiert (sollte seit Task 4 nicht mehr): ${rasterSchief.join(", ")}`);
 
   record(
     "17. Die modusabhängigen Regler sind auch GERENDERT weg — und kommen zurück",
     teile.length === 0,
     teile.length === 0
-      ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max} · Denoise-Raster 4→3: value ${raster.wert} → „${raster.anzeige}"`
+      ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max} · Denoise unveraendert bei Steps 4→3: min/step ${raster.min}/${raster.step}, value ${raster.wert} → „${raster.anzeige}"`
       : teile.join(" · "),
   );
 }
@@ -2798,6 +2906,8 @@ async function main(): Promise<void> {
           NAME_18D,
           "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
           NAME_28,
+          NAME_29,
+          NAME_30,
           ...ZWEITE_STUFE,
         ])
           skip(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);
