@@ -19,7 +19,10 @@ export const DEFAULT_SIZE: SizeOption = SIZES[0]!;
 export const STEPS = { min: 1, max: 50, default: 20 } as const;
 export const CFG = { min: 1, max: 15, step: 0.5, default: 7 } as const;
 /** Wieviel das Backend an einer Vorlage aendern darf (A1111: `denoising_strength`).
- *  0 = Vorlage bleibt, 1 = quasi freie Erzeugung. Nur im img2img-Fall ueberhaupt gesetzt. */
+ *  0 = Vorlage bleibt UNVERAENDERT, 1 = quasi freie Erzeugung. Nur im img2img-Fall ueberhaupt
+ *  gesetzt. Der linke Anschlag ist kein Sonderfall der UI: die eingebauten Engines
+ *  ueberspringen bei 0 den Diffusions-Lauf und dekodieren das Vorlagen-Latent direkt (ein
+ *  Euler-Schritt mit Sigma 0 waere eine Division durch null — K1, 2026-09-05). */
 export const DENOISING = { min: 0, max: 1, step: 0.05, default: 0.75 } as const;
 
 /** Was ein Backend EHRLICH kann (Keine-Attrappen-Linie aus 0.2). Einzige Quelle: das

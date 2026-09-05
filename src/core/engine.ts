@@ -264,12 +264,25 @@ export class SdTurboEngine implements BuiltinEngine {
       let init: { latents: Float32Array; startAt: number } | undefined;
       if (req.initPixels) {
         const entry = denoiseEntry(req.steps, req.denoising ?? 1, schedule.sigmas, schedule.timesteps);
+        const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, IMAGE_SIZE, VAE_SCALING);
+        if (entry.sigma === 0) {
+          // „denoising 0 heisst nichts veraendern" — im WORTSINN, nicht als Rauschpegel 0 in
+          // einer Formel, die durch ihn teilt. `schedulerStep` rechnet `sigmaUp` und
+          // `derivative` bei Sigma 0 als 0/0, also NaN; `chwToRgba` klemmt NaN auf 0 und
+          // liefert ein komplett schwarzes Bild OHNE Fehler (K1, Final-Review 2026-09-05).
+          // Deshalb entfaellt der Diffusions-Lauf ganz und das encodierte Vorlagen-Latent
+          // geht direkt in den Decoder. Erreichbar ist der Fall ueber DENOISING.min (linker
+          // Regler-Anschlag) und ueber die Provider-API — ein reiner UI-Riegel genuegte nicht.
+          // Fortschritt in derselben Form wie am Ende eines echten Laufs (total/total), damit
+          // ein Aufrufer nicht in einem halben Zustand haengenbleibt.
+          onProgress?.(1, 1);
+          return await decodeLatents(this.sessions.vaeDecoder, encoded, latentDims, VAE_SCALING, IMAGE_SIZE, req.seed);
+        }
         // Die FOLGE anpassen, nicht nur das Latent: schedulerStep und die Schleife in
         // runDiffusion lesen Sigma und Timestep selbst aus dem Zeitplan. `schedule` ist
         // pro Lauf frisch aus makeSchedule — die Mutation trifft niemanden sonst.
         schedule.sigmas[entry.startAt] = entry.sigma;
         schedule.timesteps[entry.startAt] = entry.timestep;
-        const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, IMAGE_SIZE, VAE_SCALING);
         init = { latents: noisedInitLatents(encoded, req.seed, entry.sigma), startAt: entry.startAt };
       }
 

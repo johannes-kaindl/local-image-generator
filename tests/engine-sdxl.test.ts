@@ -434,4 +434,45 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     const expected = scaleInput(new Float32Array([noised0]), entry.sigma)[0]!;
     expect(firstSample[0]).toBeCloseTo(expected, 4);
   });
+
+  it("denoising 0: kein UNet-Schritt, keine NaN — die Vorlage wird direkt dekodiert", async () => {
+    // K1 (Final-Review 2026-09-05) — Zwilling des gleichnamigen Tests in tests/engine.test.ts.
+    // Der Defekt sitzt im geteilten `schedulerStep`, also traegt ihn JEDE Engine: bei Sigma 0
+    // sind `sigmaUp` und `derivative` NaN, `chwToRgba` macht daraus ein komplett schwarzes
+    // Bild ohne Fehlermeldung. Ein Test in nur einer der beiden Engines haette die andere
+    // beim naechsten Umbau ungedeckt gelassen.
+    const rec: Rec = { feeds: [] };
+    const s = sessions(rec, 512);
+    // Echo-Decoder: reicht die Latents in die Bildkanaele durch, damit ein NaN-Latent auch
+    // als schwarzes Bild ankommt. Der Standard-Fake liefert konstant 0 und waere blind.
+    const latentFeeds: Float32Array[] = [];
+    s.vaeDecoder = {
+      inputNames: ["latent_sample"],
+      outputNames: ["sample"],
+      inputTypes: {},
+      run: async (feeds) => {
+        rec.feeds.push(feeds);
+        const lat = feeds["latent_sample"]!.data as Float32Array;
+        latentFeeds.push(lat);
+        const out = new Float32Array(3 * 512 * 512);
+        for (let i = 0; i < out.length; i++) out[i] = lat[i % lat.length]!;
+        return { sample: { data: out, dims: [1, 3, 512, 512] } };
+      },
+      release: async () => {},
+    };
+    const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
+    const progress: Array<[number, number]> = [];
+    const res = await e.generate(
+      { prompt: "hund", steps: 4, seed: 9, size: 512, initPixels: new Float32Array(3 * 512 * 512), denoising: 0 },
+      (step, total) => progress.push([step, total]),
+    );
+
+    // UNet-Feeds tragen "timestep" — dieselbe Unterscheidung wie in den Nachbartests.
+    expect(rec.feeds.filter((f) => "timestep" in f)).toHaveLength(0);
+    const lat = latentFeeds[0]!;
+    expect(lat.length).toBeGreaterThan(0);
+    expect(Array.from(lat).some((v) => Number.isNaN(v))).toBe(false);
+    expect(Array.from(res.rgba.subarray(0, 3 * 64)).some((v) => v !== 0)).toBe(true);
+    expect(progress.at(-1)).toEqual([1, 1]);
+  });
 });

@@ -81,16 +81,44 @@ describe("denoiseEntry — Einstiegspunkt fuer Teil-Denoising", () => {
     expect(e.startAt).toBe(3);
   });
 
-  it("liefert bei denoising 0 Sigma 0 — das Bild bleibt praktisch unveraendert", () => {
-    // Bewusste Verhaltensaenderung gegenueber denoiseRaster (bis 0.11): dort blieb bei
-    // d=0 Restrauschen uebrig (sigmas[steps-1]), waehrend der gemeldete Wert 0 lautete.
-    // „denoising 0 heisst nichts veraendern" ist die Semantik des Server-Modus (A1111);
-    // die alte Fassung war die unehrlichere.
+  it("liefert bei denoising 0 Sigma 0 — den Fall faengt die ENGINE ab, nicht diese Formel", () => {
+    // Was diese Zusicherung sagt und was nicht: die FORMEL liefert bei d=0 Sigma 0, das ist
+    // die korrekte Interpolation bis ans Folgen-Ende. Sie sagt NICHT, dass ein Lauf mit
+    // diesem Wert rechenbar waere — eine frueherer Fassung dieses Kommentars behauptete
+    // „der Lauf rechnet einen Schritt ohne Wirkung", und genau das ist falsch:
+    // `schedulerStep` teilt bei Sigma 0 zweimal durch null (`sigmaUp`, `derivative`), die
+    // Latents werden NaN und `chwToRgba` macht daraus ein komplett schwarzes Bild ohne
+    // Fehlermeldung (K1, Final-Review 2026-09-05).
+    //
+    // „denoising 0 heisst nichts veraendern" bleibt die Semantik (A1111, Server-Modus) und
+    // ist gegenueber denoiseRaster (bis 0.11, dort blieb Restrauschen bei gemeldetem Wert 0)
+    // weiterhin die ehrlichere. Eingeloest wird sie in den ENGINES: bei Sigma 0 entfaellt der
+    // Diffusions-Lauf, das encodierte Vorlagen-Latent geht direkt in den Decoder — gedeckt von
+    // „denoising 0: kein UNet-Schritt, keine NaN" in tests/engine.test.ts UND
+    // tests/engine-sdxl.test.ts.
     const s = sched(4);
     const e = denoiseEntry(4, 0, s.sigmas, s.timesteps);
     expect(e.startAt).toBe(3);
     expect(e.sigma).toBe(0);
     expect(e.timestep).toBe(0);
+  });
+
+  it("denoising ausserhalb [0,1]: negativ landet auf demselben Sigma 0, ueber 1 auf dem vollen Rauschen", () => {
+    // Vorgezogener Kleinbefund (Final-Review): `hardenParams` klemmt auf [0,1], aber
+    // `denoiseEntry` ist eine pure Funktion und wird von den Engines direkt gefuettert
+    // (`req.denoising ?? 1`) — ein Aufrufer ohne Haertung ist also denkbar. Die beiden
+    // `frac`-/`startAt`-Klemmen fangen das ab, und zwar so, dass d<0 in DENSELBEN Sigma-0-Fall
+    // laeuft wie d=0: damit deckt der Engine-Fix aus K1 auch ihn.
+    const s = sched(4);
+    const negativ = denoiseEntry(4, -0.5, s.sigmas, s.timesteps);
+    expect(negativ.startAt).toBe(3);
+    expect(negativ.sigma).toBe(0);
+    expect(negativ.timestep).toBe(0);
+
+    const ueberEins = denoiseEntry(4, 1.5, s.sigmas, s.timesteps);
+    const voll = denoiseEntry(4, 1, s.sigmas, s.timesteps);
+    expect(ueberEins).toEqual(voll);
+    expect(ueberEins.sigma).toBe(s.sigmas[0]);
   });
 
   it("interpoliert am letzten Anker gegen sigma 0 und timestep 0", () => {

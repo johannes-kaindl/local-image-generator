@@ -89,8 +89,11 @@ describe("SdTurboEngine", () => {
   it("img2img: Fortschritt ist RELATIV zum Einstiegspunkt, nicht zur vollen Schrittzahl", async () => {
     // Review-Fund F1: (i - startAt + 1, timesteps.length - startAt) war ungetestet — die
     // Mutation zu (i + 1, timesteps.length) liess alle bisherigen Tests gruen, weil sie nur
-    // txt2img (startAt immer 0) melden. Bei denoiseRaster(4, 0.5) → tStart 2 laufen nur 2 von
-    // 4 UNet-Schritten; die Meldung muss [1,2],[2,2] sein, NICHT [3,4],[4,4].
+    // txt2img (startAt immer 0) melden. Bei denoiseEntry(4, 0.5, …) → startAt 2 laufen nur 2
+    // von 4 UNet-Schritten; die Meldung muss [1,2],[2,2] sein, NICHT [3,4],[4,4].
+    // (Bis 0.11 stand hier `denoiseRaster(4, 0.5) → tStart 2` — die Funktion gibt es seit dem
+    // Umbau nicht mehr, der Einstiegspunkt kommt aus `denoiseEntry`. Bei d=0.5 und steps=4
+    // faellt er exakt auf einen Anker, die Zahl 2 gilt also unveraendert weiter.)
     const engine = new SdTurboEngine(fakeSessions([]), tokData);
     const progress: Array<[number, number]> = [];
     await engine.generate(
@@ -286,6 +289,56 @@ describe("SdTurboEngine", () => {
     expect(gesehen[0]).toBe(erwartet.timestep);
     expect(gesehen[0]).not.toBe(sched.timesteps[erwartet.startAt]);
     expect(gesehen).toHaveLength(steps - erwartet.startAt);
+  });
+  it("denoising 0: kein UNet-Schritt, keine NaN — die Vorlage wird direkt dekodiert", async () => {
+    // K1 (Final-Review 2026-09-05). `denoiseEntry(steps, 0, …)` liefert per Formel Sigma 0
+    // (der linke Regler-Anschlag, DENOISING.min). Genau dieses Sigma teilt `schedulerStep`
+    // zweimal durch sich selbst — `sigmaUp = sqrt((0·(0−0))/0)` und `derivative = 0/0` sind
+    // beide NaN, und `chwToRgba` schreibt NaN in ein Uint8ClampedArray, was 0 ergibt: ein
+    // komplett schwarzes Bild OHNE jeden Fehler. Bis 0.11 gab es den Fall nicht (der alte
+    // `denoiseRaster` klemmte auf tStart = steps−1); der Umbau hat ihn eingefuehrt.
+    //
+    // „denoising 0 heisst nichts veraendern" bleibt die Zusage — sie wird nur wirklich
+    // eingeloest: der Diffusions-Lauf entfaellt, das encodierte Vorlagen-Latent geht direkt
+    // in den VAE-Decoder. Gemessen wird das ERGEBNIS (Decoder-Feed ohne NaN, Bild nicht
+    // schwarz), nicht der Rueckgabetyp — ein `Uint8ClampedArray` kann gar kein NaN tragen.
+    const log: string[] = [];
+    const s = fakeSessions(log);
+    // Echo-Decoder statt des konstanten Fakes: er reicht die Latents in die Bildkanaele
+    // durch, damit ein NaN-Latent auch als schwarzes Bild ankommt (float32-IO, damit der
+    // Feed ohne f16-Umweg pruefbar bleibt).
+    const latentFeeds: Float32Array[] = [];
+    s.vaeDecoder = {
+      inputNames: ["latent_sample"],
+      outputNames: ["sample"],
+      inputTypes: { latent_sample: "float32" },
+      run: async (feeds) => {
+        log.push("vae");
+        const lat = feeds["latent_sample"]!.data as Float32Array;
+        latentFeeds.push(lat);
+        const out = new Float32Array(3 * 512 * 512);
+        for (let i = 0; i < out.length; i++) out[i] = lat[i % lat.length]!;
+        return { sample: { data: out, dims: [1, 3, 512, 512] } };
+      },
+      release: async () => {},
+    };
+    const engine = new SdTurboEngine(s, tokData);
+    const progress: Array<[number, number]> = [];
+    const res = await engine.generate(
+      { prompt: "cat", steps: 4, seed: 9, initPixels: new Float32Array(3 * 512 * 512), denoising: 0 },
+      (step, total) => progress.push([step, total]),
+    );
+
+    expect(log).toContain("vae_encoder");
+    expect(log).not.toContain("unet"); // ohne den Fix laeuft genau ein Schritt — und der macht NaN
+    const lat = latentFeeds[0]!;
+    expect(lat.length).toBeGreaterThan(0);
+    expect(Array.from(lat).some((v) => Number.isNaN(v))).toBe(false);
+    // Das BILD, nicht nur der Typ: NaN-Latents ergaeben ueberall 0 (schwarz).
+    expect(Array.from(res.rgba.subarray(0, 3 * 64)).some((v) => v !== 0)).toBe(true);
+    // Der Fortschritt darf nicht auf halbem Wege stehenbleiben — der Aufrufer sieht
+    // dieselbe Form wie am Ende eines echten Laufs (letzter Ruf: total/total).
+    expect(progress.at(-1)).toEqual([1, 1]);
   });
   it("dispose ruft release auf allen vier Sessions auf (idempotent)", async () => {
     const released: string[] = [];

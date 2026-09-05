@@ -68,8 +68,12 @@ export function denoiseEntry(
   // denoising 0 → steps (ganz hinten) — deshalb die Klemme eine Zeile weiter.
   const t = (1 - denoising) * steps;
   // Der Anker bleibt im Zeitplan, damit der Rest-Zeitplan nie leer ist. Bei denoising 0
-  // ist die interpolierte Sigma dann 0 — der Lauf rechnet einen Schritt ohne Wirkung,
-  // und genau das heisst „nichts veraendern".
+  // (und bei jedem negativen Wert, den die frac-Klemme dorthin zieht) ist die interpolierte
+  // Sigma dann 0. ⚠️ Ein Schritt MIT diesem Sigma ist nicht wirkungslos, sondern kaputt:
+  // `schedulerStep` teilt zweimal durch sigma (`sigmaUp`, `derivative`) und liefert NaN,
+  // woraus `chwToRgba` ein schwarzes Bild ohne Fehlermeldung macht. Den Fall faengt der
+  // AUFRUFER ab — beide Engines ueberspringen bei Sigma 0 den Diffusions-Lauf und dekodieren
+  // das Vorlagen-Latent direkt; erst DAS heisst „nichts veraendern" (K1, 2026-09-05).
   const startAt = Math.min(steps - 1, Math.max(0, Math.floor(t)));
   const frac = Math.min(1, Math.max(0, t - startAt));
   // Nachfolger: `sigmas` trägt steps+1 Einträge (letzter 0), `timesteps` nur steps —
