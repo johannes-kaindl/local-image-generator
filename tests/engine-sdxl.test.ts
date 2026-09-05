@@ -380,60 +380,58 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
   });
 
   it("img2img ersetzt auch das SIGMA im Zeitplan, nicht nur den Timestep — sonst waere die Umsetzung nur zur Haelfte fertig", async () => {
-    // Der Test oben ("...Folgen-Eintrag...") deckt in tests/engine.test.ts (SD-Turbo) den
-    // Timestep indirekt UND — ueber den Bestandstest "Start-Latents entsprechen dem
-    // verrauschten Vorlagen-Latent" (Zeile 225 dort) — auch das Sigma. In dieser Datei gibt
-    // es keinen txt2img/img2img-Test, der das Sigma unabhaengig vom Timestep prueft: ein
-    // Umbau, der `schedule.timesteps[entry.startAt]` ersetzt, aber `schedule.sigmas[entry.startAt]`
-    // vergisst, wuerde vom obigen Test allein NICHT gefangen. Genau das ist der Defekt, den
-    // dieser Test verhindern soll (schedulerStep liest sein Start-Sigma selbst aus dem
-    // Array — ein nicht ersetztes Sigma verpufft im Init-Latent und ergibt ein leise
-        // falsches Bild statt eines Fehlers).
+    // Fix-Runde 1 (Review-Befund): die urspruengliche Fassung dieses Tests verglich zwei
+    // Laeufe mit verschiedenem Bruchteil und erwartete unterschiedliche Feeds. Das belegt
+    // nichts: `noisedInitLatents(encoded, seed, entry.sigma)` bekommt `entry.sigma` als
+    // PARAMETER, unabhaengig davon, ob `schedule.sigmas[entry.startAt]` je gesetzt wurde —
+    // die beiden Laeufe waeren also so oder so verschieden, auch im Halb-Bug (nur
+    // `timesteps` ersetzt, `sigmas` nicht: `scaleInput` skaliert dann mit dem
+    // Anker-Sigma, aber das ist bei den beiden gewaehlten Bruchteilen ebenfalls
+    // verschieden von `entry.sigma`, also bleiben die Feeds ungleich). Der Test zeigte nur,
+    // dass IRGENDWO interpoliert wird, nicht WO.
     //
-    // Vorgehen: zwei Laeufe mit demselben Anker (steps=8 → Anker 3), aber verschiedenem
-    // Bruchteil (denoising 0.625 → frac 0, denoising 0.5625 → frac 0.5). Waere das Sigma
-    // nicht ersetzt, skalierte scaleInput beide Laeufe mit demselben (unveraenderten)
-    // Anker-Sigma, und `noisedInitLatents` verrauschte mit demselben `sigmas[tStart]` —
-    // bei gleichem Seed und gleicher (nullwertiger) Vorlage waeren die ersten UNet-Sample-
-    // Feeds dann BIT-IDENTISCH. Mit ersetztem Sigma muessen sie sich unterscheiden.
+    // Diese Fassung rechnet den erwarteten Feed-Wert stattdessen EXAKT nach — Muster aus
+    // tests/engine.test.ts:225 ("Start-Latents entsprechen dem verrauschten Vorlagen-Latent
+    // am Einstiegspunkt"), hier mit einem echten Bruchteil (frac=0.5, nicht 0 wie dort) und
+    // ohne die dortige f16-Rundung (SDXLs Fake rechnet in float32).
+    //
+    // Erwartungswert: scaleInput(noisedInitLatents(encoded, seed, entry.sigma), entry.sigma).
+    // `encoded[0]` ist bekannt (der vaeEncoder-Fake liefert konstant 2 in den Mean-Kanaelen,
+    // `encodeInitImage` multipliziert nur mit vaeScaling — Muster aus dem F2b-Test oben,
+    // Zeile ~296, dort ebenfalls ohne Aufruf von encodeInitImage komponiert).
+    //
+    // Warum das den Halb-Bug faengt: die Engine liefert den Feed als
+    // `scaleInput(latents, schedule.sigmas[startAt])`. Fehlt die Zeitplan-Ersetzung, ist
+    // dieser Divisor der ANKER-Sigma, waehrend die Erwartung hier mit `entry.sigma`
+    // (interpoliert) rechnet — bei frac=0.5 laufen beide Werte auseinander, der Test wird rot.
     const steps = 8;
-    const denoisingA = 0.625; // Anker 3, frac 0
-    const denoisingB = 0.5625; // Anker 3, frac 0.5
-    const sched = makeSchedule(steps);
-    const erwA = denoiseEntry(steps, denoisingA, sched.sigmas, sched.timesteps);
-    const erwB = denoiseEntry(steps, denoisingB, sched.sigmas, sched.timesteps);
-    expect(erwA.startAt).toBe(3);
-    expect(erwB.startAt).toBe(3);
-    expect(erwA.sigma).not.toBeCloseTo(erwB.sigma, 6); // Vorbedingung: die Bruchteile muessen wirklich verschiedene Sigmas ergeben
-
+    const denoising = 0.5625; // Anker 3, frac 0.5 — kein Randfall (frac != 0)
     const seed = 9;
-    const recA: Rec = { feeds: [] };
-    const recB: Rec = { feeds: [] };
-    const eA = new SdxlTurboEngine(
-      sessions(recA, 512),
+    const vaeScaling = 0.13025;
+    const sched = makeSchedule(steps);
+    const entry = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+    expect(entry.startAt).toBe(3);
+
+    const rec: Rec = { feeds: [] };
+    const e = new SdxlTurboEngine(
+      sessions(rec, 512),
       { primary: TOK_PRIMARY, secondary: TOK_SECONDARY },
-      { vaeScaling: 0.13025, size: 512 },
+      { vaeScaling, size: 512 },
     );
-    const eB = new SdxlTurboEngine(
-      sessions(recB, 512),
-      { primary: TOK_PRIMARY, secondary: TOK_SECONDARY },
-      { vaeScaling: 0.13025, size: 512 },
-    );
-    await eA.generate({
+    await e.generate({
       prompt: "cat", steps, seed, size: 512,
-      initPixels: new Float32Array(3 * 512 * 512), denoising: denoisingA,
-    });
-    await eB.generate({
-      prompt: "cat", steps, seed, size: 512,
-      initPixels: new Float32Array(3 * 512 * 512), denoising: denoisingB,
+      initPixels: new Float32Array(3 * 512 * 512), denoising,
     });
 
     // vaeEncoder-Feed traegt NUR "sample" (kein "timestep") — dieselbe Unterscheidung wie
     // in den umliegenden Tests dieser Datei, nicht neu erfunden.
-    const unetCallsA = recA.feeds.filter((f) => "timestep" in f);
-    const unetCallsB = recB.feeds.filter((f) => "timestep" in f);
-    const firstSampleA = unetCallsA[0]!["sample"]!.data as Float32Array;
-    const firstSampleB = unetCallsB[0]!["sample"]!.data as Float32Array;
-    expect(firstSampleA[0]).not.toBeCloseTo(firstSampleB[0]!, 4);
+    const unetCalls = rec.feeds.filter((f) => "timestep" in f);
+    const firstSample = unetCalls[0]!["sample"]!.data as Float32Array;
+
+    const encoded0 = 2 * vaeScaling; // Fake-Mean 2, wie encodeInitImage() sie multipliziert
+    const noise0 = gaussianArray(seed, 1)[0]!;
+    const noised0 = encoded0 + noise0 * entry.sigma; // noisedInitLatents() fuer den 0. Eintrag
+    const expected = scaleInput(new Float32Array([noised0]), entry.sigma)[0]!;
+    expect(firstSample[0]).toBeCloseTo(expected, 4);
   });
 });
