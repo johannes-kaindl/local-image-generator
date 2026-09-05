@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format follows
 
 - **The denoising slider is now continuous in the built-in engine.** Until 0.11 the value
   snapped to one of `steps` entry points — with the default of 4 steps that meant 0.25,
-  0.5, 0.75 or 1.0, and a requested 0.6 silently became 0.75. The engine now interpolates
+  0.5, 0.75 or 1.0, and a requested 0.65 silently became 0.75. The engine now interpolates
   its entry point, so the value you set is the value that is used and the value the result
   note records. Exact former snap points still produce byte-identical images.
 - **The panel's denoising slider itself is now fine-grained too.** It used to set its own
@@ -23,7 +23,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Note for API consumers
 
-`capabilities().maxSteps` now reports 8. A request with `denoising: 0.6` returns 0.6
+`capabilities().maxSteps` now reports 8. A request with `denoising: 0.65` returns 0.65
 instead of 0.75 — closer to what you asked for, never further away. `apiVersion` stays 1.
 
 ## [0.11.2] — 2026-09-03
