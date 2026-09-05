@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-09-05
+
 ### Added
 
 - **Large image sizes in server mode** — 2048×1152, 1152×2048 and 2048×2048 join the size
