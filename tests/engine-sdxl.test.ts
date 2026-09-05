@@ -3,7 +3,7 @@ import type { OrtValue, Session } from "../src/core/engine";
 import { SdxlTurboEngine } from "../src/core/engine-sdxl";
 import { denoiseRaster } from "../src/core/params";
 import { gaussianArray } from "../src/core/pipeline/prng";
-import { makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
+import { denoiseEntry, makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
 
 // Zwei UNTERSCHIEDLICHE Vokabulare statt eines geteilten TOK-Objekts (Review-Finding): mit
 // einem einzigen Objekt fuer primary/secondary wuerde nichts auffallen, wenn die beiden
@@ -352,5 +352,88 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     });
     const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
     await expect(e.generate({ prompt: "hund", steps: 1, seed: 1, size: 512 })).rejects.toThrow(/seq-Laenge weicht/);
+  });
+
+  it("img2img ersetzt den Folgen-Eintrag, nicht nur das Init-Latent", async () => {
+    const steps = 4;
+    const denoising = 0.625;
+    const sched = makeSchedule(steps);
+    const erwartet = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+
+    // Muster der SDXL-Testdatei: `sessions(rec, side)` zeichnet alle Feeds in `rec.feeds`
+    // auf, `feedOf(rec, key)` holt den ERSTEN Feed mit diesem Namen — also genau den des
+    // ersten UNet-Aufrufs. Kein eigener Spion noetig.
+    const rec: Rec = { feeds: [] };
+    const e = new SdxlTurboEngine(
+      sessions(rec, 512),
+      { primary: TOK_PRIMARY, secondary: TOK_SECONDARY },
+      { vaeScaling: 0.13025, size: 512 },
+    );
+    await e.generate({
+      prompt: "cat", steps, seed: 9, size: 512,
+      initPixels: new Float32Array(3 * 512 * 512), denoising,
+    });
+
+    const gesehen = Number((feedOf(rec, "timestep").data as BigInt64Array)[0]);
+    expect(gesehen).toBe(erwartet.timestep);
+    expect(gesehen).not.toBe(sched.timesteps[erwartet.startAt]);
+  });
+
+  it("img2img ersetzt auch das SIGMA im Zeitplan, nicht nur den Timestep — sonst waere die Umsetzung nur zur Haelfte fertig", async () => {
+    // Der Test oben ("...Folgen-Eintrag...") deckt in tests/engine.test.ts (SD-Turbo) den
+    // Timestep indirekt UND — ueber den Bestandstest "Start-Latents entsprechen dem
+    // verrauschten Vorlagen-Latent" (Zeile 225 dort) — auch das Sigma. In dieser Datei gibt
+    // es keinen txt2img/img2img-Test, der das Sigma unabhaengig vom Timestep prueft: ein
+    // Umbau, der `schedule.timesteps[entry.startAt]` ersetzt, aber `schedule.sigmas[entry.startAt]`
+    // vergisst, wuerde vom obigen Test allein NICHT gefangen. Genau das ist der Defekt, den
+    // dieser Test verhindern soll (schedulerStep liest sein Start-Sigma selbst aus dem
+    // Array — ein nicht ersetztes Sigma verpufft im Init-Latent und ergibt ein leise
+        // falsches Bild statt eines Fehlers).
+    //
+    // Vorgehen: zwei Laeufe mit demselben Anker (steps=8 → Anker 3), aber verschiedenem
+    // Bruchteil (denoising 0.625 → frac 0, denoising 0.5625 → frac 0.5). Waere das Sigma
+    // nicht ersetzt, skalierte scaleInput beide Laeufe mit demselben (unveraenderten)
+    // Anker-Sigma, und `noisedInitLatents` verrauschte mit demselben `sigmas[tStart]` —
+    // bei gleichem Seed und gleicher (nullwertiger) Vorlage waeren die ersten UNet-Sample-
+    // Feeds dann BIT-IDENTISCH. Mit ersetztem Sigma muessen sie sich unterscheiden.
+    const steps = 8;
+    const denoisingA = 0.625; // Anker 3, frac 0
+    const denoisingB = 0.5625; // Anker 3, frac 0.5
+    const sched = makeSchedule(steps);
+    const erwA = denoiseEntry(steps, denoisingA, sched.sigmas, sched.timesteps);
+    const erwB = denoiseEntry(steps, denoisingB, sched.sigmas, sched.timesteps);
+    expect(erwA.startAt).toBe(3);
+    expect(erwB.startAt).toBe(3);
+    expect(erwA.sigma).not.toBeCloseTo(erwB.sigma, 6); // Vorbedingung: die Bruchteile muessen wirklich verschiedene Sigmas ergeben
+
+    const seed = 9;
+    const recA: Rec = { feeds: [] };
+    const recB: Rec = { feeds: [] };
+    const eA = new SdxlTurboEngine(
+      sessions(recA, 512),
+      { primary: TOK_PRIMARY, secondary: TOK_SECONDARY },
+      { vaeScaling: 0.13025, size: 512 },
+    );
+    const eB = new SdxlTurboEngine(
+      sessions(recB, 512),
+      { primary: TOK_PRIMARY, secondary: TOK_SECONDARY },
+      { vaeScaling: 0.13025, size: 512 },
+    );
+    await eA.generate({
+      prompt: "cat", steps, seed, size: 512,
+      initPixels: new Float32Array(3 * 512 * 512), denoising: denoisingA,
+    });
+    await eB.generate({
+      prompt: "cat", steps, seed, size: 512,
+      initPixels: new Float32Array(3 * 512 * 512), denoising: denoisingB,
+    });
+
+    // vaeEncoder-Feed traegt NUR "sample" (kein "timestep") — dieselbe Unterscheidung wie
+    // in den umliegenden Tests dieser Datei, nicht neu erfunden.
+    const unetCallsA = recA.feeds.filter((f) => "timestep" in f);
+    const unetCallsB = recB.feeds.filter((f) => "timestep" in f);
+    const firstSampleA = unetCallsA[0]!["sample"]!.data as Float32Array;
+    const firstSampleB = unetCallsB[0]!["sample"]!.data as Float32Array;
+    expect(firstSampleA[0]).not.toBeCloseTo(firstSampleB[0]!, 4);
   });
 });
