@@ -2,11 +2,10 @@
 // sd-turbo-Pipeline (Spec §5): tokenize → text_encoder → UNet-Loop (Euler-Ancestral,
 // guidance 1.0) → VAE-Decode → RGBA. Sessions/Tensoren sind injiziert (OrtValue ist
 // strukturell ort.Tensor-kompatibel) — die Engine bleibt pure und Node-testbar.
-import { denoiseRaster } from "./params";
 import { f16ArrayToF32, f32ArrayToF16 } from "./pipeline/f16";
 import { chwToRgba } from "./pipeline/image";
 import { gaussianArray } from "./pipeline/prng";
-import { makeSchedule, scaleInput, schedulerStep, type Schedule } from "./pipeline/scheduler";
+import { denoiseEntry, makeSchedule, scaleInput, schedulerStep, type Schedule } from "./pipeline/scheduler";
 import { tokenize, type TokenizerData } from "./pipeline/tokenizer";
 
 export interface OrtValue {
@@ -264,9 +263,14 @@ export class SdTurboEngine implements BuiltinEngine {
       // exakt wie zuvor (init bleibt undefined, runDiffusion startet bei 0).
       let init: { latents: Float32Array; startAt: number } | undefined;
       if (req.initPixels) {
-        const { tStart } = denoiseRaster(req.steps, req.denoising ?? 1);
+        const entry = denoiseEntry(req.steps, req.denoising ?? 1, schedule.sigmas, schedule.timesteps);
+        // Die FOLGE anpassen, nicht nur das Latent: schedulerStep und die Schleife in
+        // runDiffusion lesen Sigma und Timestep selbst aus dem Zeitplan. `schedule` ist
+        // pro Lauf frisch aus makeSchedule — die Mutation trifft niemanden sonst.
+        schedule.sigmas[entry.startAt] = entry.sigma;
+        schedule.timesteps[entry.startAt] = entry.timestep;
         const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, IMAGE_SIZE, VAE_SCALING);
-        init = { latents: noisedInitLatents(encoded, req.seed, schedule.sigmas[tStart]!), startAt: tStart };
+        init = { latents: noisedInitLatents(encoded, req.seed, entry.sigma), startAt: entry.startAt };
       }
 
       const latents = await runDiffusion(

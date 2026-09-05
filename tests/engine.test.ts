@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { runDiffusion, SdTurboEngine, type OrtValue, type Session } from "../src/core/engine";
 import { f16ArrayToF32 } from "../src/core/pipeline/f16";
-import { denoiseRaster } from "../src/core/params";
 import { gaussianArray } from "../src/core/pipeline/prng";
-import { makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
+import { denoiseEntry, makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
 import type { TokenizerData } from "../src/core/pipeline/tokenizer";
 
 const tokData: TokenizerData = { vocab: { "cat</w>": 1 }, merges: [] };
@@ -219,9 +218,10 @@ describe("SdTurboEngine", () => {
       denoising,
     });
     expect(log.filter((l) => l === "vae_encoder")).toHaveLength(1);
-    const { tStart } = denoiseRaster(steps, denoising);
-    expect(tStart).toBe(2); // gemessen: denoiseRaster(4, 0.5) → Einstieg beim 3. von 4 Schritten
-    expect(log.filter((l) => l === "unet")).toHaveLength(steps - tStart);
+    const sched = makeSchedule(steps);
+    const { startAt } = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+    expect(startAt).toBe(2); // gemessen: denoiseEntry(4, 0.5) → Einstieg beim 3. von 4 Schritten
+    expect(log.filter((l) => l === "unet")).toHaveLength(steps - startAt);
   });
   it("img2img: Start-Latents entsprechen dem verrauschten Vorlagen-Latent am Einstiegspunkt (f16-Toleranz)", async () => {
     const seenFirstSample: Float32Array[] = [];
@@ -245,12 +245,47 @@ describe("SdTurboEngine", () => {
       initPixels: new Float32Array(3 * 512 * 512),
       denoising,
     });
-    const { tStart } = denoiseRaster(steps, denoising);
     const schedule = makeSchedule(steps);
-    const sigma = schedule.sigmas[tStart]!;
+    const { sigma } = denoiseEntry(steps, denoising, schedule.sigmas, schedule.timesteps);
     const noise0 = gaussianArray(seed, 1)[0]!;
     const expected = scaleInput(new Float32Array([2 * 0.18215 + noise0 * sigma]), sigma)[0]!;
     expect(seenFirstSample[0]![0]).toBeCloseTo(expected, 2);
+  });
+  it("img2img ersetzt den Folgen-Eintrag, nicht nur das Init-Latent", async () => {
+    // Der Kern des Umbaus: schedulerStep liest sein Start-Sigma SELBST aus dem Array
+    // (scheduler.ts). Wuerde die Engine nur das Latent verrauschen, rechnete der erste
+    // Euler-Schritt weiter mit dem alten Wert — ein leise falsches Bild, kein Fehler.
+    //
+    // Gemessen wird das ueber den TIMESTEP, den das UNet als Feed bekommt: bei einem
+    // Zwischenwert darf er NICHT einem der Anker entsprechen.
+    const steps = 4;
+    const denoising = 0.625; // zwischen zwei Stufen
+    const sched = makeSchedule(steps);
+    const erwartet = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+
+    // Muster der Datei uebernehmen: fakeSessions bauen, dann NUR den unet-Fake umhuellen
+    // und den Original-run weiterrufen. Nicht neu erfinden — der Fake prueft im run()
+    // selbst Dims und Dtypes und traegt damit halbe Zusagen.
+    const gesehen: number[] = [];
+    const s = fakeSessions([]);
+    const baseUnetRun = s.unet.run;
+    s.unet = {
+      ...s.unet,
+      run: async (feeds) => {
+        // Der Fake deklariert timestep als int64 → BigInt64Array. Number() traegt den Wert.
+        gesehen.push(Number((feeds["timestep"]!.data as BigInt64Array)[0]));
+        return baseUnetRun(feeds);
+      },
+    };
+    const engine = new SdTurboEngine(s, tokData);
+    await engine.generate({
+      prompt: "cat", steps, seed: 9,
+      initPixels: new Float32Array(3 * 512 * 512), denoising,
+    });
+
+    expect(gesehen[0]).toBe(erwartet.timestep);
+    expect(gesehen[0]).not.toBe(sched.timesteps[erwartet.startAt]);
+    expect(gesehen).toHaveLength(steps - erwartet.startAt);
   });
   it("dispose ruft release auf allen vier Sessions auf (idempotent)", async () => {
     const released: string[] = [];
