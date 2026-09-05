@@ -93,9 +93,9 @@ export interface ApiStatus {
   };
 }
 // Konkret (builtin haengt vom AKTIVEN Modell ab, deps.builtinModel()):
-//   sd-turbo   → { negativePrompt: false, cfg: false, maxSteps: 4,
+//   sd-turbo   → { negativePrompt: false, cfg: false, maxSteps: 8,
 //                  fixedSize: { width: 512, height: 512 }, sizes: [512x512] }
-//   sdxl-turbo → { negativePrompt: false, cfg: false, maxSteps: 4,
+//   sdxl-turbo → { negativePrompt: false, cfg: false, maxSteps: 8,
 //                  fixedSize: null, sizes: [512x512, 1024x1024] }
 //   server     → { negativePrompt: true, cfg: true, maxSteps: STEPS.max (50),
 //                  fixedSize: null, sizes: null }
