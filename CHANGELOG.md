@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Large image sizes in server mode** — 2048×1152, 1152×2048 and 2048×2048 join the size
+  dropdown, so a desktop wallpaper is now possible with a server that can render at that
+  scale (Draw Things with Flux, for example). The limit had been sitting in the plugin's own
+  size list, not in the backend: server mode always accepted any size, the dropdown just
+  never offered one above 1024.
+  Every edge is a multiple of 64 — latents are one eighth of the image and the UNet has three
+  downsampling stages. That is why the list has 2048×1152 rather than 1920×1080.
+  The built-in engine is unaffected: it takes its sizes from the model catalogue, and a
+  request for a larger one is still clamped to what the active model can actually render.
+
 ## [0.12.0] — 2026-09-05
 
 ### Changed

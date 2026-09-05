@@ -107,6 +107,20 @@ describe("hardenParams", () => {
     expect(p.height).toBe(512);
   });
 
+  // Die Groessenliste des SERVER-Modus (SIZES, generation.ts) fuehrt seit 2026-09-05 Formate
+  // bis 2048 — fuer Desktop-Hintergruende ueber Draw Things/Flux. Der builtin-Modus darf davon
+  // NICHTS mitbekommen: er zieht seine Groessen aus dem Modellkatalog, und 2048 kann keines
+  // der beiden Modelle. Ohne diese Klemmung stuende in der Notiz eine Groesse, die nie
+  // gerechnet wurde.
+  it("klemmt die neuen grossen Server-Formate im builtin-Modus auf den Katalog", () => {
+    const sdxl = hardenParams({ prompt: "x", width: 2048, height: 1152 }, ctx("builtin", "sdxl-turbo"));
+    expect(sdxl.width).toBe(1024);
+    expect(sdxl.height).toBe(1024);
+    const sd = hardenParams({ prompt: "x", width: 2048, height: 2048 }, ctx("builtin", "sd-turbo"));
+    expect(sd.width).toBe(512);
+    expect(sd.height).toBe(512);
+  });
+
   it("Gleichstand zwischen zwei erlaubten Groessen entscheidet die Katalog-Reihenfolge (erster Treffer gewinnt)", () => {
     // 768 liegt exakt in der Mitte zwischen SDXL-Turbos 512 und 1024 — quadrierter Abstand ist
     // fuer beide identisch. sizes = [512, 1024] (Katalog-Reihenfolge) → 512 gewinnt.

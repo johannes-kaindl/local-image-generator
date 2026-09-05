@@ -3,14 +3,43 @@ import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/cor
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 
 describe("generation constants (Spec §4)", () => {
-  it("SIZES enthält 7 Einträge", () => {
-    expect(SIZES).toHaveLength(7);
+  it("SIZES enthält 10 Einträge", () => {
+    expect(SIZES).toHaveLength(10);
   });
 
   it("alle SIZES-Werte sind Vielfache von 16", () => {
     for (const s of SIZES) {
       expect(s.width % 16).toBe(0);
       expect(s.height % 16).toBe(0);
+    }
+  });
+
+  // Schaerfer als die 16er-Zusage darueber, und zwar aus dem Modell heraus: Latents sind
+  // 1/8 der Bildgroesse, das UNet hat drei Downsampling-Stufen — 8 x 8 = 64. Der Bestand
+  // erfuellt das ohnehin (512/768/1024/576 sind alle durch 64 teilbar); der Test haelt es
+  // fest, damit ein spaeterer Eintrag wie 1920x1080 nicht durchrutscht: 1080 / 64 = 16,875.
+  it("alle SIZES-Werte sind Vielfache von 64", () => {
+    for (const s of SIZES) {
+      expect(s.width % 64).toBe(0);
+      expect(s.height % 64).toBe(0);
+    }
+  });
+
+  // Der Anlass fuer die drei grossen Formate: Draw Things mit Flux kann bis 2048, das
+  // Panel-Dropdown bot aber nur bis 1024 an — die Beschraenkung sass in DIESER Liste, nicht
+  // im Backend (`capabilities.sizes` ist im Server-Modus null, die Haertung laesst dort
+  // ohnehin jede Groesse durch). Ohne sie war kein Desktop-Hintergrund erzeugbar.
+  it("bietet grosse 16:9- und Quadrat-Formate fuer Desktop-Hintergruende", () => {
+    expect(SIZES).toContainEqual({ width: 2048, height: 1152 });
+    expect(SIZES).toContainEqual({ width: 1152, height: 2048 });
+    expect(SIZES).toContainEqual({ width: 2048, height: 2048 });
+  });
+
+  // Die Liste ist durchgehend paarweise gebaut (jedes Querformat hat sein Hochformat).
+  it("jedes nicht-quadratische Format hat sein gedrehtes Gegenstueck", () => {
+    for (const s of SIZES) {
+      if (s.width === s.height) continue;
+      expect(SIZES).toContainEqual({ width: s.height, height: s.width });
     }
   });
 

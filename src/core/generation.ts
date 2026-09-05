@@ -5,14 +5,27 @@ import type { EngineChoice } from "./settings";
 
 export interface SizeOption { width: number; height: number; }
 
+// Nur der SERVER-Modus waehlt hieraus (`capabilities.sizes` ist dort null — freie Wahl, die
+// Haertung laesst jede Groesse durch). Der builtin-Modus zieht seine Groessen aus dem
+// Modellkatalog und wird von dieser Liste nicht beruehrt.
+//
+// Alle Kanten sind Vielfache von 64: Latents sind 1/8 der Bildgroesse, das UNet hat drei
+// Downsampling-Stufen. Deshalb steht hier 2048x1152 und nicht 1920x1080 — 1080 / 64 = 16,875.
+//
+// Die grossen Formate kamen 2026-09-05 dazu. Anlass: Draw Things mit Flux kann bis 2048,
+// das Dropdown bot aber nur bis 1024 an — die Beschraenkung sass in DIESER Liste, nicht im
+// Backend. Ein Desktop-Hintergrund war damit gar nicht erzeugbar.
 export const SIZES: readonly SizeOption[] = [
   { width: 512, height: 512 },
   { width: 768, height: 768 },
   { width: 1024, height: 1024 },
+  { width: 2048, height: 2048 },
   { width: 768, height: 512 },
   { width: 512, height: 768 },
   { width: 1024, height: 576 },
   { width: 576, height: 1024 },
+  { width: 2048, height: 1152 },
+  { width: 1152, height: 2048 },
 ];
 export const DEFAULT_SIZE: SizeOption = SIZES[0]!;
 
