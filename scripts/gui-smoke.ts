@@ -303,6 +303,17 @@ async function pixelStats(cdp: Cdp): Promise<{ width: number; height: number; st
 const CONTENT_STDDEV_MIN = 8;
 const CONTENT_LUMA_BUCKETS_MIN = 20;
 
+/** Mindestabstand (RMSE) zwischen dem Bild bei `denoising 0.625` und denen bei 0.5 bzw. 0.75
+ *  in den Punkten 26/27 — der Beleg, dass 0.625 ein EIGENER Einstiegspunkt ist und nicht auf
+ *  einen alten Rasterpunkt zurueckfaellt. Ein gerastertes 0.625 laege exakt auf 0.5 oder 0.75
+ *  und gaebe bei gleichem Seed/Prompt RMSE **0.000** — ohne jede Streuung, weil dieselbe
+ *  Rechnung dasselbe Bild liefert. Die Schwelle liegt bewusst weit ueber null und weit unter
+ *  den gemessenen Abstaenden (2026-09-05, erster Lauf: die Dreiecksungleichung auf den
+ *  Vorlagen-Abstaenden zwingt SD-Turbo auf ≥ 8.6 und SDXL-Turbo auf ≥ 15.8 fuer den
+ *  0.5-Nachbarn) — sie unterscheidet „ein eigener Punkt" von „derselbe Punkt", nicht zwei
+ *  aehnliche Bilder. */
+const ZWISCHENSTUFE_MIN_RMSE = 2;
+
 /** Was der Server selbst über sein aktives Modell sagt — vom Treiber direkt geholt, nicht
  *  vom Plugin erfragt. Ein Prüfwerkzeug, das seine Erwartung aus dem Prüfling bezieht,
  *  bestätigt nur dessen Meinung: genau so blieb der `model`/`sd_model_checkpoint`-Fehlgriff
@@ -1986,11 +1997,13 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
  * schwarz — dieselbe Fehlerklasse wie Punkt 24/25, eine Stufe frueher in der Pipeline.
  *
  * Seit dem Final-Review 2026-09-05 kommen drei weitere Laeufe dazu: (D) 0.5 · (E) 0.625 ·
- * (F) 0.75, mit der Forderung RMSE(A,D) < RMSE(A,E) < RMSE(A,F). Grund: 0.25 und 1.0 sind bei
- * steps=4 EXAKTE Punkte des alten 1/steps-Rasters — dort ist neu == alt per Konstruktion, der
- * Punkt konnte die Rueckkehr der Quantisierung also gar nicht sehen. 0.625 liegt zwischen zwei
- * Ankern; rastete es wieder, waere sein Bild mit D oder F identisch und die strikte Ungleichung
- * risse. Erst damit ist dieser Punkt die „Regressionsbremse fuer den Engine-Umbau", als die
+ * (F) 0.75. Grund: 0.25 und 1.0 sind bei steps=4 EXAKTE Punkte des alten 1/steps-Rasters — dort
+ * ist neu == alt per Konstruktion, der Punkt konnte die Rueckkehr der Quantisierung also gar
+ * nicht sehen. 0.625 liegt zwischen zwei Ankern und ist im alten Raster unerreichbar; rastete
+ * es wieder, waere sein Bild mit D oder F IDENTISCH. Gemessen wird deshalb der Abstand
+ * RMSE(D,E)/RMSE(E,F) gegen ZWISCHENSTUFE_MIN_RMSE — nicht die Reihenfolge der
+ * Vorlagen-Abstaende, die bei SD-Turbo gemessen nicht monoton ist (s. Kommentar im Rumpf).
+ * Erst damit ist dieser Punkt die „Regressionsbremse fuer den Engine-Umbau", als die
  * docs/SMOKE.md ihn fuehrt.
  * Spike-Referenz (2026-08-30, Node/CPU, SD-Turbo, steps 4): RMSE str25 ≈ 19, str100 ≈ 51,
  * Roundtrip-Boden 4,8. Punkt 27 ist zugleich der LIVE-Beweis fuer den fp32-VAE-Encoder von
@@ -2079,10 +2092,26 @@ async function runBuiltinImg2ImgCheck(
     // waren — dort ist „neu == alt" per Konstruktion, der Regressionswert dieses Punktes fuer
     // den Engine-Umbau war also kleiner, als die Zeile in docs/SMOKE.md klang. D/E/F schliessen
     // das: 0.625 liegt ZWISCHEN zwei Ankern und ist im alten Raster gar nicht erreichbar.
-    // Gefordert wird strikte Monotonie RMSE(A,D) < RMSE(A,E) < RMSE(A,F) — kaeme die
-    // Quantisierung zurueck, rastete 0.625 auf 0.5 oder 0.75 und lieferte ein IDENTISCHES
-    // Bild zu D bzw. F, also exakte Gleichheit statt „dazwischen". Eine Toleranz waere hier
-    // genau falsch: sie liesse die Rueckkehr der Rasterung durch.
+    //
+    // GEMESSEN wird die UNTERSCHEIDBARKEIT, nicht die Reihenfolge — und das ist eine Korrektur
+    // am ersten Entwurf dieses Blocks. Der forderte strikte Monotonie
+    // RMSE(A,D) < RMSE(A,E) < RMSE(A,F) und ging am 2026-09-05 im ersten Lauf ROT: SD-Turbo
+    // lieferte 14.48 / 23.08 / 21.42 — 0.625 liegt WEITER von der Vorlage weg als 0.75.
+    // (SDXL-Turbo war im selben Lauf monoton: 19.13 / 34.89 / 36.59.) Das ist kein Defekt,
+    // sondern eine Eigenschaft des Aufbaus: bei steps=4 startet 0.5 am Anker 2 (zwei
+    // UNet-Schritte), 0.625 und 0.75 beide am Anker 1 (drei Schritte) mit unterschiedlichem,
+    // interpoliertem Sigma UND interpoliertem Timestep — und SD-Turbo ist auf genau vier
+    // Timesteps destilliert, ein Zwischenwert ist fuer sein UNet leicht ausserhalb der
+    // Verteilung. „Mehr denoising = weiter weg" gilt also grob (das prueft die
+    // 0.25-gegen-1.0-Monotonie eine Zeile weiter unten), aber nicht zwischen benachbarten
+    // Ankern. Ein Kriterium, das nur bei einem der beiden Modelle stimmt, misst das Modell,
+    // nicht den Umbau.
+    //
+    // Was der Umbau wirklich zusagt, ist: 0.625 ist ein EIGENER Einstiegspunkt. Kaeme die
+    // Quantisierung zurueck, rastete 0.625 auf 0.5 oder 0.75 und lieferte ein BYTE-IDENTISCHES
+    // Bild — RMSE exakt 0.000, bei gleichem Seed und gleichem Prompt ohne jede Streuung.
+    // Gefordert sind deshalb RMSE(D,E) und RMSE(E,F) oberhalb einer Schwelle, die weit ueber
+    // null und weit unter den gemessenen Abstaenden liegt.
     const d = c.ok
       ? await lauf(
           "__ligI2ID",
@@ -2117,7 +2146,10 @@ async function runBuiltinImg2ImgCheck(
 
     // Auswertung komplett im Renderer: RMSE(A,B), RMSE(A,C) + Inhalts-Statistik von B
     // (Luma-Stddev + distinkte Stufen, dieselben Grenzen wie Punkt 24/25).
-    const mess = await cdp.evaluate<{ nah: number; fern: number; stddev: number; distinct: number; r50: number; r625: number; r75: number }>(`
+    const mess = await cdp.evaluate<{
+      nah: number; fern: number; stddev: number; distinct: number;
+      r50: number; r625: number; r75: number; dDE: number; dEF: number;
+    }>(`
       const load = (b64) => new Promise((res, rej) => {
         const i = new Image();
         i.onload = () => res(i);
@@ -2152,6 +2184,7 @@ async function runBuiltinImg2ImgCheck(
       return {
         nah: rmse(pa, pb), fern: rmse(pa, pc),
         r50: rmse(pa, pd), r625: rmse(pa, pe), r75: rmse(pa, pf),
+        dDE: rmse(pd, pe), dEF: rmse(pe, pf),
         stddev: Math.sqrt(Math.max(0, sq / m - mean * mean)), distinct: buckets.size,
       };
     `);
@@ -2165,16 +2198,16 @@ async function runBuiltinImg2ImgCheck(
     if (mess.fern < grenzen.fern) teile.push(`str 1.0 zu nah an der Vorlage: RMSE ${mess.fern.toFixed(1)} (Mindestabstand ${grenzen.fern})`);
     if (mess.fern <= mess.nah) teile.push(`keine Monotonie: str 1.0 (${mess.fern.toFixed(1)}) nicht weiter weg als str 0.25 (${mess.nah.toFixed(1)})`);
     if (e.denoising !== 0.625) teile.push(`E meldet denoising ${String(e.denoising)} (erwartet 0.625 — quantisiert die Haertung wieder?)`);
-    if (!(mess.r50 < mess.r625 && mess.r625 < mess.r75))
+    if (mess.dDE < ZWISCHENSTUFE_MIN_RMSE || mess.dEF < ZWISCHENSTUFE_MIN_RMSE)
       teile.push(
-        `str 0.625 liegt NICHT zwischen den alten Rasterpunkten: RMSE 0.5 → ${mess.r50.toFixed(2)} · 0.625 → ${mess.r625.toFixed(2)} · 0.75 → ${mess.r75.toFixed(2)}`,
+        `str 0.625 ist kein eigener Einstiegspunkt: RMSE gegen 0.5 → ${mess.dDE.toFixed(2)}, gegen 0.75 → ${mess.dEF.toFixed(2)} (Mindestabstand ${ZWISCHENSTUFE_MIN_RMSE}; exakt 0 hiesse gerastert)`,
       );
 
     record(
       name,
       teile.length === 0,
       teile.length === 0
-        ? `RMSE zur Vorlage: str 0.25 → ${mess.nah.toFixed(1)} (≤ ${grenzen.nah}) · str 1.0 → ${mess.fern.toFixed(1)} (≥ ${grenzen.fern}) · Zwischenstufe 0.5/0.625/0.75 → ${mess.r50.toFixed(2)}/${mess.r625.toFixed(2)}/${mess.r75.toFixed(2)} (streng steigend) · B: Luma-Stddev ${mess.stddev.toFixed(1)}, ${mess.distinct} Stufen · denoising ${String(b.denoising)}/${String(c.denoising)}`
+        ? `RMSE zur Vorlage: str 0.25 → ${mess.nah.toFixed(1)} (≤ ${grenzen.nah}) · str 1.0 → ${mess.fern.toFixed(1)} (≥ ${grenzen.fern}) · Zwischenstufe 0.625 eigenstaendig: ${mess.dDE.toFixed(2)} von 0.5, ${mess.dEF.toFixed(2)} von 0.75 entfernt (≥ ${ZWISCHENSTUFE_MIN_RMSE}) · Abstand zur Vorlage 0.5/0.625/0.75 → ${mess.r50.toFixed(2)}/${mess.r625.toFixed(2)}/${mess.r75.toFixed(2)} · B: Luma-Stddev ${mess.stddev.toFixed(1)}, ${mess.distinct} Stufen · denoising ${String(b.denoising)}/${String(c.denoising)}`
         : teile.join(" · "),
     );
   } finally {
@@ -2635,24 +2668,28 @@ async function main(): Promise<void> {
     // `getSettingDefinitions()`, IST das der Befund, den 0.5.0 auf „Satisfactory" hielt.
     // Ihn als „übersprungen" zu führen hiesse, den gesuchten Defekt als Nichtmessung zu
     // verbuchen: die Gegenprobe (Migration zurückgebaut) liefe dann durch, ohne rot zu werden.
-    const searchable = await cdp.evaluate<{
-      skip?: string;
-      befund?: string;
-      gesucht: string[];
-      gefunden: string[];
-      fehlend: string[];
-      negativkontrolle: boolean;
-    }>(`
-      const leer = { gesucht: [], gefunden: [], fehlend: [], negativkontrolle: false };
+    //
+    // ⚠️ EIN evaluate pro SUCHE, nicht eine Schleife IM Renderer (Reparatur 2026-09-05).
+    // Die frühere Fassung fuhr alle Suchen in einem einzigen `Runtime.evaluate` — und dessen
+    // Laufzeit wächst linear mit der Zahl SICHTBARER Settings-Zeilen. Sobald BEIDE eingebauten
+    // Modelle im Cache liegen, kommen zwei bedingte Zeilen dazu („Modell", „Modellwahl im
+    // Panel anzeigen"); aus 8 Suchen wurden 10, und der Aufruf riss `Cdp.send`s 30-s-Grenze
+    // mit `Zeitüberschreitung: Runtime.evaluate` — der Lauf brach nach Punkt 4 ab, ohne dass
+    // irgendetwas am Plugin defekt war. Es ist derselbe Fehlermodus wie beim alten `waitFor`
+    // (AGENTS: **Mutation und Wartephase trennen**): eine Wartezeit im Renderer ist unsichtbar,
+    // bis genug davon zusammenkommt. Die Node-seitige Schleife hält jeden einzelnen Aufruf bei
+    // rund zwei Sekunden, egal wie viele Zeilen der Tab hat.
+    const NAME_12 = "12. Die Einstellungen erscheinen in Obsidians Settings-Suche";
+    const vorbereitung = await cdp.evaluate<{ befund?: string; skip?: string; namen: string[] }>(`
       const tab = (app.setting.pluginTabs ?? []).find((t) => t.id === ${JSON.stringify(PLUGIN_ID)});
-      if (!tab) return { befund: "kein Settings-Tab registriert", ...leer };
+      if (!tab) return { befund: "kein Settings-Tab registriert", namen: [] };
       // NICHT \`typeof tab.getSettingDefinitions === "function"\` prüfen: Obsidian 1.13 bringt
       // die Methode in PluginSettingTab selbst mit, der Ausdruck ist also IMMER wahr und der
       // Guard tot. Gemessen 2026-08-14 an der Gegenprobe: nach dem Rückbau der Migration hiess
       // die eigene Methode anders — und \`typeof tab.getSettingDefinitions\` blieb "function".
       // Gefragt ist, ob das PLUGIN sie definiert; das steht auf dem Prototyp seiner Klasse.
       if (!Object.prototype.hasOwnProperty.call(Object.getPrototypeOf(tab), "getSettingDefinitions")) {
-        return { befund: "das Plugin definiert getSettingDefinitions() nicht — es erbt nur Obsidians Vorgabe (der Store-Befund von 0.5.0)", ...leer };
+        return { befund: "das Plugin definiert getSettingDefinitions() nicht — es erbt nur Obsidians Vorgabe (der Store-Befund von 0.5.0)", namen: [] };
       }
       const sichtbar = (d) => {
         const v = d.visible;
@@ -2672,45 +2709,64 @@ async function main(): Promise<void> {
       // Am Tab-Container greifen, nicht am globalen document: bei mehreren Vault-Fenstern
       // hängt das Settings-Modal in einem EIGENEN Fenster (Falle (4) in docs/SMOKE.md).
       const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
-      const win = doc.defaultView;
-      const input = doc.querySelector(".setting-search-container input");
-      if (!input) {
+      if (!doc.querySelector(".setting-search-container input")) {
         app.setting.close();
-        return { skip: "keine Settings-Suche in dieser Obsidian-Version", gesucht: namen, gefunden: [], fehlend: [], negativkontrolle: false };
+        return { skip: "keine Settings-Suche in dieser Obsidian-Version", namen };
       }
+      return { namen };
+    `);
 
-      // Den Wert über den nativen Setter schreiben: eine direkte Zuweisung an .value
-      // bemerkt Obsidians Eingabe-Beobachter nicht.
-      const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
-      const treffer = async (q) => {
+    // Eine Suche = ein Aufruf. Der Renderer-Teil ist bewusst wortgleich zur alten Fassung
+    // (nativer value-Setter, weil eine direkte .value-Zuweisung Obsidians Eingabe-Beobachter
+    // nicht bemerkt) — nur die Schleife ist herausgezogen.
+    const suche = async (q: string): Promise<boolean> =>
+      (await cdp.evaluate<boolean>(`
+        const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
+        const win = doc.defaultView;
+        const input = doc.querySelector(".setting-search-container input");
+        if (!input) return false;
+        const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
         setter.call(input, "");
         input.dispatchEvent(new Event("input", { bubbles: true }));
         await new Promise((r) => setTimeout(r, 150));
-        setter.call(input, q);
+        setter.call(input, ${JSON.stringify(q)});
         input.dispatchEvent(new Event("input", { bubbles: true }));
         await new Promise((r) => setTimeout(r, 600));
         const box = doc.querySelector(".setting-search-results");
-        return !!box && box.textContent.includes(q);
-      };
+        return !!box && box.textContent.includes(${JSON.stringify(q)});
+      `)) === true;
 
-      const gefunden = [];
-      const fehlend = [];
-      for (const n of namen) ((await treffer(n)) ? gefunden : fehlend).push(n);
-      // Gegenprobe: findet die Suche ALLES, beweist ein Treffer nichts.
-      const negativkontrolle = !(await treffer("zzz-gibt-es-nicht-zzz"));
-
-      setter.call(input, "");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      app.setting.close();
-      return { gesucht: namen, gefunden, fehlend, negativkontrolle };
-    `);
+    const searchable: { skip?: string; befund?: string; gesucht: string[]; gefunden: string[]; fehlend: string[]; negativkontrolle: boolean } =
+      vorbereitung.befund !== undefined || vorbereitung.skip !== undefined
+        ? { ...vorbereitung, gesucht: vorbereitung.namen, gefunden: [], fehlend: [], negativkontrolle: false }
+        : await (async () => {
+            const gefunden: string[] = [];
+            const fehlend: string[] = [];
+            for (const n of vorbereitung.namen) ((await suche(n)) ? gefunden : fehlend).push(n);
+            // Gegenprobe: findet die Suche ALLES, beweist ein Treffer nichts.
+            const negativkontrolle = !(await suche("zzz-gibt-es-nicht-zzz"));
+            await cdp
+              .evaluate(`
+                const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
+                const input = doc.querySelector(".setting-search-container input");
+                if (input) {
+                  const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, "value").set;
+                  setter.call(input, "");
+                  input.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+                app.setting.close();
+                return true;
+              `)
+              .catch(() => undefined);
+            return { gesucht: vorbereitung.namen, gefunden, fehlend, negativkontrolle };
+          })();
     if (searchable.skip) {
-      skip("12. Die Einstellungen erscheinen in Obsidians Settings-Suche", searchable.skip);
+      skip(NAME_12, searchable.skip);
     } else if (searchable.befund) {
-      record("12. Die Einstellungen erscheinen in Obsidians Settings-Suche", false, searchable.befund);
+      record(NAME_12, false, searchable.befund);
     } else {
       record(
-        "12. Die Einstellungen erscheinen in Obsidians Settings-Suche",
+        NAME_12,
         searchable.fehlend.length === 0 && searchable.negativkontrolle && searchable.gesucht.length > 0,
         searchable.gesucht.length === 0
           ? "getSettingDefinitions() liefert keine Zeilen — nichts, was in der Suche stehen könnte"

@@ -408,6 +408,32 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-09-05 (abends) · 0.12-dev, Final-Review-Fixes · Staging-Vault · beide Mocks · **34/34 grün** — nach zwei roten Zwischenständen, die beide echte Befunde waren
+
+Lauf nach der Fix-Welle zum Final-Review (K1 `denoising 0`, W1 API-Vertrag, W2 Aufräumen von
+Punkt 30, G1–G5). Vier Anläufe, und die drei ersten sind der eigentliche Ertrag:
+
+| Anlauf | Ergebnis | Was daran echt war |
+|---|---|---|
+| 1 | **33/34** — Punkt 26 rot | Das NEUE Kriterium war falsch, nicht das Plugin: strikte Monotonie `RMSE(A,0.5) < RMSE(A,0.625) < RMSE(A,0.75)` reißt bei SD-Turbo (14.48 / **23.08** / 21.42), während SDXL-Turbo im selben Lauf monoton ist (19.13 / 34.89 / 36.59). Kriterium auf **Unterscheidbarkeit** umgestellt (s. Punkte 26/27 oben). |
+| 2, 3 | **Abbruch nach Punkt 4**: `Zeitüberschreitung: Runtime.evaluate` | Treiber-Defekt, durch Anlauf 1 erst ausgelöst: Punkt 12 fuhr **alle** Settings-Suchen in EINEM `Runtime.evaluate`, dessen Laufzeit linear mit der Zahl sichtbarer Zeilen wächst. Nach Anlauf 1 lagen **beide** eingebauten Modelle im Cache → zwei bedingte Zeilen mehr („Modell", „Modellwahl im Panel anzeigen"), 8 Suchen wurden 10, und der Aufruf riss `Cdp.send`s 30-s-Grenze. Am Plugin war nichts defekt. |
+| 4 | **34/34 grün** | — |
+
+**Was Anlauf 2/3 lehren, über diesen Treiber hinaus:** es ist derselbe Fehlermodus wie beim
+alten `waitFor` (AGENTS: *Mutation und Wartephase trennen*) — eine Wartezeit im Renderer ist
+unsichtbar, bis genug davon zusammenkommt, und die Schwelle wandert mit dem **Datenstand**, nicht
+mit dem Code. Punkt 12 stand seit Monaten knapp unter der Grenze; erst ein voller Modell-Cache
+schob ihn darüber. Die Reparatur zieht die Schleife nach Node: eine Suche = ein `evaluate`, jeder
+Aufruf rund zwei Sekunden, unabhängig von der Zeilenzahl. **Ein Prüfpunkt, dessen Laufzeit an der
+gemessenen Datenmenge hängt, ist eine Zeitbombe — auch wenn er jahrelang grün war.**
+
+Bestätigt in Anlauf 4 (Zahlen deterministisch identisch zu Anlauf 1): Punkt **25** grün
+(Luma-Stddev 45.1, 62 Stufen) — er misst nach dem W2-Fix wieder txt2img, nicht mehr die in
+Punkt 30 gesetzte Vorlage; Punkte **26/27** grün mit der Zwischenstufe 0.625 (SD-Turbo 17.82 von
+0.5 und 19.59 von 0.75 entfernt, SDXL-Turbo 29.88 / 23.12 — Schwelle 2, Rasterung wäre exakt 0).
+Die Aufräum-Warnung aus Punkt 30 („Vorlage ließ sich nicht entfernen") blieb in allen Anläufen
+aus.
+
 ### 2026-09-05 · 0.12-dev (img2img-Steuerung A+B) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **34/34 grün**, zwei neue Punkte mit Gegenprobe
 
 Task 7 des Plans `2026-09-05-img2img-steuerung-plan`: Tasks 1–4 haben den Steps-Katalog auf
@@ -455,10 +481,23 @@ verändert.
 ⚠️ **Nachtrag Final-Review 2026-09-05: dieser Absatz war schwächer, als er klang.** Beide Punkte
 maßen nur `str 0.25` und `str 1.0` — bei steps=4 sind das **exakte Punkte des alten
 1/steps-Rasters**, dort ist „neu == alt" per Konstruktion, und „unverändert grün" belegte für den
-Umbau folglich nichts. Seit dem Review messen sie zusätzlich `0.5 / 0.625 / 0.75` und fordern
-strikt steigenden RMSE zur Vorlage; **0.625 ist im alten Raster gar nicht erreichbar** — käme die
-Quantisierung zurück, wäre sein Bild mit dem von 0.5 oder 0.75 identisch und die Ungleichung
-risse. Kosten: drei zusätzliche Generierungen je Modell.
+Umbau folglich nichts. Seit dem Review messen sie zusätzlich `0.5 / 0.625 / 0.75`; **0.625 ist im
+alten Raster gar nicht erreichbar** — käme die Quantisierung zurück, wäre sein Bild mit dem von
+0.5 oder 0.75 **byte-identisch** (gleicher Seed, gleicher Prompt, gleiche Rechnung), RMSE also
+exakt 0. Genau das prüft der Punkt: `RMSE(0.5, 0.625)` und `RMSE(0.625, 0.75)` müssen über
+`ZWISCHENSTUFE_MIN_RMSE` liegen. Kosten: drei zusätzliche Generierungen je Modell.
+
+⚠️ **Der erste Entwurf dieses Kriteriums forderte stattdessen strikte Monotonie
+`RMSE(A,0.5) < RMSE(A,0.625) < RMSE(A,0.75)` — und wurde im Lauf vom 2026-09-05 zu Recht rot.**
+Gemessen: SD-Turbo `14.48 / 23.08 / 21.42` (0.625 liegt **weiter** von der Vorlage weg als 0.75),
+SDXL-Turbo im selben Lauf monoton `19.13 / 34.89 / 36.59`. Das ist kein Defekt, sondern der
+Aufbau: bei steps=4 startet 0.5 am Anker 2 (zwei UNet-Schritte), 0.625 und 0.75 beide am Anker 1
+(drei Schritte) mit interpoliertem Sigma **und** interpoliertem Timestep — und SD-Turbo ist auf
+genau vier Timesteps destilliert, ein Zwischenwert liegt für sein UNet leicht außerhalb der
+Verteilung. „Mehr denoising = weiter weg" gilt grob (das prüft die 0.25-gegen-1.0-Monotonie
+weiterhin), aber **nicht zwischen benachbarten Ankern**. Ein Kriterium, das nur bei einem der
+beiden Modelle stimmt, misst das Modell statt den Umbau — die Lehre ist dieselbe wie beim
+Roundtrip-Boden: die Schwelle gehört an die Messung, nicht an die Erwartung.
 
 ### 2026-09-03 · 0.11.1 + Nachlese · Staging-Vault · beide Mocks · **32/32 grün**, Punkt 21 mit Gegenprobe
 
