@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-09-05
+
 ### Changed
 
 - **The denoising slider is now continuous in the built-in engine.** Until 0.11 the value
