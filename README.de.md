@@ -38,7 +38,7 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
 
 - Den Generator über das Ribbon-Icon oder den Befehl **Generator öffnen** aufrufen.
 - Einen Prompt eingeben, optional einen **Negativ-Prompt** (was vermieden werden soll),
-  eine **Größe** aus 7 kuratierten Seitenverhältnissen wählen (quadratisch, hoch, quer)
+  eine **Größe** aus 10 kuratierten Seitenverhältnissen wählen (quadratisch, hoch, quer, bis 2048)
   und **Schritte** (1–50), **CFG** (Führungsstärke, 1–15) sowie den **Seed** nach
   Geschmack einstellen. Ein Klick auf einen Stil-Chip (Sumi-e, Watercolor, Photo, Oil —
   in den Einstellungen änder- und erweiterbar) hängt dessen Anmutung an den Prompt; ein

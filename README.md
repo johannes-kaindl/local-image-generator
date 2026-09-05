@@ -37,7 +37,7 @@ Either way, your prompts and images never leave your machine.
 
 - Open the generator from the ribbon icon or the **Open generator** command.
 - Type a prompt, optionally a **negative prompt** (what to avoid), pick a
-  **size** from 7 curated aspect ratios (square, portrait, landscape), and
+  **size** from 10 curated aspect ratios (square, portrait, landscape, up to 2048), and
   adjust **steps** (1–50), **CFG** (guidance scale, 1–15) and **seed** to
   taste. Click a style chip (Sumi-e, Watercolor, Photo, Oil — edit or add
   your own in settings) to append its look to the prompt; click again to
