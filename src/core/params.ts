@@ -67,16 +67,6 @@ function clampFloat(v: number | undefined, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, n));
 }
 
-/** Das builtin-Raster: bei `steps` Schritten gibt es nur `steps` Einstiegspunkte fuer
- *  Teil-Denoising. Existiert genau EINMAL — die Haertung quantisiert damit (Task 5) und die
- *  Engine leitet den Einstiegspunkt damit ab (Task 3). Zwei Rechnungen waeren zwei Wahrheiten
- *  (AGENTS-Gotcha „Dasselbe Konzept in zwei Schichten"). Mindestens ein Step bleibt immer:
- *  denoising 0 hiesse „nichts tun", und ein Lauf, der nichts tut, waere eine Attrappe. */
-export function denoiseRaster(steps: number, denoising: number): { tStart: number; effective: number } {
-  const tStart = Math.min(steps - 1, Math.max(0, steps - Math.round(denoising * steps)));
-  return { tStart, effective: (steps - tStart) / steps };
-}
-
 /** Die naechstgelegene erlaubte Groesse aus `sizes` waehlen (I2-Fix, Final-Review 2026-08-24) —
  *  "so wie sie heute schon Steps klemmt" (Spec-Zusage an v1-API-Konsumenten). Quadrierter
  *  euklidischer Abstand statt Wurzel (monoton, spart die sqrt, aendert das Ergebnis nicht) —
@@ -99,7 +89,8 @@ function nearestSize(width: number, height: number, sizes: readonly SizeOption[]
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
   const caps = backendCapabilities(ctx.mode, ctx.builtinModel);
   // clampInt gibt seinen Fallback UNGEPRUEFT zurueck — ein defaultSteps von 20 landete im
-  // builtin-Modus (max 4) sonst unveraendert im Ergebnis. Deshalb wird auch er geklemmt;
+  // builtin-Modus (dessen Katalog-Maximum liegt seit 0.12 bei 8, davor 4) sonst unveraendert
+  // im Ergebnis. Deshalb wird auch er geklemmt;
   // das faengt zugleich ein kaputtes defaultSteps aus einer handeditierten data.json.
   const fallbackSteps = clampInt(ctx.defaultSteps, caps.minSteps, caps.maxSteps, caps.minSteps);
   // Kann das Backend kein img2img, faellt die ganze Vorlage weg — still, wie Negativ-Prompt
@@ -116,9 +107,10 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
   const size = caps.sizes ? nearestSize(wantedWidth, wantedHeight, caps.sizes) : { width: wantedWidth, height: wantedHeight };
   const steps = clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps);
   const rawDenoising = wanted === undefined ? null : clampFloat(input.denoising, DENOISING.min, DENOISING.max, DENOISING.default);
-  // builtin rechnet Teil-Denoising nur an `steps` Einstiegspunkten — die Notiz traegt den
-  // EFFEKTIVEN Wert, nicht den Wunsch (eine Haertung, eine Wahrheit). Server bleibt kontinuierlich.
-  const denoising = rawDenoising !== null && ctx.mode === "builtin" ? denoiseRaster(steps, rawDenoising).effective : rawDenoising;
+  // Seit 0.12 ohne Sonderfall: beide Backends melden den eingestellten Wert. Die
+  // builtin-Engine interpoliert ihren Einstiegspunkt (denoiseEntry im Scheduler),
+  // statt auf `steps` Positionen zu rasten.
+  const denoising = rawDenoising;
   return {
     prompt: input.prompt,
     // Ein Regler, den das Backend nicht kann, wird nicht abgelehnt, sondern neutralisiert —

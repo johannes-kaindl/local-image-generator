@@ -2,11 +2,10 @@
 // sd-turbo-Pipeline (Spec §5): tokenize → text_encoder → UNet-Loop (Euler-Ancestral,
 // guidance 1.0) → VAE-Decode → RGBA. Sessions/Tensoren sind injiziert (OrtValue ist
 // strukturell ort.Tensor-kompatibel) — die Engine bleibt pure und Node-testbar.
-import { denoiseRaster } from "./params";
 import { f16ArrayToF32, f32ArrayToF16 } from "./pipeline/f16";
 import { chwToRgba } from "./pipeline/image";
 import { gaussianArray } from "./pipeline/prng";
-import { makeSchedule, scaleInput, schedulerStep, type Schedule } from "./pipeline/scheduler";
+import { denoiseEntry, makeSchedule, scaleInput, schedulerStep, type Schedule } from "./pipeline/scheduler";
 import { tokenize, type TokenizerData } from "./pipeline/tokenizer";
 
 export interface OrtValue {
@@ -60,9 +59,9 @@ export interface GenerateRequest {
   /** img2img (Spec 4a): Vorlagen-Pixel CHW [-1,1], BEREITS auf Zielgroesse (Base64→Pixel
    *  braucht DOM und sitzt in png.ts/local-engine — Pure-Core-Schnitt). undefined = txt2img. */
   initPixels?: Float32Array;
-  /** Effektive, schon GEHAERTETE Aenderungsstaerke (Raster {1/steps..1}). Die Engine leitet
-   *  daraus nur noch den Einstiegspunkt ab — mit denoiseRaster, derselben Formel wie die
-   *  Haertung. `d` ist bereits Rasterwert, die Ableitung ist exakt. */
+  /** Schon GEHAERTETE Aenderungsstaerke, kontinuierlich in [0,1]. Die Engine leitet daraus
+   *  ihren Einstiegspunkt selbst ab (denoiseEntry im Scheduler, interpoliert zwischen zwei
+   *  Sigma-Stufen statt zu runden). */
   denoising?: number;
 }
 
@@ -264,9 +263,27 @@ export class SdTurboEngine implements BuiltinEngine {
       // exakt wie zuvor (init bleibt undefined, runDiffusion startet bei 0).
       let init: { latents: Float32Array; startAt: number } | undefined;
       if (req.initPixels) {
-        const { tStart } = denoiseRaster(req.steps, req.denoising ?? 1);
+        const entry = denoiseEntry(req.steps, req.denoising ?? 1, schedule.sigmas, schedule.timesteps);
         const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, IMAGE_SIZE, VAE_SCALING);
-        init = { latents: noisedInitLatents(encoded, req.seed, schedule.sigmas[tStart]!), startAt: tStart };
+        if (entry.sigma === 0) {
+          // „denoising 0 heisst nichts veraendern" — im WORTSINN, nicht als Rauschpegel 0 in
+          // einer Formel, die durch ihn teilt. `schedulerStep` rechnet `sigmaUp` und
+          // `derivative` bei Sigma 0 als 0/0, also NaN; `chwToRgba` klemmt NaN auf 0 und
+          // liefert ein komplett schwarzes Bild OHNE Fehler (K1, Final-Review 2026-09-05).
+          // Deshalb entfaellt der Diffusions-Lauf ganz und das encodierte Vorlagen-Latent
+          // geht direkt in den Decoder. Erreichbar ist der Fall ueber DENOISING.min (linker
+          // Regler-Anschlag) und ueber die Provider-API — ein reiner UI-Riegel genuegte nicht.
+          // Fortschritt in derselben Form wie am Ende eines echten Laufs (total/total), damit
+          // ein Aufrufer nicht in einem halben Zustand haengenbleibt.
+          onProgress?.(1, 1);
+          return await decodeLatents(this.sessions.vaeDecoder, encoded, latentDims, VAE_SCALING, IMAGE_SIZE, req.seed);
+        }
+        // Die FOLGE anpassen, nicht nur das Latent: schedulerStep und die Schleife in
+        // runDiffusion lesen Sigma und Timestep selbst aus dem Zeitplan. `schedule` ist
+        // pro Lauf frisch aus makeSchedule — die Mutation trifft niemanden sonst.
+        schedule.sigmas[entry.startAt] = entry.sigma;
+        schedule.timesteps[entry.startAt] = entry.timestep;
+        init = { latents: noisedInitLatents(encoded, req.seed, entry.sigma), startAt: entry.startAt };
       }
 
       const latents = await runDiffusion(

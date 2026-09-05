@@ -27,7 +27,7 @@ describe("model-manifest", () => {
       expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(f.bytes).toBeGreaterThan(0);
     }
-    expect(BUILTIN_MODELS["sd-turbo"].steps).toEqual({ min: 1, max: 4, default: 4 });
+    expect(BUILTIN_MODELS["sd-turbo"].steps).toEqual({ min: 1, max: 8, default: 4 });
     expect(BUILTIN_MODELS["sd-turbo"].sizes).toEqual([{ width: 512, height: 512 }]);
   });
   it("assetUrl fügt Basis und Pfad ohne doppelte Slashes zusammen", () => {
@@ -149,5 +149,22 @@ describe("filesFor", () => {
 
   it("liefert fuer jedes Modell dessen eigene Dateien, nicht die des Defaults", () => {
     expect(filesFor("sdxl-turbo").map((f) => f.key)).not.toEqual(filesFor("sd-turbo").map((f) => f.key));
+  });
+});
+
+describe("Step-Grenzen der builtin-Modelle", () => {
+  // Gemessen 2026-09-05 (84 Laeufe, siehe Cockpit _SDD/2026-09-05-messreihe-img2img):
+  // 4 → 8 ist echter Detailgewinn, ab 12 kippt SD-Turbo in Ueberzeichnung. Die 8 ist
+  // die belegbar sichere Seite, 12 die belegbar schlechte. Wer sie aendert, sieht sich
+  // Bilder an — die naheliegenden Kennzahlen (Luma-Streuung, Farbzahl) steigen bis 20
+  // weiter und tragen die Aussage NICHT.
+  it.each(["sd-turbo", "sdxl-turbo"] as const)("%s erlaubt bis zu 8 Steps", (id) => {
+    expect(modelById(id).steps.max).toBe(8);
+  });
+
+  it.each(["sd-turbo", "sdxl-turbo"] as const)("%s behaelt Default 4", (id) => {
+    // Der Default bleibt bewusst bei 4: wer nichts tut, bekommt das bisherige Verhalten
+    // und die bisherige Rechenzeit (~1,9 s statt ~3,0 s).
+    expect(modelById(id).steps.default).toBe(4);
   });
 });

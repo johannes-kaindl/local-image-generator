@@ -38,6 +38,53 @@ export function makeSchedule(steps: number): Schedule {
   return { timesteps, sigmas, initNoiseSigma: sigmas[0]! };
 }
 
+/**
+ * Einstiegspunkt für Teil-Denoising (img2img) — **kontinuierlich**, nicht gerastert.
+ *
+ * Die Vorgängerfassung (`denoiseRaster` in `params.ts`, bis 0.11) holte den Rauschpegel
+ * an einem ganzzahligen Index: `sigmas[tStart]`. Daraus folgten genau `steps` erreichbare
+ * Positionen — bei 4 Steps {0.25, 0.5, 0.75, 1.0}. Gemessen am 2026-09-05 überspringt der
+ * Sprung 0.5 → 0.75 dabei genau das Optimum (RMSE-Sprung doppelt so groß wie ein
+ * 8-Steps-Schritt, konsistent über drei Motive).
+ *
+ * Hier wird stattdessen zwischen zwei Stufen interpoliert. Zulässig ist das, weil der
+ * Euler-Schritt `sigma_from`/`sigma_to` als Differenz nimmt, nicht als feste Größe.
+ *
+ * ⚠️ Der Aufrufer MUSS `sigmas[startAt]` durch das zurückgegebene `sigma` ersetzen.
+ * `schedulerStep` liest sein Start-Sigma selbst aus dem Array (s. dort); ein interpolierter
+ * Wert nur im Init-Latent verpufft und ergibt ein **leise falsches** Bild — kein Fehler,
+ * nur ein schlechteres Ergebnis. Dasselbe gilt für `timesteps[startAt]`.
+ *
+ * Der Timestep wird mitinterpoliert: sonst bekommt das UNet die Konditionierung des
+ * Ankers, während der Rauschpegel dazwischen liegt.
+ */
+export function denoiseEntry(
+  steps: number,
+  denoising: number,
+  sigmas: readonly number[],
+  timesteps: readonly number[],
+): { startAt: number; sigma: number; timestep: number } {
+  // Reelle Position in der Folge. denoising 1 → 0 (ganz vorn, volles Rauschen),
+  // denoising 0 → steps (ganz hinten) — deshalb die Klemme eine Zeile weiter.
+  const t = (1 - denoising) * steps;
+  // Der Anker bleibt im Zeitplan, damit der Rest-Zeitplan nie leer ist. Bei denoising 0
+  // (und bei jedem negativen Wert, den die frac-Klemme dorthin zieht) ist die interpolierte
+  // Sigma dann 0. ⚠️ Ein Schritt MIT diesem Sigma ist nicht wirkungslos, sondern kaputt:
+  // `schedulerStep` teilt zweimal durch sigma (`sigmaUp`, `derivative`) und liefert NaN,
+  // woraus `chwToRgba` ein schwarzes Bild ohne Fehlermeldung macht. Den Fall faengt der
+  // AUFRUFER ab — beide Engines ueberspringen bei Sigma 0 den Diffusions-Lauf und dekodieren
+  // das Vorlagen-Latent direkt; erst DAS heisst „nichts veraendern" (K1, 2026-09-05).
+  const startAt = Math.min(steps - 1, Math.max(0, Math.floor(t)));
+  const frac = Math.min(1, Math.max(0, t - startAt));
+  // Nachfolger: `sigmas` trägt steps+1 Einträge (letzter 0), `timesteps` nur steps —
+  // für den letzten Anker ist der konzeptionelle Nachfolger jeweils 0.
+  const sigmaNext = sigmas[startAt + 1] ?? 0;
+  const timestepNext = timesteps[startAt + 1] ?? 0;
+  const sigma = sigmas[startAt]! + (sigmaNext - sigmas[startAt]!) * frac;
+  const timestep = Math.round(timesteps[startAt]! + (timestepNext - timesteps[startAt]!) * frac);
+  return { startAt, sigma, timestep };
+}
+
 export function scaleInput(latents: Float32Array, sigma: number): Float32Array {
   const k = 1 / Math.sqrt(sigma * sigma + 1);
   const out = new Float32Array(latents.length);

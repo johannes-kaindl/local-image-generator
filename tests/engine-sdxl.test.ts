@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { OrtValue, Session } from "../src/core/engine";
 import { SdxlTurboEngine } from "../src/core/engine-sdxl";
-import { denoiseRaster } from "../src/core/params";
 import { gaussianArray } from "../src/core/pipeline/prng";
-import { makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
+import { denoiseEntry, makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
 
 // Zwei UNTERSCHIEDLICHE Vokabulare statt eines geteilten TOK-Objekts (Review-Finding): mit
 // einem einzigen Objekt fuer primary/secondary wuerde nichts auffallen, wenn die beiden
@@ -283,8 +282,9 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     expect(encoderCalls).toHaveLength(1);
     expect(encoderCalls[0]!["sample"]!.dims).toEqual([1, 3, 1024, 1024]);
     const unetCalls = rec.feeds.filter((f) => "timestep" in f);
-    const { tStart } = denoiseRaster(steps, denoising);
-    expect(unetCalls).toHaveLength(steps - tStart);
+    const sched = makeSchedule(steps);
+    const { startAt } = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+    expect(unetCalls).toHaveLength(steps - startAt);
   });
 
   it("img2img: Start-Latents tragen SDXLs EIGENE vaeScaling (0.13025), nicht SD-Turbos 0.18215 (F2, Teil b)", async () => {
@@ -319,9 +319,9 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
       initPixels: new Float32Array(3 * side * side),
       denoising,
     });
-    const { tStart } = denoiseRaster(steps, denoising);
     const schedule = makeSchedule(steps);
-    const sigma = schedule.sigmas[tStart]!;
+    const entry = denoiseEntry(steps, denoising, schedule.sigmas, schedule.timesteps);
+    const sigma = entry.sigma;
     const noise0 = gaussianArray(seed, 1)[0]!;
     const expected = scaleInput(new Float32Array([2 * vaeScaling + noise0 * sigma]), sigma)[0]!;
     expect(seenFirstSample[0]![0]).toBeCloseTo(expected, 4);
@@ -352,5 +352,127 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     });
     const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
     await expect(e.generate({ prompt: "hund", steps: 1, seed: 1, size: 512 })).rejects.toThrow(/seq-Laenge weicht/);
+  });
+
+  it("img2img ersetzt den Folgen-Eintrag, nicht nur das Init-Latent", async () => {
+    const steps = 4;
+    const denoising = 0.625;
+    const sched = makeSchedule(steps);
+    const erwartet = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+
+    // Muster der SDXL-Testdatei: `sessions(rec, side)` zeichnet alle Feeds in `rec.feeds`
+    // auf, `feedOf(rec, key)` holt den ERSTEN Feed mit diesem Namen — also genau den des
+    // ersten UNet-Aufrufs. Kein eigener Spion noetig.
+    const rec: Rec = { feeds: [] };
+    const e = new SdxlTurboEngine(
+      sessions(rec, 512),
+      { primary: TOK_PRIMARY, secondary: TOK_SECONDARY },
+      { vaeScaling: 0.13025, size: 512 },
+    );
+    await e.generate({
+      prompt: "cat", steps, seed: 9, size: 512,
+      initPixels: new Float32Array(3 * 512 * 512), denoising,
+    });
+
+    const gesehen = Number((feedOf(rec, "timestep").data as BigInt64Array)[0]);
+    expect(gesehen).toBe(erwartet.timestep);
+    expect(gesehen).not.toBe(sched.timesteps[erwartet.startAt]);
+  });
+
+  it("img2img ersetzt auch das SIGMA im Zeitplan, nicht nur den Timestep — sonst waere die Umsetzung nur zur Haelfte fertig", async () => {
+    // Fix-Runde 1 (Review-Befund): die urspruengliche Fassung dieses Tests verglich zwei
+    // Laeufe mit verschiedenem Bruchteil und erwartete unterschiedliche Feeds. Das belegt
+    // nichts: `noisedInitLatents(encoded, seed, entry.sigma)` bekommt `entry.sigma` als
+    // PARAMETER, unabhaengig davon, ob `schedule.sigmas[entry.startAt]` je gesetzt wurde —
+    // die beiden Laeufe waeren also so oder so verschieden, auch im Halb-Bug (nur
+    // `timesteps` ersetzt, `sigmas` nicht: `scaleInput` skaliert dann mit dem
+    // Anker-Sigma, aber das ist bei den beiden gewaehlten Bruchteilen ebenfalls
+    // verschieden von `entry.sigma`, also bleiben die Feeds ungleich). Der Test zeigte nur,
+    // dass IRGENDWO interpoliert wird, nicht WO.
+    //
+    // Diese Fassung rechnet den erwarteten Feed-Wert stattdessen EXAKT nach — Muster aus
+    // tests/engine.test.ts:225 ("Start-Latents entsprechen dem verrauschten Vorlagen-Latent
+    // am Einstiegspunkt"), hier mit einem echten Bruchteil (frac=0.5, nicht 0 wie dort) und
+    // ohne die dortige f16-Rundung (SDXLs Fake rechnet in float32).
+    //
+    // Erwartungswert: scaleInput(noisedInitLatents(encoded, seed, entry.sigma), entry.sigma).
+    // `encoded[0]` ist bekannt (der vaeEncoder-Fake liefert konstant 2 in den Mean-Kanaelen,
+    // `encodeInitImage` multipliziert nur mit vaeScaling — Muster aus dem F2b-Test oben,
+    // Zeile ~296, dort ebenfalls ohne Aufruf von encodeInitImage komponiert).
+    //
+    // Warum das den Halb-Bug faengt: die Engine liefert den Feed als
+    // `scaleInput(latents, schedule.sigmas[startAt])`. Fehlt die Zeitplan-Ersetzung, ist
+    // dieser Divisor der ANKER-Sigma, waehrend die Erwartung hier mit `entry.sigma`
+    // (interpoliert) rechnet — bei frac=0.5 laufen beide Werte auseinander, der Test wird rot.
+    const steps = 8;
+    const denoising = 0.5625; // Anker 3, frac 0.5 — kein Randfall (frac != 0)
+    const seed = 9;
+    const vaeScaling = 0.13025;
+    const sched = makeSchedule(steps);
+    const entry = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+    expect(entry.startAt).toBe(3);
+
+    const rec: Rec = { feeds: [] };
+    const e = new SdxlTurboEngine(
+      sessions(rec, 512),
+      { primary: TOK_PRIMARY, secondary: TOK_SECONDARY },
+      { vaeScaling, size: 512 },
+    );
+    await e.generate({
+      prompt: "cat", steps, seed, size: 512,
+      initPixels: new Float32Array(3 * 512 * 512), denoising,
+    });
+
+    // vaeEncoder-Feed traegt NUR "sample" (kein "timestep") — dieselbe Unterscheidung wie
+    // in den umliegenden Tests dieser Datei, nicht neu erfunden.
+    const unetCalls = rec.feeds.filter((f) => "timestep" in f);
+    const firstSample = unetCalls[0]!["sample"]!.data as Float32Array;
+
+    const encoded0 = 2 * vaeScaling; // Fake-Mean 2, wie encodeInitImage() sie multipliziert
+    const noise0 = gaussianArray(seed, 1)[0]!;
+    const noised0 = encoded0 + noise0 * entry.sigma; // noisedInitLatents() fuer den 0. Eintrag
+    const expected = scaleInput(new Float32Array([noised0]), entry.sigma)[0]!;
+    expect(firstSample[0]).toBeCloseTo(expected, 4);
+  });
+
+  it("denoising 0: kein UNet-Schritt, keine NaN — die Vorlage wird direkt dekodiert", async () => {
+    // K1 (Final-Review 2026-09-05) — Zwilling des gleichnamigen Tests in tests/engine.test.ts.
+    // Der Defekt sitzt im geteilten `schedulerStep`, also traegt ihn JEDE Engine: bei Sigma 0
+    // sind `sigmaUp` und `derivative` NaN, `chwToRgba` macht daraus ein komplett schwarzes
+    // Bild ohne Fehlermeldung. Ein Test in nur einer der beiden Engines haette die andere
+    // beim naechsten Umbau ungedeckt gelassen.
+    const rec: Rec = { feeds: [] };
+    const s = sessions(rec, 512);
+    // Echo-Decoder: reicht die Latents in die Bildkanaele durch, damit ein NaN-Latent auch
+    // als schwarzes Bild ankommt. Der Standard-Fake liefert konstant 0 und waere blind.
+    const latentFeeds: Float32Array[] = [];
+    s.vaeDecoder = {
+      inputNames: ["latent_sample"],
+      outputNames: ["sample"],
+      inputTypes: {},
+      run: async (feeds) => {
+        rec.feeds.push(feeds);
+        const lat = feeds["latent_sample"]!.data as Float32Array;
+        latentFeeds.push(lat);
+        const out = new Float32Array(3 * 512 * 512);
+        for (let i = 0; i < out.length; i++) out[i] = lat[i % lat.length]!;
+        return { sample: { data: out, dims: [1, 3, 512, 512] } };
+      },
+      release: async () => {},
+    };
+    const e = new SdxlTurboEngine(s, { primary: TOK_PRIMARY, secondary: TOK_SECONDARY }, { vaeScaling: 0.13025, size: 512 });
+    const progress: Array<[number, number]> = [];
+    const res = await e.generate(
+      { prompt: "hund", steps: 4, seed: 9, size: 512, initPixels: new Float32Array(3 * 512 * 512), denoising: 0 },
+      (step, total) => progress.push([step, total]),
+    );
+
+    // UNet-Feeds tragen "timestep" — dieselbe Unterscheidung wie in den Nachbartests.
+    expect(rec.feeds.filter((f) => "timestep" in f)).toHaveLength(0);
+    const lat = latentFeeds[0]!;
+    expect(lat.length).toBeGreaterThan(0);
+    expect(Array.from(lat).some((v) => Number.isNaN(v))).toBe(false);
+    expect(Array.from(res.rgba.subarray(0, 3 * 64)).some((v) => v !== 0)).toBe(true);
+    expect(progress.at(-1)).toEqual([1, 1]);
   });
 });

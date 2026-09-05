@@ -50,12 +50,13 @@ Either way, your prompts and images never leave your machine.
   seed by hand without generating.
 - **Start from an existing image** (img2img, both engines): pick a reference image
   from your vault — or hit **Save & use as reference** on a result you just made —
-  and set how far the model may move away from it. In server mode the strength is a
-  continuous slider; in built-in mode it snaps to the model's step count, since
-  SD-Turbo and SDXL-Turbo only offer 1–4 discrete steps to begin with. The strength
-  slider only appears once a reference is actually set. Built-in mode center-crops
-  the reference to the model's square input size (a 16:9 image gets cropped, not
-  squished); server mode hands the file over unchanged and lets the server scale it.
+  and set how far the model may move away from it. The strength slider is a continuous
+  0–1 range in both modes and only appears once a reference is actually set. Built-in
+  mode center-crops the reference to the model's square input size (a 16:9 image gets
+  cropped, not squished); server mode hands the file over unchanged and lets the server
+  scale it. More steps also give the slider more room: the entry point is interpolated,
+  but the *meaning* of a given denoising value shifts with the step count — a recipe
+  saved at 4 steps will not look the same at 8.
 - Switch to the **History** tab to see your past generations as full recipes
   (prompt · negative prompt · seed · steps · size · CFG · time) — group them
   by prompt, click one to load its recipe back into Generate, delete single
@@ -66,9 +67,9 @@ Either way, your prompts and images never leave your machine.
   generation's prompt, seed, steps, size and date in its frontmatter and the
   image embedded, and open that note instead. **Insert** always just saves
   the image and embeds it at your cursor in the current note.
-- **Built-in engine:** both catalog models are distilled — 1–4 steps, no
+- **Built-in engine:** both catalog models are distilled — 1–8 steps, no
   guidance — so in this mode the panel shows only what a model honours:
-  prompt, steps (1–4), seed and the style chips, plus a size picker once you
+  prompt, steps (1–8), seed and the style chips, plus a size picker once you
   have more than one size to choose from (SD-Turbo is fixed at 512×512;
   SDXL-Turbo also offers 1024×1024). Negative prompt and CFG stay
   server-only either way — no built-in model supports guidance.
@@ -120,11 +121,11 @@ if (api.status().capabilities.initImage) {
 }
 ```
 
-The built-in engine only re-runs part of its fixed step schedule, so it can only land on
-`steps` distinct denoising strengths (e.g. 4 steps → {0.25, 0.5, 0.75, 1}). It quantizes your
-`denoising` to the nearest one of those — the server backend stays continuous. Either way,
-`r.image.params.denoising` is the value that governs; treat it as the source of truth, not
-the number you passed in.
+The built-in engine only re-runs part of its fixed step schedule, but it interpolates the
+entry point rather than snapping to it, so `denoising` is continuous there too — same as the
+server backend. Either way, `r.image.params.denoising` is the value that governs; treat it
+as the source of truth, not the number you passed in. More steps also give it more room to
+matter: the same `denoising` value looks different at 4 steps than at 8.
 
 The API never starts a download. If the model is missing you get
 `{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button
@@ -345,7 +346,7 @@ together with the license and a notice; the conversion script is in
 models), the model's sessions — three for SD-Turbo (text encoder, UNet, VAE
 decoder), four for SDXL-Turbo (two text encoders, UNet, VAE decoder) — are
 loaded into the GPU — the status line counts the seconds — then each image
-takes one text-encoder pass, 1–4 UNet steps and a VAE decode. SDXL-Turbo's
+takes one text-encoder pass, 1–8 UNet steps and a VAE decode. SDXL-Turbo's
 UNet alone is ≈ 5 GB and exceeds the single-file limits both ONNX and the
 browser's JS heap impose, so it is split into external-data buckets at
 conversion time and reassembled by the engine at load. The pipeline (CLIP

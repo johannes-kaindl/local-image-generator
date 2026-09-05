@@ -96,7 +96,7 @@ import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
 import { buildHerkunft, requireEigenerBuild } from "../../tools/obsidian-cdp/vault.js";
-import { SIZES, STEPS } from "../src/core/generation";
+import { DENOISING, SIZES, STEPS } from "../src/core/generation";
 import { BUILTIN_MODELS, DEFAULT_BUILTIN_MODEL_ID, RUNTIME_WASM, assetsFor, cacheKey, filesFor, totalBytes, type BuiltinModelId } from "../src/core/model-manifest";
 import { IMAGE_GENERATION_API_VERSION } from "../src/core/plugin-api";
 import { formatBytes } from "../src/core/viewmodel";
@@ -108,6 +108,10 @@ const PLUGIN_ID = "local-image-generator";
  *  Konstante, weil ein abweichend getippter Name den Punkt aus der Abschlusszeile fallen
  *  liesse, ohne dass irgendetwas rot wird. */
 const NAME_18D = "18d. generate() im builtin-Modus laedt ohne Klick KEIN Byte";
+/** Namen von Punkt 29/30 — an mehreren Stellen gebraucht (Messung + Auslass-Pfade), aus
+ *  demselben Grund wie NAME_18D. */
+const NAME_29 = "29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1)";
+const NAME_30 = "30. Denoise-Wert (0.6) kommt UNVERAENDERT in der Ergebnis-Notiz an";
 /** Zielordner für Bild + Ergebnis-Notiz. Wird angelegt und am Ende wieder entfernt
  *  (außer mit `--keep`) — so muss der Treiber keine Dateien aus fremden Ordnern fischen. */
 const SMOKE_FOLDER = "_lig-gui-smoke";
@@ -299,6 +303,17 @@ async function pixelStats(cdp: Cdp): Promise<{ width: number; height: number; st
 const CONTENT_STDDEV_MIN = 8;
 const CONTENT_LUMA_BUCKETS_MIN = 20;
 
+/** Mindestabstand (RMSE) zwischen dem Bild bei `denoising 0.625` und denen bei 0.5 bzw. 0.75
+ *  in den Punkten 26/27 — der Beleg, dass 0.625 ein EIGENER Einstiegspunkt ist und nicht auf
+ *  einen alten Rasterpunkt zurueckfaellt. Ein gerastertes 0.625 laege exakt auf 0.5 oder 0.75
+ *  und gaebe bei gleichem Seed/Prompt RMSE **0.000** — ohne jede Streuung, weil dieselbe
+ *  Rechnung dasselbe Bild liefert. Die Schwelle liegt bewusst weit ueber null und weit unter
+ *  den gemessenen Abstaenden (2026-09-05, erster Lauf: die Dreiecksungleichung auf den
+ *  Vorlagen-Abstaenden zwingt SD-Turbo auf ≥ 8.6 und SDXL-Turbo auf ≥ 15.8 fuer den
+ *  0.5-Nachbarn) — sie unterscheidet „ein eigener Punkt" von „derselbe Punkt", nicht zwei
+ *  aehnliche Bilder. */
+const ZWISCHENSTUFE_MIN_RMSE = 2;
+
 /** Was der Server selbst über sein aktives Modell sagt — vom Treiber direkt geholt, nicht
  *  vom Plugin erfragt. Ein Prüfwerkzeug, das seine Erwartung aus dem Prüfling bezieht,
  *  bestätigt nur dessen Meinung: genau so blieb der `model`/`sd_model_checkpoint`-Fehlgriff
@@ -460,9 +475,19 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       }
       return true;
     `);
+
+    // --- 29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1) --------------
+    // Unabhaengig vom GPU-Zustand: stepsMax kommt aus backendCapabilities(mode, builtinModel)
+    // (src/core/generation.ts) und damit rein aus dem Katalog (model-manifest.ts), nicht aus
+    // dem GPU-Check — deshalb hier gemessen, VOR dem `gpu-checking`-Poll. Am gerenderten
+    // ATTRIBUT, nicht am Zustand: beide Anzeigefehler vom 2026-08-21 waren nur ueber die
+    // gerenderte Darstellung sichtbar (AGENTS.md-Gotcha zum Steps-Regler).
+    const stepsMax29 = await cdp.evaluate<string>(`return document.querySelector(".lig-steps")?.getAttribute("max") ?? "";`);
+    record(NAME_29, stepsMax29 === "8", `max=${stepsMax29}`);
+
     let st = await pollUntil(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", 500);
     if (st?.kind === "gpu-missing") {
-      record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24 gegenstandslos`);
+      record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24, 30 gegenstandslos`);
       for (const n of [
         "14. Download über den Panel-Knopf endet auf „bereit“",
         "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
@@ -470,6 +495,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         NAME_18D,
         "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
         NAME_28,
+        NAME_30,
       ])
         skip(n, "kein WebGPU/shader-f16 auf diesem Gerät");
       return;
@@ -518,6 +544,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       skip(NAME_18D, "Vorbedingung 13 nicht erreicht");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
       skip(NAME_28, "Vorbedingung 13 nicht erreicht");
+      skip(NAME_30, "Vorbedingung 13 nicht erreicht");
       return;
     }
 
@@ -565,6 +592,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
       skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
       skip(NAME_28, "Vorbedingung 14 nicht erreicht");
+      skip(NAME_30, "Vorbedingung 14 nicht erreicht");
       return;
     }
 
@@ -652,6 +680,121 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       );
     } else {
       skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
+    }
+
+    // --- 30. Denoise-Wert kommt UNVERAENDERT in der Ergebnis-Notiz an ----------
+    // Kern von Teil B am Wirt (Task 3: hardenParams reicht `denoising` seit dem Umbau
+    // unquantisiert durch, Task 4 hat `rasterFor()`/`controls.denoiseRaster` entfernt). Ein
+    // Unit-Test sieht die Haertung, nicht den Weg bis in die Notiz — bis 0.11 stand hier 0.75
+    // statt des am Regler eingestellten Werts (Quantisierung auf ein 1/steps-Raster).
+    // Baut auf dem Bild von Punkt 15 auf statt einen eigenen Lauf zu generieren: „als
+    // Vorlage" (`.lig-init-from-result`) speichert es und macht es zur Vorlage — danach ist
+    // der Denoise-Regler sichtbar (`controls.denoising` haengt an einer gesetzten Vorlage).
+    if (image15 !== null && !istFehler(image15.status)) {
+      try {
+        await clickReal(cdp, `document.querySelector(".lig-init-from-result")`);
+        const denoiseSichtbar = await pollUntil(
+          () =>
+            cdp.evaluate<boolean>(`
+              const el = document.querySelector(".lig-denoise");
+              return !!el && getComputedStyle(el).display !== "none";
+            `),
+          (v) => v === true,
+          15_000,
+          "warte auf den sichtbaren Denoise-Regler",
+          500,
+        );
+        if (denoiseSichtbar !== true) {
+          record(NAME_30, false, "Denoise-Regler wurde nach „als Vorlage“ nicht sichtbar — Vorlage nicht gesetzt?");
+        } else {
+          await cdp.evaluate(`
+            const den = document.querySelector(".lig-denoise");
+            den.value = "0.6"; den.dispatchEvent(new Event("input", { bubbles: true }));
+            return true;
+          `);
+          const notesBefore30 = await cdp.evaluate<number>(
+            `return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`,
+          );
+          const imageBefore30 = await cdp.evaluate<string>(
+            `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
+          );
+          const t30 = Date.now();
+          await clickReal(cdp, `document.querySelector(".lig-generate")`);
+          const image30 = await pollUntil(
+            () =>
+              cdp.evaluate<{ length: number; status: string; sig: string }>(`
+                const img = document.querySelector(".lig-image");
+                const status = document.querySelector(".lig-status-text");
+                return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
+              `),
+            (r) => (r.length > 5000 && r.sig !== imageBefore30 && r.status === readyText) || istFehler(r.status),
+            generateTimeoutMs,
+            "warte auf das Bild des Denoise-Laufs",
+            500,
+          );
+          if (image30 === null || istFehler(image30.status)) {
+            record(
+              NAME_30,
+              false,
+              image30 === null ? "kein Bild innerhalb der Frist" : `Lauf gescheitert, gemeldet vom Plugin: „${image30.status}“`,
+            );
+          } else {
+            const createLabel = t("generate.button.create");
+            await cdp.evaluate(`
+              const button = [...document.querySelectorAll(".lig-actions button")].find((b) => b.textContent.trim() === ${JSON.stringify(createLabel)});
+              if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
+              button.click(); return true;
+            `);
+            const body30 = await pollUntil(
+              () =>
+                cdp.evaluate<string | null>(`
+                  const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
+                  if (files.length <= ${notesBefore30}) return null;
+                  files.sort((a, b) => b.stat.ctime - a.stat.ctime);
+                  return await app.vault.cachedRead(files[0]);
+                `),
+              (b) => b !== null,
+              60_000,
+              "warte auf die Ergebnis-Notiz (Denoise-Lauf)",
+              1000,
+            );
+            const denoisingLine = body30?.match(/^denoising:\s*(.+)$/m)?.[1]?.trim() ?? null;
+            record(
+              NAME_30,
+              denoisingLine === "0.6",
+              body30 === null
+                ? "keine Notiz innerhalb der Frist"
+                : `${Math.round((Date.now() - t30) / 1000)} s · denoising: ${denoisingLine ?? "(fehlt)"} in der Notiz`,
+            );
+          }
+        }
+      } finally {
+        // W2 (Final-Review 2026-09-05): die Vorlage MUSS hier wieder weg. `state.initImage`
+        // ueberlebt Moduswechsel per Design — bleibt sie stehen, laeuft JEDE spaetere
+        // panelgetriebene Erzeugung als img2img bei denoising 0.6 weiter, namentlich Punkt 25
+        // (runSdxlContentCheck klickt .lig-generate). Der Punkt waere weiter gruen und maesse
+        // trotzdem nicht mehr den Pfad, fuer den er existiert — genau die implizite
+        // Reihenfolge-Abhaengigkeit, vor der der Kommentar in runSdxlContentCheck warnt.
+        // Aufgeraeumt wird im finally-Muster der Nachbarpunkte, nicht am Ende des Erfolgspfads:
+        // ein Abbruch mittendrin hinterliesse den Zustand sonst erst recht.
+        await clickReal(cdp, `document.querySelector(".lig-init-clear")`).catch(() => undefined);
+        const vorlageWeg = await pollUntil(
+          () =>
+            cdp.evaluate<boolean>(`
+              const el = document.querySelector(".lig-denoise");
+              return !el || getComputedStyle(el).display === "none";
+            `),
+          (v) => v === true,
+          10_000,
+          "warte darauf, dass die img2img-Vorlage wieder entfernt ist",
+          500,
+        );
+        if (vorlageWeg !== true) {
+          console.log("    ⚠️ Die img2img-Vorlage aus Punkt 30 liess sich nicht entfernen — spaetere Punkte (25) messen dann img2img statt txt2img.");
+        }
+      }
+    } else {
+      skip(NAME_30, "Vorbedingung 15 nicht erreicht (kein Bild)");
     }
 
     // --- 28. Teil-Nachladung ---------------------------------------------------
@@ -792,13 +935,12 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
   await setzeModus("builtin");
   const drin = await reglerSicht(cdp);
 
-  // Erweiterung 2026-08-31 (Task-5-Review F1): der Denoise-Raster-Block des Panels steht auf
-  // der Zusage, dass der Browser den value eines range-Inputs bei einer min/step-Aenderung
-  // NEU rastet und die Beschriftung bedingungslos nachgezogen wird — fuer max ist das seit
-  // 2026-08-21 gemessen, fuer step war es bis hier nur aus der HTML-Spec abgeleitet. Messung:
-  // im builtin-Modus Steps auf 4, Denoise auf 0.75 (liegt auf dem 0.25er-Raster), dann Steps
-  // auf 3 — das Raster wird 1/3, der Browser muss 0.75 auf 2/3 ziehen (0.75 liegt naeher an
-  // 2/3 als an 1: kein Gleichstand), die Beschriftung muss "0.67" zeigen.
+  // Bis 0.11 stand hier eine Messung, dass der Browser den Denoise-Regler bei einer
+  // Steps-Aenderung NEU rastert (min/step liefen bis dahin auf 1/steps). Task 4
+  // (0.12-img2img-Steuerung) hat genau diese Kopplung ERSATZLOS entfernt: min/step kommen
+  // seither immer aus `DENOISING.min`/`DENOISING.step` (0 und 0.05), unabhaengig vom
+  // Steps-Regler. Die Messung prueft jetzt das GEGENTEIL — die neue Zusage —: eine
+  // Steps-Aenderung veraendert min/step/value/Beschriftung des Denoise-Reglers NICHT.
   const denoiseVorLauf = await cdp.evaluate<string>(`
     const steps = document.querySelector(".lig-steps");
     const den = document.querySelector(".lig-denoise");
@@ -844,18 +986,21 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
   if (nichtDa.length > 0) teile.push(`server bleibt weg: ${nichtDa.map((r) => r.sel).join(", ")}`);
   if (stepsSchief.length > 0) teile.push(`Steps-Beschriftung ≠ Regler: ${stepsSchief.map((s) => `„${s.anzeige}" bei value ${s.wert} (max ${s.max})`).join(", ")}`);
   if (!geklemmt) teile.push(`Steps wurde nicht geklemmt (${vorher.steps.wert} → max ${drin.steps.max}) — die Beschriftung ist damit ungeprüft`);
-  const drittel = String(1 / 3);
+  // Seit 0.12 (Task 4): min/step bleiben KONSTANT (DENOISING.min/step), unabhaengig von
+  // Steps — eine Aenderung der Steps darf den Denoise-Regler nicht mehr anfassen.
+  const dMin = String(DENOISING.min);
+  const dStep = String(DENOISING.step);
   const rasterSchief: string[] = [];
-  if (raster.min !== drittel || raster.step !== drittel) rasterSchief.push(`min/step ${raster.min}/${raster.step} (erwartet ${drittel})`);
-  if (Math.abs(Number(raster.wert) - 2 / 3) > 1e-6) rasterSchief.push(`value ${raster.wert} (erwartet ${2 / 3} — der Browser hat bei der step-Aenderung nicht neu gerastet)`);
-  if (raster.anzeige !== Number(raster.wert).toFixed(2)) rasterSchief.push(`Beschriftung „${raster.anzeige}" ≠ ${Number(raster.wert).toFixed(2)}`);
-  if (rasterSchief.length > 0) teile.push(`Denoise-Raster (Steps 4→3): ${rasterSchief.join(", ")}`);
+  if (raster.min !== dMin || raster.step !== dStep) rasterSchief.push(`min/step ${raster.min}/${raster.step} (erwartet ${dMin}/${dStep} — konstant seit Task 4)`);
+  if (raster.wert !== "0.75") rasterSchief.push(`value ${raster.wert} (erwartet 0.75 — eine Steps-Aenderung darf den Denoise-Wert nicht mehr veraendern)`);
+  if (raster.anzeige !== "0.75") rasterSchief.push(`Beschriftung „${raster.anzeige}" ≠ 0.75`);
+  if (rasterSchief.length > 0) teile.push(`Denoise-Regler auf Steps-Aenderung reagiert (sollte seit Task 4 nicht mehr): ${rasterSchief.join(", ")}`);
 
   record(
     "17. Die modusabhängigen Regler sind auch GERENDERT weg — und kommen zurück",
     teile.length === 0,
     teile.length === 0
-      ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max} · Denoise-Raster 4→3: value ${raster.wert} → „${raster.anzeige}"`
+      ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max} · Denoise unveraendert bei Steps 4→3: min/step ${raster.min}/${raster.step}, value ${raster.wert} → „${raster.anzeige}"`
       : teile.join(" · "),
   );
 }
@@ -1850,6 +1995,16 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
  * wirkungslos (Encoder liefert Rauschen, decodeInitImage vertauscht Kanaele), laegen B und C
  * gleich weit von A weg und die nah-Schwelle risse. Ein NaN-Encoder (fp16-Ueberlauf) macht B
  * schwarz — dieselbe Fehlerklasse wie Punkt 24/25, eine Stufe frueher in der Pipeline.
+ *
+ * Seit dem Final-Review 2026-09-05 kommen drei weitere Laeufe dazu: (D) 0.5 · (E) 0.625 ·
+ * (F) 0.75. Grund: 0.25 und 1.0 sind bei steps=4 EXAKTE Punkte des alten 1/steps-Rasters — dort
+ * ist neu == alt per Konstruktion, der Punkt konnte die Rueckkehr der Quantisierung also gar
+ * nicht sehen. 0.625 liegt zwischen zwei Ankern und ist im alten Raster unerreichbar; rastete
+ * es wieder, waere sein Bild mit D oder F IDENTISCH. Gemessen wird deshalb der Abstand
+ * RMSE(D,E)/RMSE(E,F) gegen ZWISCHENSTUFE_MIN_RMSE — nicht die Reihenfolge der
+ * Vorlagen-Abstaende, die bei SD-Turbo gemessen nicht monoton ist (s. Kommentar im Rumpf).
+ * Erst damit ist dieser Punkt die „Regressionsbremse fuer den Engine-Umbau", als die
+ * docs/SMOKE.md ihn fuehrt.
  * Spike-Referenz (2026-08-30, Node/CPU, SD-Turbo, steps 4): RMSE str25 ≈ 19, str100 ≈ 51,
  * Roundtrip-Boden 4,8. Punkt 27 ist zugleich der LIVE-Beweis fuer den fp32-VAE-Encoder von
  * SDXL unter WebGPU (torch-Hooks massen 300k–500k Peak — ein Node/CPU-Test kann diesen
@@ -1932,21 +2087,79 @@ async function runBuiltinImg2ImgCheck(
         )
       : { ok: false as const, reason: "Vorlauf fehlt" };
 
-    if (!a.ok || !b.ok || !c.ok) {
-      record(name, false, `Lauf gescheitert: A ${a.ok ? "ok" : (a.reason ?? "?")} · B ${b.ok ? "ok" : (b.reason ?? "?")} · C ${c.ok ? "ok" : (c.reason ?? "?")}`);
+    // Zwischenstufe (Final-Review-Befund G3): A/B/C messen mit 0.25 und 1.0 ausschliesslich
+    // Werte, die AUCH im alten 1/steps-Raster (steps 4 → 0.25/0.5/0.75/1.0) exakte Anker
+    // waren — dort ist „neu == alt" per Konstruktion, der Regressionswert dieses Punktes fuer
+    // den Engine-Umbau war also kleiner, als die Zeile in docs/SMOKE.md klang. D/E/F schliessen
+    // das: 0.625 liegt ZWISCHEN zwei Ankern und ist im alten Raster gar nicht erreichbar.
+    //
+    // GEMESSEN wird die UNTERSCHEIDBARKEIT, nicht die Reihenfolge — und das ist eine Korrektur
+    // am ersten Entwurf dieses Blocks. Der forderte strikte Monotonie
+    // RMSE(A,D) < RMSE(A,E) < RMSE(A,F) und ging am 2026-09-05 im ersten Lauf ROT: SD-Turbo
+    // lieferte 14.48 / 23.08 / 21.42 — 0.625 liegt WEITER von der Vorlage weg als 0.75.
+    // (SDXL-Turbo war im selben Lauf monoton: 19.13 / 34.89 / 36.59.) Das ist kein Defekt,
+    // sondern eine Eigenschaft des Aufbaus: bei steps=4 startet 0.5 am Anker 2 (zwei
+    // UNet-Schritte), 0.625 und 0.75 beide am Anker 1 (drei Schritte) mit unterschiedlichem,
+    // interpoliertem Sigma UND interpoliertem Timestep — und SD-Turbo ist auf genau vier
+    // Timesteps destilliert, ein Zwischenwert ist fuer sein UNet leicht ausserhalb der
+    // Verteilung. „Mehr denoising = weiter weg" gilt also grob (das prueft die
+    // 0.25-gegen-1.0-Monotonie eine Zeile weiter unten), aber nicht zwischen benachbarten
+    // Ankern. Ein Kriterium, das nur bei einem der beiden Modelle stimmt, misst das Modell,
+    // nicht den Umbau.
+    //
+    // Was der Umbau wirklich zusagt, ist: 0.625 ist ein EIGENER Einstiegspunkt. Kaeme die
+    // Quantisierung zurueck, rastete 0.625 auf 0.5 oder 0.75 und lieferte ein BYTE-IDENTISCHES
+    // Bild — RMSE exakt 0.000, bei gleichem Seed und gleichem Prompt ohne jede Streuung.
+    // Gefordert sind deshalb RMSE(D,E) und RMSE(E,F) oberhalb einer Schwelle, die weit ueber
+    // null und weit unter den gemessenen Abstaenden liegt.
+    const d = c.ok
+      ? await lauf(
+          "__ligI2ID",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 0.5 }`,
+          `warte auf img2img str 0.5 (${name})`,
+        )
+      : { ok: false as const, reason: "Vorlauf fehlt" };
+    const e = d.ok
+      ? await lauf(
+          "__ligI2IE",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 0.625 }`,
+          `warte auf img2img str 0.625 — ZWISCHEN zwei alten Rasterpunkten (${name})`,
+        )
+      : { ok: false as const, reason: "Vorlauf fehlt" };
+    const f = e.ok
+      ? await lauf(
+          "__ligI2IF",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 0.75 }`,
+          `warte auf img2img str 0.75 (${name})`,
+        )
+      : { ok: false as const, reason: "Vorlauf fehlt" };
+
+    if (!a.ok || !b.ok || !c.ok || !d.ok || !e.ok || !f.ok) {
+      record(
+        name,
+        false,
+        `Lauf gescheitert: A ${a.ok ? "ok" : (a.reason ?? "?")} · B ${b.ok ? "ok" : (b.reason ?? "?")} · C ${c.ok ? "ok" : (c.reason ?? "?")}` +
+          ` · D ${d.ok ? "ok" : (d.reason ?? "?")} · E ${e.ok ? "ok" : (e.reason ?? "?")} · F ${f.ok ? "ok" : (f.reason ?? "?")}`,
+      );
       return;
     }
 
     // Auswertung komplett im Renderer: RMSE(A,B), RMSE(A,C) + Inhalts-Statistik von B
     // (Luma-Stddev + distinkte Stufen, dieselben Grenzen wie Punkt 24/25).
-    const mess = await cdp.evaluate<{ nah: number; fern: number; stddev: number; distinct: number }>(`
+    const mess = await cdp.evaluate<{
+      nah: number; fern: number; stddev: number; distinct: number;
+      r50: number; r625: number; r75: number; dDE: number; dEF: number;
+    }>(`
       const load = (b64) => new Promise((res, rej) => {
         const i = new Image();
         i.onload = () => res(i);
         i.onerror = () => rej(new Error("decode"));
         i.src = "data:image/png;base64," + b64;
       });
-      const [ia, ib, ic] = await Promise.all([load(window.__ligI2IA.base64), load(window.__ligI2IB.base64), load(window.__ligI2IC.base64)]);
+      const [ia, ib, ic, id, ie, iff] = await Promise.all([
+        load(window.__ligI2IA.base64), load(window.__ligI2IB.base64), load(window.__ligI2IC.base64),
+        load(window.__ligI2ID.base64), load(window.__ligI2IE.base64), load(window.__ligI2IF.base64),
+      ]);
       const px = (img) => {
         const cv = document.createElement("canvas");
         cv.width = img.naturalWidth; cv.height = img.naturalHeight;
@@ -1954,7 +2167,7 @@ async function runBuiltinImg2ImgCheck(
         g.drawImage(img, 0, 0);
         return g.getImageData(0, 0, cv.width, cv.height).data;
       };
-      const pa = px(ia), pb = px(ib), pc = px(ic);
+      const pa = px(ia), pb = px(ib), pc = px(ic), pd = px(id), pe = px(ie), pf = px(iff);
       const rmse = (x, y) => {
         let s = 0, n = 0;
         for (let i = 0; i < x.length; i += 4) for (let k = 0; k < 3; k++) { const d = x[i + k] - y[i + k]; s += d * d; n++; }
@@ -1968,7 +2181,12 @@ async function runBuiltinImg2ImgCheck(
         sum += l; sq += l * l; buckets.add(Math.round(l));
       }
       const mean = sum / m;
-      return { nah: rmse(pa, pb), fern: rmse(pa, pc), stddev: Math.sqrt(Math.max(0, sq / m - mean * mean)), distinct: buckets.size };
+      return {
+        nah: rmse(pa, pb), fern: rmse(pa, pc),
+        r50: rmse(pa, pd), r625: rmse(pa, pe), r75: rmse(pa, pf),
+        dDE: rmse(pd, pe), dEF: rmse(pe, pf),
+        stddev: Math.sqrt(Math.max(0, sq / m - mean * mean)), distinct: buckets.size,
+      };
     `);
 
     const teile: string[] = [];
@@ -1979,16 +2197,23 @@ async function runBuiltinImg2ImgCheck(
     if (mess.nah > grenzen.nah) teile.push(`str 0.25 zu weit von der Vorlage: RMSE ${mess.nah.toFixed(1)} (Grenze ${grenzen.nah})`);
     if (mess.fern < grenzen.fern) teile.push(`str 1.0 zu nah an der Vorlage: RMSE ${mess.fern.toFixed(1)} (Mindestabstand ${grenzen.fern})`);
     if (mess.fern <= mess.nah) teile.push(`keine Monotonie: str 1.0 (${mess.fern.toFixed(1)}) nicht weiter weg als str 0.25 (${mess.nah.toFixed(1)})`);
+    if (e.denoising !== 0.625) teile.push(`E meldet denoising ${String(e.denoising)} (erwartet 0.625 — quantisiert die Haertung wieder?)`);
+    if (mess.dDE < ZWISCHENSTUFE_MIN_RMSE || mess.dEF < ZWISCHENSTUFE_MIN_RMSE)
+      teile.push(
+        `str 0.625 ist kein eigener Einstiegspunkt: RMSE gegen 0.5 → ${mess.dDE.toFixed(2)}, gegen 0.75 → ${mess.dEF.toFixed(2)} (Mindestabstand ${ZWISCHENSTUFE_MIN_RMSE}; exakt 0 hiesse gerastert)`,
+      );
 
     record(
       name,
       teile.length === 0,
       teile.length === 0
-        ? `RMSE zur Vorlage: str 0.25 → ${mess.nah.toFixed(1)} (≤ ${grenzen.nah}) · str 1.0 → ${mess.fern.toFixed(1)} (≥ ${grenzen.fern}) · B: Luma-Stddev ${mess.stddev.toFixed(1)}, ${mess.distinct} Stufen · denoising ${String(b.denoising)}/${String(c.denoising)}`
+        ? `RMSE zur Vorlage: str 0.25 → ${mess.nah.toFixed(1)} (≤ ${grenzen.nah}) · str 1.0 → ${mess.fern.toFixed(1)} (≥ ${grenzen.fern}) · Zwischenstufe 0.625 eigenstaendig: ${mess.dDE.toFixed(2)} von 0.5, ${mess.dEF.toFixed(2)} von 0.75 entfernt (≥ ${ZWISCHENSTUFE_MIN_RMSE}) · Abstand zur Vorlage 0.5/0.625/0.75 → ${mess.r50.toFixed(2)}/${mess.r625.toFixed(2)}/${mess.r75.toFixed(2)} · B: Luma-Stddev ${mess.stddev.toFixed(1)}, ${mess.distinct} Stufen · denoising ${String(b.denoising)}/${String(c.denoising)}`
         : teile.join(" · "),
     );
   } finally {
-    await cdp.evaluate(`delete window.__ligI2IA; delete window.__ligI2IB; delete window.__ligI2IC; return true;`).catch(() => undefined);
+    await cdp
+      .evaluate(`delete window.__ligI2IA; delete window.__ligI2IB; delete window.__ligI2IC; delete window.__ligI2ID; delete window.__ligI2IE; delete window.__ligI2IF; return true;`)
+      .catch(() => undefined);
     await cdp
       .evaluate(`
         const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
@@ -2443,24 +2668,28 @@ async function main(): Promise<void> {
     // `getSettingDefinitions()`, IST das der Befund, den 0.5.0 auf „Satisfactory" hielt.
     // Ihn als „übersprungen" zu führen hiesse, den gesuchten Defekt als Nichtmessung zu
     // verbuchen: die Gegenprobe (Migration zurückgebaut) liefe dann durch, ohne rot zu werden.
-    const searchable = await cdp.evaluate<{
-      skip?: string;
-      befund?: string;
-      gesucht: string[];
-      gefunden: string[];
-      fehlend: string[];
-      negativkontrolle: boolean;
-    }>(`
-      const leer = { gesucht: [], gefunden: [], fehlend: [], negativkontrolle: false };
+    //
+    // ⚠️ EIN evaluate pro SUCHE, nicht eine Schleife IM Renderer (Reparatur 2026-09-05).
+    // Die frühere Fassung fuhr alle Suchen in einem einzigen `Runtime.evaluate` — und dessen
+    // Laufzeit wächst linear mit der Zahl SICHTBARER Settings-Zeilen. Sobald BEIDE eingebauten
+    // Modelle im Cache liegen, kommen zwei bedingte Zeilen dazu („Modell", „Modellwahl im
+    // Panel anzeigen"); aus 8 Suchen wurden 10, und der Aufruf riss `Cdp.send`s 30-s-Grenze
+    // mit `Zeitüberschreitung: Runtime.evaluate` — der Lauf brach nach Punkt 4 ab, ohne dass
+    // irgendetwas am Plugin defekt war. Es ist derselbe Fehlermodus wie beim alten `waitFor`
+    // (AGENTS: **Mutation und Wartephase trennen**): eine Wartezeit im Renderer ist unsichtbar,
+    // bis genug davon zusammenkommt. Die Node-seitige Schleife hält jeden einzelnen Aufruf bei
+    // rund zwei Sekunden, egal wie viele Zeilen der Tab hat.
+    const NAME_12 = "12. Die Einstellungen erscheinen in Obsidians Settings-Suche";
+    const vorbereitung = await cdp.evaluate<{ befund?: string; skip?: string; namen: string[] }>(`
       const tab = (app.setting.pluginTabs ?? []).find((t) => t.id === ${JSON.stringify(PLUGIN_ID)});
-      if (!tab) return { befund: "kein Settings-Tab registriert", ...leer };
+      if (!tab) return { befund: "kein Settings-Tab registriert", namen: [] };
       // NICHT \`typeof tab.getSettingDefinitions === "function"\` prüfen: Obsidian 1.13 bringt
       // die Methode in PluginSettingTab selbst mit, der Ausdruck ist also IMMER wahr und der
       // Guard tot. Gemessen 2026-08-14 an der Gegenprobe: nach dem Rückbau der Migration hiess
       // die eigene Methode anders — und \`typeof tab.getSettingDefinitions\` blieb "function".
       // Gefragt ist, ob das PLUGIN sie definiert; das steht auf dem Prototyp seiner Klasse.
       if (!Object.prototype.hasOwnProperty.call(Object.getPrototypeOf(tab), "getSettingDefinitions")) {
-        return { befund: "das Plugin definiert getSettingDefinitions() nicht — es erbt nur Obsidians Vorgabe (der Store-Befund von 0.5.0)", ...leer };
+        return { befund: "das Plugin definiert getSettingDefinitions() nicht — es erbt nur Obsidians Vorgabe (der Store-Befund von 0.5.0)", namen: [] };
       }
       const sichtbar = (d) => {
         const v = d.visible;
@@ -2480,45 +2709,64 @@ async function main(): Promise<void> {
       // Am Tab-Container greifen, nicht am globalen document: bei mehreren Vault-Fenstern
       // hängt das Settings-Modal in einem EIGENEN Fenster (Falle (4) in docs/SMOKE.md).
       const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
-      const win = doc.defaultView;
-      const input = doc.querySelector(".setting-search-container input");
-      if (!input) {
+      if (!doc.querySelector(".setting-search-container input")) {
         app.setting.close();
-        return { skip: "keine Settings-Suche in dieser Obsidian-Version", gesucht: namen, gefunden: [], fehlend: [], negativkontrolle: false };
+        return { skip: "keine Settings-Suche in dieser Obsidian-Version", namen };
       }
+      return { namen };
+    `);
 
-      // Den Wert über den nativen Setter schreiben: eine direkte Zuweisung an .value
-      // bemerkt Obsidians Eingabe-Beobachter nicht.
-      const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
-      const treffer = async (q) => {
+    // Eine Suche = ein Aufruf. Der Renderer-Teil ist bewusst wortgleich zur alten Fassung
+    // (nativer value-Setter, weil eine direkte .value-Zuweisung Obsidians Eingabe-Beobachter
+    // nicht bemerkt) — nur die Schleife ist herausgezogen.
+    const suche = async (q: string): Promise<boolean> =>
+      (await cdp.evaluate<boolean>(`
+        const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
+        const win = doc.defaultView;
+        const input = doc.querySelector(".setting-search-container input");
+        if (!input) return false;
+        const setter = Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, "value").set;
         setter.call(input, "");
         input.dispatchEvent(new Event("input", { bubbles: true }));
         await new Promise((r) => setTimeout(r, 150));
-        setter.call(input, q);
+        setter.call(input, ${JSON.stringify(q)});
         input.dispatchEvent(new Event("input", { bubbles: true }));
         await new Promise((r) => setTimeout(r, 600));
         const box = doc.querySelector(".setting-search-results");
-        return !!box && box.textContent.includes(q);
-      };
+        return !!box && box.textContent.includes(${JSON.stringify(q)});
+      `)) === true;
 
-      const gefunden = [];
-      const fehlend = [];
-      for (const n of namen) ((await treffer(n)) ? gefunden : fehlend).push(n);
-      // Gegenprobe: findet die Suche ALLES, beweist ein Treffer nichts.
-      const negativkontrolle = !(await treffer("zzz-gibt-es-nicht-zzz"));
-
-      setter.call(input, "");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      app.setting.close();
-      return { gesucht: namen, gefunden, fehlend, negativkontrolle };
-    `);
+    const searchable: { skip?: string; befund?: string; gesucht: string[]; gefunden: string[]; fehlend: string[]; negativkontrolle: boolean } =
+      vorbereitung.befund !== undefined || vorbereitung.skip !== undefined
+        ? { ...vorbereitung, gesucht: vorbereitung.namen, gefunden: [], fehlend: [], negativkontrolle: false }
+        : await (async () => {
+            const gefunden: string[] = [];
+            const fehlend: string[] = [];
+            for (const n of vorbereitung.namen) ((await suche(n)) ? gefunden : fehlend).push(n);
+            // Gegenprobe: findet die Suche ALLES, beweist ein Treffer nichts.
+            const negativkontrolle = !(await suche("zzz-gibt-es-nicht-zzz"));
+            await cdp
+              .evaluate(`
+                const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
+                const input = doc.querySelector(".setting-search-container input");
+                if (input) {
+                  const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLInputElement.prototype, "value").set;
+                  setter.call(input, "");
+                  input.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+                app.setting.close();
+                return true;
+              `)
+              .catch(() => undefined);
+            return { gesucht: vorbereitung.namen, gefunden, fehlend, negativkontrolle };
+          })();
     if (searchable.skip) {
-      skip("12. Die Einstellungen erscheinen in Obsidians Settings-Suche", searchable.skip);
+      skip(NAME_12, searchable.skip);
     } else if (searchable.befund) {
-      record("12. Die Einstellungen erscheinen in Obsidians Settings-Suche", false, searchable.befund);
+      record(NAME_12, false, searchable.befund);
     } else {
       record(
-        "12. Die Einstellungen erscheinen in Obsidians Settings-Suche",
+        NAME_12,
         searchable.fehlend.length === 0 && searchable.negativkontrolle && searchable.gesucht.length > 0,
         searchable.gesucht.length === 0
           ? "getSettingDefinitions() liefert keine Zeilen — nichts, was in der Suche stehen könnte"
@@ -2798,6 +3046,8 @@ async function main(): Promise<void> {
           NAME_18D,
           "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
           NAME_28,
+          NAME_29,
+          NAME_30,
           ...ZWEITE_STUFE,
         ])
           skip(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);

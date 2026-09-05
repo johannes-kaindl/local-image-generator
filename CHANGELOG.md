@@ -6,6 +6,36 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The denoising slider is now continuous in the built-in engine.** Until 0.11 the value
+  snapped to one of `steps` entry points — with the default of 4 steps that meant 0.25,
+  0.5, 0.75 or 1.0, and a requested 0.65 silently became 0.75. The engine now interpolates
+  its entry point, so the value you set is the value that is used and the value the result
+  note records. Exact former snap points still produce byte-identical images from the engine
+  and through the API — but *reloading an older recipe through the slider* can shift it: a
+  0.11 recipe made with 3 steps carries 0.333 or 0.667, and the slider's new 0.05 grid snaps
+  those to 0.35 and 0.65.
+- **`denoising: 0` now really leaves the template alone.** Setting the slider to its left
+  end (or sending `denoising: 0` through the API) used to mean "one diffusion step at a
+  noise level of zero" — which is a division by zero, and produced a completely black image
+  with no error at all. The built-in engine now skips the diffusion run entirely at 0 and
+  returns the template itself (through the VAE round-trip). The value is honest either way:
+  0 changes nothing, and it says so.
+- **The panel's denoising slider itself is now fine-grained too.** It used to set its own
+  `min`/`step` DOM attributes from the same per-step raster, so the browser clamped the
+  value even after the engine could already use it exactly. It now takes the same 0–1
+  range in 0.05 steps as the server backend.
+- **The built-in models accept up to 8 steps** (was 4); the default stays at 4. Measured on
+  84 runs: 4 → 8 adds real detail for about one extra second, while 12 and above push
+  SD-Turbo into over-sharpening.
+
+### Note for API consumers
+
+`capabilities().maxSteps` now reports 8. A request with `denoising: 0.65` returns 0.65
+instead of 0.75 — closer to what you asked for, never further away. `denoising: 0` returns
+the template unchanged instead of a black image. `apiVersion` stays 1.
+
 ## [0.11.2] — 2026-09-03
 
 ### Fixed

@@ -102,7 +102,10 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.initPathEl = this.initRowEl.createSpan({ cls: "lig-init-path" });
     const initPickBtn = this.initRowEl.createEl("button", { text: t("generate.initImagePick") });
     initPickBtn.addEventListener("click", () => this.host.pickInitImage());
-    this.initClearBtn = this.initRowEl.createEl("button", { text: t("generate.initImageClear") });
+    // Eigene Klasse wie bei .lig-init-from-result: der GUI-Smoke muss die Vorlage nach einem
+    // img2img-Punkt wieder WEGRAEUMEN koennen (state.initImage ueberlebt Moduswechsel per
+    // Design), sonst laufen alle spaeteren Panel-Erzeugungen still als img2img weiter.
+    this.initClearBtn = this.initRowEl.createEl("button", { text: t("generate.initImageClear"), cls: "lig-init-clear" });
     this.initClearBtn.addEventListener("click", () => this.host.clearInitImage());
 
     this.chipsEl = root.createDiv({ cls: "lig-row lig-chips" });
@@ -421,21 +424,14 @@ export class GeneratePanel implements HubPanel<TabId> {
       }
     }
 
-    // Denoise-Raster (builtin): dieselbe Klemm-Falle wie beim Steps-Block oben — der Browser
-    // rastet/klemmt `value` SELBST, sobald `min`/`step` sich aendern, deshalb die Anzeige
-    // BEDINGUNGSLOS aus dem (moeglicherweise vom Browser veraenderten) `value` nachziehen.
-    const raster = vm.controls.denoiseRaster;
-    const dMin = String(raster ? raster.min : DENOISING.min);
-    const dStep = String(raster ? raster.step : DENOISING.step);
-    if (this.denoiseEl.min !== dMin || this.denoiseEl.step !== dStep) {
-      const vorher = Number(this.denoiseEl.value);
-      this.denoiseEl.min = dMin;
-      this.denoiseEl.step = dStep;
-      // Browser klemmt/rastet den value SELBST — Anzeige BEDINGUNGSLOS nachziehen
-      // (Klemm-Falle 2026-08-21, s. Steps-Block oben).
-      this.denoiseValueEl.setText(Number(this.denoiseEl.value).toFixed(2));
-      if (Number(this.denoiseEl.value) !== vorher) this.host.setRecipe(this.currentRecipe());
-    }
+    // Hier stand bis zum Final-Review ein Denoise-Gegenstueck zum Steps-Block oben. Seit 0.12
+    // setzt niemand mehr `min`/`step` des Denoise-Reglers nach — sie kommen bei der Erzeugung
+    // aus denselben Konstanten, gegen die der Block verglich, die Bedingung konnte also nicht
+    // mehr wahr werden. Ein Kommentar, der eine Absicherung BEHAUPTET, die es nicht gibt, ist
+    // teurer als gar keine: er laedt dazu ein, sich auf einen nie ausgefuehrten Pfad zu
+    // verlassen. Die Klemm-Falle vom 2026-08-21 bewacht weiterhin der Steps-Block oben — dort
+    // ist sie echt (`stepsMin`/`stepsMax` haengen am Backend). Wer den Denoise-Regler wieder
+    // dynamisch bemasst, holt sich das Muster von dort zurueck, samt Test.
 
     this.generateBtn.disabled = !vm.generateEnabled;
     this.emptyEl.toggleClass("is-hidden", vm.empty === null);

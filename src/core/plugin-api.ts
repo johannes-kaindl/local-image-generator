@@ -33,10 +33,18 @@ export interface ApiRequest {
    *  das aktuelle Backend es ueberhaupt anbietet. */
   initImage?: string;
   /** Wie stark die Vorlage geaendert werden darf, 0..1 (A1111: `denoising_strength`).
-   *  Ohne `initImage` ohne Wirkung. Fehlt es, gilt 0.75. Im builtin-Modus quantisiert die
-   *  Haertung auf das Steps-Raster {1/steps … 1} (nur `steps` Einstiegspunkte fuer
-   *  Teil-Denoising); massgeblich ist der Wert in den zurueckgegebenen `ApiParams.denoising`,
-   *  nicht die Eingabe hier. Der Server-Modus bleibt kontinuierlich. */
+   *  Ohne `initImage` ohne Wirkung. Fehlt es, gilt 0.75.
+   *
+   *  **Seit 0.12 kontinuierlich in BEIDEN Modi.** Bis 0.11 quantisierte die Haertung im
+   *  builtin-Modus auf ein Steps-Raster {1/steps … 1} — eine angefragte 0.65 kam als 0.75
+   *  zurueck. Die eingebaute Engine interpoliert ihren Einstiegspunkt jetzt zwischen zwei
+   *  Rauschstufen, der Wert wird also unveraendert uebernommen (nur auf [0,1] geklemmt).
+   *  Massgeblich bleibt trotzdem der Wert in den zurueckgegebenen `ApiParams.denoising`,
+   *  nicht die Eingabe hier.
+   *
+   *  `denoising: 0` heisst „Vorlage unveraendert": der builtin-Lauf ueberspringt die
+   *  Diffusion und dekodiert das Vorlagen-Latent direkt — das Ergebnis ist die Vorlage nach
+   *  einem VAE-Roundtrip, nicht ein Bild mit Restrauschen. */
   denoising?: number;
   /** `pct` ist null, wenn das Backend keinen Fortschritt liefert (Draw Things kennt
    *  /sdapi/v1/progress nicht). Die Phase kommt trotzdem — ein builtin-Lauf steht
@@ -93,9 +101,9 @@ export interface ApiStatus {
   };
 }
 // Konkret (builtin haengt vom AKTIVEN Modell ab, deps.builtinModel()):
-//   sd-turbo   → { negativePrompt: false, cfg: false, maxSteps: 4,
+//   sd-turbo   → { negativePrompt: false, cfg: false, maxSteps: 8,
 //                  fixedSize: { width: 512, height: 512 }, sizes: [512x512] }
-//   sdxl-turbo → { negativePrompt: false, cfg: false, maxSteps: 4,
+//   sdxl-turbo → { negativePrompt: false, cfg: false, maxSteps: 8,
 //                  fixedSize: null, sizes: [512x512, 1024x1024] }
 //   server     → { negativePrompt: true, cfg: true, maxSteps: STEPS.max (50),
 //                  fixedSize: null, sizes: null }

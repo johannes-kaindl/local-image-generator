@@ -20,8 +20,7 @@ import {
   type ProgressFn,
   type Session,
 } from "./engine";
-import { denoiseRaster } from "./params";
-import { makeSchedule } from "./pipeline/scheduler";
+import { denoiseEntry, makeSchedule } from "./pipeline/scheduler";
 import { tokenize, type TokenizerData } from "./pipeline/tokenizer";
 
 export interface SdxlSessions {
@@ -181,9 +180,22 @@ export class SdxlTurboEngine implements BuiltinEngine {
       // exakt wie zuvor (init bleibt undefined, runDiffusion startet bei 0).
       let init: { latents: Float32Array; startAt: number } | undefined;
       if (req.initPixels) {
-        const { tStart } = denoiseRaster(req.steps, req.denoising ?? 1);
+        const entry = denoiseEntry(req.steps, req.denoising ?? 1, schedule.sigmas, schedule.timesteps);
         const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, size, this.opts.vaeScaling);
-        init = { latents: noisedInitLatents(encoded, req.seed, schedule.sigmas[tStart]!), startAt: tStart };
+        if (entry.sigma === 0) {
+          // Wortgleich zu SdTurboEngine.generate() — der Defekt sitzt im GETEILTEN
+          // `schedulerStep` (Sigma 0 → 0/0 → NaN → schwarzes Bild ohne Fehler, K1
+          // Final-Review 2026-09-05), also braucht ihn jede Engine. Ein Abfangen in nur
+          // einer waere ein halber Fix mit dem gefaehrlicheren Rest.
+          onProgress?.(1, 1);
+          return await decodeLatents(this.sessions.vaeDecoder, encoded, latentDims, this.opts.vaeScaling, size, req.seed);
+        }
+        // Die FOLGE anpassen, nicht nur das Latent: schedulerStep und die Schleife in
+        // runDiffusion lesen Sigma und Timestep selbst aus dem Zeitplan. `schedule` ist
+        // pro Lauf frisch aus makeSchedule — die Mutation trifft niemanden sonst.
+        schedule.sigmas[entry.startAt] = entry.sigma;
+        schedule.timesteps[entry.startAt] = entry.timestep;
+        init = { latents: noisedInitLatents(encoded, req.seed, entry.sigma), startAt: entry.startAt };
       }
 
       const latents = await runDiffusion(
