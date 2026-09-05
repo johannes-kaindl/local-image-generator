@@ -15,13 +15,13 @@ Verlauf, Ablage im Vault) vor **zwei austauschbaren Backends** (seit 0.6, Spec i
 - **Eingebaut (Default):** SD-Turbo im Renderer ueber `onnxruntime-web/webgpu`. Modell
   (eigene fp16-ONNX-Konversion, ~2,6 GB) + ORT-WASM werden **nur nach Klick** aus dem
   eigenen HF-Repo in die Cache API gestreamt, SHA-256 gegen das generierte Manifest
-  geprueft. 512 px, Steps 1–4, kein Negativ/CFG (Keine-Attrappen-Linie).
+  geprueft. 512 px, Steps 1–8, kein Negativ/CFG (Keine-Attrappen-Linie).
 - **Server:** Draw Things, AUTOMATIC1111, Forge oder SD.Next ueber deren gemeinsame
   A1111-kompatible HTTP-API — dem Server gehoeren Modell und Hardware, volle Regler.
   Seit 0.8 zusaetzlich **img2img**: von einer Vault-Vorlage aus weiterrechnen — seit 0.11 in
   BEIDEN Backends: der Server kontinuierlich (denoising 0–1 in 0,05er-Schritten), die
-  eingebaute Engine ueber ihren eigenen VAE-Encoder mit nur `steps` Einstiegspunkten
-  (denoising rastert auf {1/steps … 1}; die Quantisierung sitzt in der HAERTUNG, s. Gotchas).
+  eingebaute Engine ueber ihren eigenen VAE-Encoder ebenso kontinuierlich (0–1 in 0,05er-
+  Schritten; der Einstiegspunkt im Zeitplan wird interpoliert statt gerastert, s. Gotchas).
 
 Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History). Beide Backends
 implementieren `ImageBackend` (`src/core/txt2img.ts`); `main.ts` routet nach
@@ -364,16 +364,16 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Sichtbarkeit als Defekt; gemessen 2026-08-31). Ein Regler ohne Vorlage bewirkt weiter nichts
   und waere dieselbe Attrappe wie ein CFG-Regler ohne CFG. Deshalb steht `.lig-denoise` auch
   NICHT in `MODUS_REGLER`: dort gefuehrt, wuerde Punkt 17 die zweite Stufe als Defekt melden.
-- **Die Denoise-Quantisierung sitzt in der HAERTUNG, nicht in der Engine — und die Formel
-  existiert genau einmal.** `denoiseRaster(steps, d)` (`src/core/params.ts`) rechnet
-  Einstiegspunkt und effektiven Wert; `hardenParams` quantisiert damit (Notiz/Historie/API
-  tragen den EFFEKTIVEN Wert), die Engines LEITEN daraus nur den Einstiegspunkt ab (`d` ist
-  dort schon Rasterwert, die Ableitung ist exakt). Wer in der Engine erneut rundet oder die
-  Formel dupliziert, erzeugt zwei Wahrheiten — dieselbe Falle wie bei den zwei Haertungen.
-  Randfall, DEKLARIERT statt versteckt: bei `steps = 1` hat der Regler genau eine Position
-  (1.0). Er bleibt trotzdem sichtbar, denn auch bei strength 1.0 fliesst die Vorlage schwach
-  ein (`init + noise·sigma[0]`) — ein versteckter Regler wuerde einen img2img-Lauf als
-  txt2img melden.
+- **Der Denoise-Einstiegspunkt wird INTERPOLIERT, und die Formel sitzt im Scheduler.**
+  `denoiseEntry(steps, denoising, sigmas, timesteps)` (`src/core/pipeline/scheduler.ts`)
+  liefert Einstiegsindex, Sigma und Timestep; beide Engines rufen sie und **ersetzen damit
+  den Eintrag in der Folge**. Das Ersetzen ist der Punkt: `schedulerStep` liest sein
+  Start-Sigma selbst aus dem Array, ein interpolierter Wert nur im Init-Latent verpufft
+  und ergibt ein leise falsches Bild — kein Fehler, nur ein schlechteres Ergebnis.
+  Der Timestep wird mitinterpoliert, sonst bekommt das UNet die Konditionierung des Ankers.
+  Die Haertung (`hardenParams`) reicht `denoising` unveraendert durch und rechnet nichts.
+  *Bis 0.11 war es umgekehrt: die Haertung rasterte auf `steps` Positionen. Gemessen
+  2026-09-05 (84 Laeufe) uebersprang der Sprung 0.5 → 0.75 bei 4 Steps genau das Optimum.*
 - **Der WebGPU-EP vertraegt nur EINE Session-Erzeugung zugleich.** `webgpuRegisterDevice` im
   Emscripten-Glue setzt ein Flag und wirft `another WebGPU EP inference session is being
   created`, wenn zwei `InferenceSession.create` ueberlappen. Das `Promise.all` ueber

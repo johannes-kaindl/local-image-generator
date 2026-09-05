@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The denoising slider is now continuous in the built-in engine.** Until 0.11 the value
+  snapped to one of `steps` entry points — with the default of 4 steps that meant 0.25,
+  0.5, 0.75 or 1.0, and a requested 0.6 silently became 0.75. The engine now interpolates
+  its entry point, so the value you set is the value that is used and the value the result
+  note records. Exact former snap points still produce byte-identical images.
+- **The panel's denoising slider itself is now fine-grained too.** It used to set its own
+  `min`/`step` DOM attributes from the same per-step raster, so the browser clamped the
+  value even after the engine could already use it exactly. It now takes the same 0–1
+  range in 0.05 steps as the server backend.
+- **The built-in models accept up to 8 steps** (was 4); the default stays at 4. Measured on
+  84 runs: 4 → 8 adds real detail for about one extra second, while 12 and above push
+  SD-Turbo into over-sharpening.
+
+### Note for API consumers
+
+`capabilities().maxSteps` now reports 8. A request with `denoising: 0.6` returns 0.6
+instead of 0.75 — closer to what you asked for, never further away. `apiVersion` stays 1.
+
 ## [0.11.2] — 2026-09-03
 
 ### Fixed

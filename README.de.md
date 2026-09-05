@@ -50,14 +50,15 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
   würfelt den Seed, ohne zu erzeugen.
 - **Von einem vorhandenen Bild ausgehen** (img2img, beide Engines): eine Vorlage aus
   dem Vault wählen — oder am gerade erzeugten Bild auf **Speichern & als Vorlage**
-  klicken — und einstellen, wie weit sich das Modell davon entfernen darf. Im
-  Server-Modus ist die Stärke ein stufenloser Regler; im eingebauten Modus rastert sie
-  auf die Schrittzahl des Modells, weil SD-Turbo und SDXL-Turbo ohnehin nur 1–4
-  diskrete Schritte bieten. Der Stärke-Regler erscheint erst, wenn wirklich eine
-  Vorlage gesetzt ist. Der eingebaute Modus schneidet die Vorlage per Center-Crop auf
-  die quadratische Eingabegröße des Modells zu (ein 16:9-Bild wird beschnitten, nicht
-  verzerrt); der Server-Modus reicht die Datei unverändert weiter und der Server
-  skaliert selbst.
+  klicken — und einstellen, wie weit sich das Modell davon entfernen darf. Der
+  Stärke-Regler ist in beiden Modi ein stufenloser Bereich von 0 bis 1 und erscheint
+  erst, wenn wirklich eine Vorlage gesetzt ist. Der eingebaute Modus schneidet die
+  Vorlage per Center-Crop auf die quadratische Eingabegröße des Modells zu (ein
+  16:9-Bild wird beschnitten, nicht verzerrt); der Server-Modus reicht die Datei
+  unverändert weiter und der Server skaliert selbst. Mehr Schritte geben auch dem
+  Denoise-Regler mehr Spielraum. Achtung: der eingestellte Wert *bedeutet* bei anderer
+  Schrittzahl etwas anderes — ein bei 4 Schritten gespeichertes Rezept sieht bei 8
+  Schritten anders aus.
 - Der Reiter **Verlauf** zeigt frühere Erzeugungen als vollständige Rezepte
   (Prompt · Negativ-Prompt · Seed · Schritte · Größe · CFG · Zeit) — nach Prompt
   gruppierbar, per Klick zurück in den Generator ladbar, einzeln löschbar oder komplett
@@ -68,9 +69,9 @@ So oder so verlassen Prompts und Bilder deinen Rechner nie.
   Schritten, Größe und Datum im Frontmatter und eingebettetem Bild, und diese Notiz wird
   geöffnet. **Einfügen** speichert das Bild immer nur und bettet es an der
   Cursorposition der aktuellen Notiz ein.
-- **Eingebaute Engine:** beide Katalog-Modelle sind destilliert — 1–4 Schritte, keine
+- **Eingebaute Engine:** beide Katalog-Modelle sind destilliert — 1–8 Schritte, keine
   Guidance — deshalb zeigt das Panel in diesem Modus nur, was ein Modell auch beachtet:
-  Prompt, Schritte (1–4), Seed und die Stil-Chips, dazu eine Größenwahl, sobald es mehr
+  Prompt, Schritte (1–8), Seed und die Stil-Chips, dazu eine Größenwahl, sobald es mehr
   als eine Größe gibt (SD-Turbo ist fest auf 512×512; SDXL-Turbo bietet zusätzlich
   1024×1024). Negativ-Prompt und CFG bleiben so oder so server-only — kein eingebautes
   Modell kennt Guidance.
@@ -121,11 +122,12 @@ if (api.status().capabilities.initImage) {
 }
 ```
 
-Die eingebaute Engine kann nur einen Teil ihres festen Schritte-Zeitplans neu durchrechnen und
-trifft deshalb nur `steps` unterschiedliche Denoising-Stärken (z. B. 4 Schritte →
-{0.25, 0.5, 0.75, 1}). Dein `denoising` wird auf den nächstgelegenen dieser Werte gerastert —
-das Server-Backend bleibt kontinuierlich. In beiden Fällen ist `r.image.params.denoising` der
-Wert, der tatsächlich gilt — als Quelle der Wahrheit behandeln, nicht den eingegebenen Wert.
+Die eingebaute Engine kann nur einen Teil ihres festen Schritte-Zeitplans neu durchrechnen,
+interpoliert den Einstiegspunkt aber statt darauf zu rastern — `denoising` ist deshalb auch
+dort kontinuierlich, genau wie beim Server-Backend. In beiden Fällen ist
+`r.image.params.denoising` der Wert, der tatsächlich gilt — als Quelle der Wahrheit
+behandeln, nicht den eingegebenen Wert. Mehr Schritte geben ihm auch mehr Spielraum: derselbe
+`denoising`-Wert wirkt bei 4 Schritten anders als bei 8.
 
 Die API startet nie selbst einen Download. Fehlt das Modell, bekommst du
 `{ ok: false, reason: "model-not-downloaded" }` — den Knopf muss der Nutzer selbst klicken.
@@ -323,7 +325,7 @@ Lizenz und Hinweis; das Konversionsskript liegt in `tools/convert/`. Beim ersten
 dem Start von Obsidian (oder nach einem Modellwechsel) werden die Sessions des Modells
 geladen — drei bei SD-Turbo (Text-Encoder, UNet, VAE-Decoder), vier bei SDXL-Turbo (zwei
 Text-Encoder, UNet, VAE-Decoder) — die Statuszeile zählt die Sekunden —, danach kostet
-jedes Bild einen Text-Encoder-Durchlauf, 1–4 UNet-Schritte und einen VAE-Decode. SDXL-Turbos
+jedes Bild einen Text-Encoder-Durchlauf, 1–8 UNet-Schritte und einen VAE-Decode. SDXL-Turbos
 UNet allein ist ≈ 5 GB groß und sprengt sowohl die Einzeldatei-Grenze von ONNX als auch die
 des JS-Heaps im Browser — die Konversion stückelt es deshalb in External-Data-Buckets, die
 die Engine beim Laden wieder zusammensetzt. Die Pipeline (CLIP-Tokenizer,
