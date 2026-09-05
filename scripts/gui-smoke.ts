@@ -680,80 +680,106 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // Vorlage" (`.lig-init-from-result`) speichert es und macht es zur Vorlage — danach ist
     // der Denoise-Regler sichtbar (`controls.denoising` haengt an einer gesetzten Vorlage).
     if (image15 !== null && !istFehler(image15.status)) {
-      await clickReal(cdp, `document.querySelector(".lig-init-from-result")`);
-      const denoiseSichtbar = await pollUntil(
-        () =>
-          cdp.evaluate<boolean>(`
-            const el = document.querySelector(".lig-denoise");
-            return !!el && getComputedStyle(el).display !== "none";
-          `),
-        (v) => v === true,
-        15_000,
-        "warte auf den sichtbaren Denoise-Regler",
-        500,
-      );
-      if (denoiseSichtbar !== true) {
-        record(NAME_30, false, "Denoise-Regler wurde nach „als Vorlage“ nicht sichtbar — Vorlage nicht gesetzt?");
-      } else {
-        await cdp.evaluate(`
-          const den = document.querySelector(".lig-denoise");
-          den.value = "0.6"; den.dispatchEvent(new Event("input", { bubbles: true }));
-          return true;
-        `);
-        const notesBefore30 = await cdp.evaluate<number>(
-          `return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`,
-        );
-        const imageBefore30 = await cdp.evaluate<string>(
-          `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
-        );
-        const t30 = Date.now();
-        await clickReal(cdp, `document.querySelector(".lig-generate")`);
-        const image30 = await pollUntil(
+      try {
+        await clickReal(cdp, `document.querySelector(".lig-init-from-result")`);
+        const denoiseSichtbar = await pollUntil(
           () =>
-            cdp.evaluate<{ length: number; status: string; sig: string }>(`
-              const img = document.querySelector(".lig-image");
-              const status = document.querySelector(".lig-status-text");
-              return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
+            cdp.evaluate<boolean>(`
+              const el = document.querySelector(".lig-denoise");
+              return !!el && getComputedStyle(el).display !== "none";
             `),
-          (r) => (r.length > 5000 && r.sig !== imageBefore30 && r.status === readyText) || istFehler(r.status),
-          generateTimeoutMs,
-          "warte auf das Bild des Denoise-Laufs",
+          (v) => v === true,
+          15_000,
+          "warte auf den sichtbaren Denoise-Regler",
           500,
         );
-        if (image30 === null || istFehler(image30.status)) {
-          record(
-            NAME_30,
-            false,
-            image30 === null ? "kein Bild innerhalb der Frist" : `Lauf gescheitert, gemeldet vom Plugin: „${image30.status}“`,
-          );
+        if (denoiseSichtbar !== true) {
+          record(NAME_30, false, "Denoise-Regler wurde nach „als Vorlage“ nicht sichtbar — Vorlage nicht gesetzt?");
         } else {
-          const createLabel = t("generate.button.create");
           await cdp.evaluate(`
-            const button = [...document.querySelectorAll(".lig-actions button")].find((b) => b.textContent.trim() === ${JSON.stringify(createLabel)});
-            if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
-            button.click(); return true;
+            const den = document.querySelector(".lig-denoise");
+            den.value = "0.6"; den.dispatchEvent(new Event("input", { bubbles: true }));
+            return true;
           `);
-          const body30 = await pollUntil(
+          const notesBefore30 = await cdp.evaluate<number>(
+            `return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`,
+          );
+          const imageBefore30 = await cdp.evaluate<string>(
+            `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
+          );
+          const t30 = Date.now();
+          await clickReal(cdp, `document.querySelector(".lig-generate")`);
+          const image30 = await pollUntil(
             () =>
-              cdp.evaluate<string | null>(`
-                const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
-                if (files.length <= ${notesBefore30}) return null;
-                files.sort((a, b) => b.stat.ctime - a.stat.ctime);
-                return await app.vault.cachedRead(files[0]);
+              cdp.evaluate<{ length: number; status: string; sig: string }>(`
+                const img = document.querySelector(".lig-image");
+                const status = document.querySelector(".lig-status-text");
+                return { length: img && img.src.startsWith("data:image/png") ? img.src.length : 0, status: status ? status.textContent.trim() : "", sig: img ? String(img.src.length) + ":" + img.src.slice(-48) : "" };
               `),
-            (b) => b !== null,
-            60_000,
-            "warte auf die Ergebnis-Notiz (Denoise-Lauf)",
-            1000,
+            (r) => (r.length > 5000 && r.sig !== imageBefore30 && r.status === readyText) || istFehler(r.status),
+            generateTimeoutMs,
+            "warte auf das Bild des Denoise-Laufs",
+            500,
           );
-          const denoisingLine = body30?.match(/^denoising:\s*(.+)$/m)?.[1]?.trim() ?? null;
-          record(
-            NAME_30,
-            denoisingLine === "0.6",
-            body30 === null
-              ? "keine Notiz innerhalb der Frist"
-              : `${Math.round((Date.now() - t30) / 1000)} s · denoising: ${denoisingLine ?? "(fehlt)"} in der Notiz`,
-          );
+          if (image30 === null || istFehler(image30.status)) {
+            record(
+              NAME_30,
+              false,
+              image30 === null ? "kein Bild innerhalb der Frist" : `Lauf gescheitert, gemeldet vom Plugin: „${image30.status}“`,
+            );
+          } else {
+            const createLabel = t("generate.button.create");
+            await cdp.evaluate(`
+              const button = [...document.querySelectorAll(".lig-actions button")].find((b) => b.textContent.trim() === ${JSON.stringify(createLabel)});
+              if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
+              button.click(); return true;
+            `);
+            const body30 = await pollUntil(
+              () =>
+                cdp.evaluate<string | null>(`
+                  const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
+                  if (files.length <= ${notesBefore30}) return null;
+                  files.sort((a, b) => b.stat.ctime - a.stat.ctime);
+                  return await app.vault.cachedRead(files[0]);
+                `),
+              (b) => b !== null,
+              60_000,
+              "warte auf die Ergebnis-Notiz (Denoise-Lauf)",
+              1000,
+            );
+            const denoisingLine = body30?.match(/^denoising:\s*(.+)$/m)?.[1]?.trim() ?? null;
+            record(
+              NAME_30,
+              denoisingLine === "0.6",
+              body30 === null
+                ? "keine Notiz innerhalb der Frist"
+                : `${Math.round((Date.now() - t30) / 1000)} s · denoising: ${denoisingLine ?? "(fehlt)"} in der Notiz`,
+            );
+          }
+        }
+      } finally {
+        // W2 (Final-Review 2026-09-05): die Vorlage MUSS hier wieder weg. `state.initImage`
+        // ueberlebt Moduswechsel per Design — bleibt sie stehen, laeuft JEDE spaetere
+        // panelgetriebene Erzeugung als img2img bei denoising 0.6 weiter, namentlich Punkt 25
+        // (runSdxlContentCheck klickt .lig-generate). Der Punkt waere weiter gruen und maesse
+        // trotzdem nicht mehr den Pfad, fuer den er existiert — genau die implizite
+        // Reihenfolge-Abhaengigkeit, vor der der Kommentar in runSdxlContentCheck warnt.
+        // Aufgeraeumt wird im finally-Muster der Nachbarpunkte, nicht am Ende des Erfolgspfads:
+        // ein Abbruch mittendrin hinterliesse den Zustand sonst erst recht.
+        await clickReal(cdp, `document.querySelector(".lig-init-clear")`).catch(() => undefined);
+        const vorlageWeg = await pollUntil(
+          () =>
+            cdp.evaluate<boolean>(`
+              const el = document.querySelector(".lig-denoise");
+              return !el || getComputedStyle(el).display === "none";
+            `),
+          (v) => v === true,
+          10_000,
+          "warte darauf, dass die img2img-Vorlage wieder entfernt ist",
+          500,
+        );
+        if (vorlageWeg !== true) {
+          console.log("    ⚠️ Die img2img-Vorlage aus Punkt 30 liess sich nicht entfernen — spaetere Punkte (25) messen dann img2img statt txt2img.");
         }
       }
     } else {
@@ -1958,6 +1984,14 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
  * wirkungslos (Encoder liefert Rauschen, decodeInitImage vertauscht Kanaele), laegen B und C
  * gleich weit von A weg und die nah-Schwelle risse. Ein NaN-Encoder (fp16-Ueberlauf) macht B
  * schwarz — dieselbe Fehlerklasse wie Punkt 24/25, eine Stufe frueher in der Pipeline.
+ *
+ * Seit dem Final-Review 2026-09-05 kommen drei weitere Laeufe dazu: (D) 0.5 · (E) 0.625 ·
+ * (F) 0.75, mit der Forderung RMSE(A,D) < RMSE(A,E) < RMSE(A,F). Grund: 0.25 und 1.0 sind bei
+ * steps=4 EXAKTE Punkte des alten 1/steps-Rasters — dort ist neu == alt per Konstruktion, der
+ * Punkt konnte die Rueckkehr der Quantisierung also gar nicht sehen. 0.625 liegt zwischen zwei
+ * Ankern; rastete es wieder, waere sein Bild mit D oder F identisch und die strikte Ungleichung
+ * risse. Erst damit ist dieser Punkt die „Regressionsbremse fuer den Engine-Umbau", als die
+ * docs/SMOKE.md ihn fuehrt.
  * Spike-Referenz (2026-08-30, Node/CPU, SD-Turbo, steps 4): RMSE str25 ≈ 19, str100 ≈ 51,
  * Roundtrip-Boden 4,8. Punkt 27 ist zugleich der LIVE-Beweis fuer den fp32-VAE-Encoder von
  * SDXL unter WebGPU (torch-Hooks massen 300k–500k Peak — ein Node/CPU-Test kann diesen
@@ -2040,21 +2074,60 @@ async function runBuiltinImg2ImgCheck(
         )
       : { ok: false as const, reason: "Vorlauf fehlt" };
 
-    if (!a.ok || !b.ok || !c.ok) {
-      record(name, false, `Lauf gescheitert: A ${a.ok ? "ok" : (a.reason ?? "?")} · B ${b.ok ? "ok" : (b.reason ?? "?")} · C ${c.ok ? "ok" : (c.reason ?? "?")}`);
+    // Zwischenstufe (Final-Review-Befund G3): A/B/C messen mit 0.25 und 1.0 ausschliesslich
+    // Werte, die AUCH im alten 1/steps-Raster (steps 4 → 0.25/0.5/0.75/1.0) exakte Anker
+    // waren — dort ist „neu == alt" per Konstruktion, der Regressionswert dieses Punktes fuer
+    // den Engine-Umbau war also kleiner, als die Zeile in docs/SMOKE.md klang. D/E/F schliessen
+    // das: 0.625 liegt ZWISCHEN zwei Ankern und ist im alten Raster gar nicht erreichbar.
+    // Gefordert wird strikte Monotonie RMSE(A,D) < RMSE(A,E) < RMSE(A,F) — kaeme die
+    // Quantisierung zurueck, rastete 0.625 auf 0.5 oder 0.75 und lieferte ein IDENTISCHES
+    // Bild zu D bzw. F, also exakte Gleichheit statt „dazwischen". Eine Toleranz waere hier
+    // genau falsch: sie liesse die Rueckkehr der Rasterung durch.
+    const d = c.ok
+      ? await lauf(
+          "__ligI2ID",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 0.5 }`,
+          `warte auf img2img str 0.5 (${name})`,
+        )
+      : { ok: false as const, reason: "Vorlauf fehlt" };
+    const e = d.ok
+      ? await lauf(
+          "__ligI2IE",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 0.625 }`,
+          `warte auf img2img str 0.625 — ZWISCHEN zwei alten Rasterpunkten (${name})`,
+        )
+      : { ok: false as const, reason: "Vorlauf fehlt" };
+    const f = e.ok
+      ? await lauf(
+          "__ligI2IF",
+          `{ prompt: ${variationPrompt}, steps: 4, seed: 999, initImage: window.__ligI2IA.base64, denoising: 0.75 }`,
+          `warte auf img2img str 0.75 (${name})`,
+        )
+      : { ok: false as const, reason: "Vorlauf fehlt" };
+
+    if (!a.ok || !b.ok || !c.ok || !d.ok || !e.ok || !f.ok) {
+      record(
+        name,
+        false,
+        `Lauf gescheitert: A ${a.ok ? "ok" : (a.reason ?? "?")} · B ${b.ok ? "ok" : (b.reason ?? "?")} · C ${c.ok ? "ok" : (c.reason ?? "?")}` +
+          ` · D ${d.ok ? "ok" : (d.reason ?? "?")} · E ${e.ok ? "ok" : (e.reason ?? "?")} · F ${f.ok ? "ok" : (f.reason ?? "?")}`,
+      );
       return;
     }
 
     // Auswertung komplett im Renderer: RMSE(A,B), RMSE(A,C) + Inhalts-Statistik von B
     // (Luma-Stddev + distinkte Stufen, dieselben Grenzen wie Punkt 24/25).
-    const mess = await cdp.evaluate<{ nah: number; fern: number; stddev: number; distinct: number }>(`
+    const mess = await cdp.evaluate<{ nah: number; fern: number; stddev: number; distinct: number; r50: number; r625: number; r75: number }>(`
       const load = (b64) => new Promise((res, rej) => {
         const i = new Image();
         i.onload = () => res(i);
         i.onerror = () => rej(new Error("decode"));
         i.src = "data:image/png;base64," + b64;
       });
-      const [ia, ib, ic] = await Promise.all([load(window.__ligI2IA.base64), load(window.__ligI2IB.base64), load(window.__ligI2IC.base64)]);
+      const [ia, ib, ic, id, ie, iff] = await Promise.all([
+        load(window.__ligI2IA.base64), load(window.__ligI2IB.base64), load(window.__ligI2IC.base64),
+        load(window.__ligI2ID.base64), load(window.__ligI2IE.base64), load(window.__ligI2IF.base64),
+      ]);
       const px = (img) => {
         const cv = document.createElement("canvas");
         cv.width = img.naturalWidth; cv.height = img.naturalHeight;
@@ -2062,7 +2135,7 @@ async function runBuiltinImg2ImgCheck(
         g.drawImage(img, 0, 0);
         return g.getImageData(0, 0, cv.width, cv.height).data;
       };
-      const pa = px(ia), pb = px(ib), pc = px(ic);
+      const pa = px(ia), pb = px(ib), pc = px(ic), pd = px(id), pe = px(ie), pf = px(iff);
       const rmse = (x, y) => {
         let s = 0, n = 0;
         for (let i = 0; i < x.length; i += 4) for (let k = 0; k < 3; k++) { const d = x[i + k] - y[i + k]; s += d * d; n++; }
@@ -2076,7 +2149,11 @@ async function runBuiltinImg2ImgCheck(
         sum += l; sq += l * l; buckets.add(Math.round(l));
       }
       const mean = sum / m;
-      return { nah: rmse(pa, pb), fern: rmse(pa, pc), stddev: Math.sqrt(Math.max(0, sq / m - mean * mean)), distinct: buckets.size };
+      return {
+        nah: rmse(pa, pb), fern: rmse(pa, pc),
+        r50: rmse(pa, pd), r625: rmse(pa, pe), r75: rmse(pa, pf),
+        stddev: Math.sqrt(Math.max(0, sq / m - mean * mean)), distinct: buckets.size,
+      };
     `);
 
     const teile: string[] = [];
@@ -2087,16 +2164,23 @@ async function runBuiltinImg2ImgCheck(
     if (mess.nah > grenzen.nah) teile.push(`str 0.25 zu weit von der Vorlage: RMSE ${mess.nah.toFixed(1)} (Grenze ${grenzen.nah})`);
     if (mess.fern < grenzen.fern) teile.push(`str 1.0 zu nah an der Vorlage: RMSE ${mess.fern.toFixed(1)} (Mindestabstand ${grenzen.fern})`);
     if (mess.fern <= mess.nah) teile.push(`keine Monotonie: str 1.0 (${mess.fern.toFixed(1)}) nicht weiter weg als str 0.25 (${mess.nah.toFixed(1)})`);
+    if (e.denoising !== 0.625) teile.push(`E meldet denoising ${String(e.denoising)} (erwartet 0.625 — quantisiert die Haertung wieder?)`);
+    if (!(mess.r50 < mess.r625 && mess.r625 < mess.r75))
+      teile.push(
+        `str 0.625 liegt NICHT zwischen den alten Rasterpunkten: RMSE 0.5 → ${mess.r50.toFixed(2)} · 0.625 → ${mess.r625.toFixed(2)} · 0.75 → ${mess.r75.toFixed(2)}`,
+      );
 
     record(
       name,
       teile.length === 0,
       teile.length === 0
-        ? `RMSE zur Vorlage: str 0.25 → ${mess.nah.toFixed(1)} (≤ ${grenzen.nah}) · str 1.0 → ${mess.fern.toFixed(1)} (≥ ${grenzen.fern}) · B: Luma-Stddev ${mess.stddev.toFixed(1)}, ${mess.distinct} Stufen · denoising ${String(b.denoising)}/${String(c.denoising)}`
+        ? `RMSE zur Vorlage: str 0.25 → ${mess.nah.toFixed(1)} (≤ ${grenzen.nah}) · str 1.0 → ${mess.fern.toFixed(1)} (≥ ${grenzen.fern}) · Zwischenstufe 0.5/0.625/0.75 → ${mess.r50.toFixed(2)}/${mess.r625.toFixed(2)}/${mess.r75.toFixed(2)} (streng steigend) · B: Luma-Stddev ${mess.stddev.toFixed(1)}, ${mess.distinct} Stufen · denoising ${String(b.denoising)}/${String(c.denoising)}`
         : teile.join(" · "),
     );
   } finally {
-    await cdp.evaluate(`delete window.__ligI2IA; delete window.__ligI2IB; delete window.__ligI2IC; return true;`).catch(() => undefined);
+    await cdp
+      .evaluate(`delete window.__ligI2IA; delete window.__ligI2IB; delete window.__ligI2IC; delete window.__ligI2ID; delete window.__ligI2IE; delete window.__ligI2IF; return true;`)
+      .catch(() => undefined);
     await cdp
       .evaluate(`
         const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];

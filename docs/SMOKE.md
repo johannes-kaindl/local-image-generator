@@ -421,8 +421,12 @@ mehr `1/steps`). Zwei neue Punkte messen das am Wirt:
   weil `stepsMax` rein aus dem Katalog kommt (`backendCapabilities`).
 - **30. Denoise-Wert (0.6) kommt UNVERÄNDERT in der Ergebnis-Notiz an.** Baut auf dem Bild aus
   Punkt 15 auf: „als Vorlage“ (`.lig-init-from-result`) speichert es und macht es zur Vorlage,
-  danach ist `.lig-denoise` sichtbar. Regler auf 0.6, „Generieren“, „Speichern & als Vorlage“
+  danach ist `.lig-denoise` sichtbar. Regler auf 0.6, „Generieren“, dann „Erstellen“
   (Knopf-Label `generate.button.create`) — Ergebnis-Notiz gelesen, `denoising:`-Zeile geprüft.
+  ⚠️ Der zweite Klick ist **„Erstellen“**, nicht „Speichern & als Vorlage“ — letzteres war der
+  Klick DAVOR (`.lig-init-from-result`, setzt die Vorlage). Wer die Gegenprobe nach der
+  ursprünglichen Fassung dieses Absatzes nachfuhr, klickte zweimal denselben Knopf und bekam
+  nie eine Notiz.
   Bis 0.11 hätte hier 0.75 gestanden (1/steps-Raster).
 
 **Beide Gegenproben rot gesehen, danach zurückgenommen (`git diff` leer):**
@@ -447,6 +451,14 @@ Punkte **26/27** (RMSE zur Vorlage, die Regressionsbremse für den Engine-Umbau)
 allen drei vollen Läufen dieser Runde unverändert grün (SD-Turbo 10.0/51.2, SDXL-Turbo
 9.1/46.5 — identisch zum 2026-08-31-Lauf): der Umbau von Task 1–4 hat die Bildwirkung nicht
 verändert.
+
+⚠️ **Nachtrag Final-Review 2026-09-05: dieser Absatz war schwächer, als er klang.** Beide Punkte
+maßen nur `str 0.25` und `str 1.0` — bei steps=4 sind das **exakte Punkte des alten
+1/steps-Rasters**, dort ist „neu == alt" per Konstruktion, und „unverändert grün" belegte für den
+Umbau folglich nichts. Seit dem Review messen sie zusätzlich `0.5 / 0.625 / 0.75` und fordern
+strikt steigenden RMSE zur Vorlage; **0.625 ist im alten Raster gar nicht erreichbar** — käme die
+Quantisierung zurück, wäre sein Bild mit dem von 0.5 oder 0.75 identisch und die Ungleichung
+risse. Kosten: drei zusätzliche Generierungen je Modell.
 
 ### 2026-09-03 · 0.11.1 + Nachlese · Staging-Vault · beide Mocks · **32/32 grün**, Punkt 21 mit Gegenprobe
 

@@ -89,7 +89,8 @@ function nearestSize(width: number, height: number, sizes: readonly SizeOption[]
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
   const caps = backendCapabilities(ctx.mode, ctx.builtinModel);
   // clampInt gibt seinen Fallback UNGEPRUEFT zurueck — ein defaultSteps von 20 landete im
-  // builtin-Modus (max 4) sonst unveraendert im Ergebnis. Deshalb wird auch er geklemmt;
+  // builtin-Modus (dessen Katalog-Maximum liegt seit 0.12 bei 8, davor 4) sonst unveraendert
+  // im Ergebnis. Deshalb wird auch er geklemmt;
   // das faengt zugleich ein kaputtes defaultSteps aus einer handeditierten data.json.
   const fallbackSteps = clampInt(ctx.defaultSteps, caps.minSteps, caps.maxSteps, caps.minSteps);
   // Kann das Backend kein img2img, faellt die ganze Vorlage weg — still, wie Negativ-Prompt
