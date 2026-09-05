@@ -206,8 +206,8 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     const vm = buildViewModel(builtin);
     expect(vm.controls).toEqual({
       negative: false, cfg: false, size: false, sizes: [{ width: 512, height: 512 }], initImage: true,
-      denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 4,
-      denoiseRaster: { min: 0.25, step: 0.25 }, // steps=4 (base.steps), geklemmt auf caps.maxSteps=4
+      denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 8,
+      denoiseRaster: { min: 0.25, step: 0.25 }, // steps=4 (base.steps), geklemmt auf caps.maxSteps=8
     });
     expect(vm.empty?.ctaAction).toBe("download");
     expect(vm.status.cls).toBe("is-error");

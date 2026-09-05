@@ -113,7 +113,7 @@ const sdTurbo: BuiltinModel = {
   label: "SD-Turbo",
   license: { name: "Stability AI Community License", url: "https://huggingface.co/stabilityai/sd-turbo/blob/main/LICENSE.md" },
   attribution: "Powered by Stability AI",
-  steps: { min: 1, max: 4, default: 4 },
+  steps: { min: 1, max: 8, default: 4 },
   sizes: [{ width: 512, height: 512 }],
   vaeScaling: 0.18215,
   parts: {
@@ -135,7 +135,7 @@ const sdxlTurbo: BuiltinModel = {
   label: "SDXL-Turbo",
   license: { name: "Stability AI Community License", url: "https://huggingface.co/stabilityai/sdxl-turbo/blob/main/LICENSE.md" },
   attribution: "Powered by Stability AI",
-  steps: { min: 1, max: 4, default: 4 },
+  steps: { min: 1, max: 8, default: 4 },
   sizes: [
     { width: 512, height: 512 },
     { width: 1024, height: 1024 },

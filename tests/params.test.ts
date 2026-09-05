@@ -248,9 +248,9 @@ describe("eine Haertung, zwei Aufrufer", () => {
     expect(schmal.height).toBe(voll.height);
     expect(schmal.model).toBe(voll.model);
     // und beide tragen die builtin-Wahrheit, nicht den Wunsch
-    expect(voll).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 4 });
+    expect(voll).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 8 });
     // nur was der Aufrufer wirklich sagen darf, unterscheidet sich
-    expect(schmal.steps).toBe(4);
+    expect(schmal.steps).toBe(8);
   });
 });
 

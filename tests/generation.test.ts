@@ -57,7 +57,7 @@ describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
     const c = backendCapabilities("builtin", "sd-turbo");
     expect(c.fixedSize).toEqual({ width: 512, height: 512 });
     expect(c.sizes).toEqual([{ width: 512, height: 512 }]);
-    expect(c.maxSteps).toBe(4);
+    expect(c.maxSteps).toBe(8);
   });
 
   it("sdxl-turbo: fixedSize null, aber zwei erlaubte Groessen", () => {
