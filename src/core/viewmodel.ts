@@ -133,11 +133,6 @@ export interface PanelViewModel {
     modelPicker: boolean;
     stepsMin: number;
     stepsMax: number;
-    /** Rasterung des Denoise-Reglers: builtin hat nur `steps` echte Stufen (denoiseRaster in
-     *  params.ts rechnet denselben Wert fuer die Haertung) — der Regler darf keine Werte
-     *  anbieten, die die Engine ohnehin auf den naechsten Einstiegspunkt zieht. `null` heisst
-     *  kontinuierlich (Server-Modus waehlt frei). */
-    denoiseRaster: { min: number; step: number } | null;
   };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
@@ -159,7 +154,7 @@ export interface PanelViewModel {
  *
  *  Steht hier und wird von Panel UND Bestaetigungsdialog (main.ts) benutzt: ein Dialog, der eine
  *  andere Zahl nennt als der Knopf, der ihn geoeffnet hat, sieht wie ein Fehler aus. Dieselbe
- *  Doktrin wie bei `denoiseRaster` und `hardenParams` — eine Entscheidung, eine Stelle. */
+ *  Doktrin wie bei `hardenParams` — eine Entscheidung, eine Stelle. */
 export function partialDownloadLabel(missingBytes: number | null, totalBytesOfModel: number): string | null {
   if (missingBytes === null) return null;
   const fehlend = formatBytes(missingBytes);
@@ -287,18 +282,6 @@ function engineEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
   return null;
 }
 
-/** Das Raster fuer den Denoise-Regler im builtin-Modus: bei `stepsClamped` Schritten gibt es
- *  nur `stepsClamped` Einstiegspunkte (dieselbe Rechnung wie `denoiseRaster` in params.ts,
- *  hier nur die Regler-GRENZEN, nicht der Wert selbst — zwei Rechnungen waeren zwei
- *  Wahrheiten). `s.steps` kommt ungeklemmt aus dem State (DOM-Wert), deshalb hier dieselben
- *  GRENZEN wie die Haertung — die Rundung unterscheidet sich bewusst: die Haertung klemmt
- *  ueber `clampInt` (trunc), hier steht `Math.round`. Das wird nur bei nicht-ganzzahligen
- *  `steps` sichtbar, die der `step="1"`-Regler im Panel gar nicht liefern kann. */
-function rasterFor(s: PanelState, caps: ReturnType<typeof backendCapabilities>): { min: number; step: number } {
-  const stepsClamped = Math.min(caps.maxSteps, Math.max(caps.minSteps, Math.round(s.steps) || caps.minSteps));
-  return { min: 1 / stepsClamped, step: 1 / stepsClamped };
-}
-
 export function buildViewModel(s: PanelState): PanelViewModel {
   const busy = s.run.kind === "contacting" || s.run.kind === "generating"
     || s.run.kind === "loading-model" || s.run.kind === "external";
@@ -334,7 +317,6 @@ export function buildViewModel(s: PanelState): PanelViewModel {
       modelPicker: builtin && s.showModelPicker && s.downloadedModels.length > 1,
       stepsMin: caps.minSteps,
       stepsMax: caps.maxSteps,
-      denoiseRaster: builtin ? rasterFor(s, caps) : null,
     },
     modelLabel,
     modelOptions: s.downloadedModels.map((id) => ({ id, label: modelById(id).label })),

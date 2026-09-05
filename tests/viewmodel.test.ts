@@ -196,10 +196,10 @@ describe("formatElapsed", () => {
 describe("buildViewModel — builtin engine (0.6)", () => {
   const builtin: PanelState = { ...base, mode: "builtin", server: { kind: "unconfigured" }, cfg: 1 };
 
-  it("server-Modus: alle Regler sichtbar, Steps 1–50, kein Raster (kontinuierlich)", () => {
+  it("server-Modus: alle Regler sichtbar, Steps 1–50, kontinuierlich", () => {
     expect(buildViewModel(base).controls).toEqual({
       negative: true, cfg: true, size: true, sizes: null, initImage: true, denoising: false,
-      modelPicker: false, stepsMin: 1, stepsMax: 50, denoiseRaster: null,
+      modelPicker: false, stepsMin: 1, stepsMax: 50,
     });
   });
   it("builtin/not-downloaded: Regler reduziert, CTA download, Generate gesperrt — der Server-Zustand ist egal; img2img seit 0.11 aber verfuegbar", () => {
@@ -207,7 +207,6 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     expect(vm.controls).toEqual({
       negative: false, cfg: false, size: false, sizes: [{ width: 512, height: 512 }], initImage: true,
       denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 8,
-      denoiseRaster: { min: 0.25, step: 0.25 }, // steps=4 (base.steps), geklemmt auf caps.maxSteps=8
     });
     expect(vm.empty?.ctaAction).toBe("download");
     expect(vm.status.cls).toBe("is-error");
@@ -342,7 +341,7 @@ describe("buildViewModel — builtin engine (0.6)", () => {
 
   // EINE Entscheidung fuer Panel UND Bestaetigungsdialog: ein Dialog, der eine andere Zahl
   // nennt als der Knopf, der ihn geoeffnet hat, sieht wie ein Fehler aus. Zwei Kopien derselben
-  // Bedingung waeren genau der Weg dorthin (vgl. `denoiseRaster`, `hardenParams`).
+  // Bedingung waeren genau der Weg dorthin (vgl. `hardenParams`).
   describe("partialDownloadLabel", () => {
     it("nennt die fehlenden Bytes nur, wenn sie ANGEZEIGT etwas anderes sagen", () => {
       expect(partialDownloadLabel(137_000_000, 7_100_000_000)).toBe(formatBytes(137_000_000));
@@ -382,12 +381,6 @@ describe("Regler fuer img2img — zwei Fragen, nicht eine", () => {
     const vm = buildViewModel({ ...base, mode: "builtin", initImage: vorlage });
     expect(vm.controls.initImage).toBe(true);
     expect(vm.controls.denoising).toBe(true);
-  });
-
-  it("denoiseRaster ist nur im builtin-Modus gesetzt und rastert auf 1/steps", () => {
-    expect(buildViewModel({ ...base, mode: "server" }).controls.denoiseRaster).toBeNull();
-    const vm = buildViewModel({ ...base, mode: "builtin", steps: 4 });
-    expect(vm.controls.denoiseRaster).toEqual({ min: 0.25, step: 0.25 });
   });
 });
 

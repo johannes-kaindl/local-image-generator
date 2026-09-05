@@ -223,10 +223,10 @@ describe("generate() — img2img", () => {
   });
 
   // Der Durchstich: nicht der Fake haertet, sondern die ECHTE hardenParams — sonst prueft der
-  // Test nur, dass der Fake tut, was er tun soll, statt den Vertrag der Fassade. builtin
-  // quantisiert Teil-Denoising auf {1/steps … 1}: bei steps 4 sind das 0.25/0.5/0.75/1 — 0.6
-  // liegt am naechsten an 0.5 (denoiseRaster(4, 0.6) → tStart 2, effective 2/4).
-  it("builtin: initImageData erreicht run() unveraendert, denoising landet gerastert in den Params", async () => {
+  // Test nur, dass der Fake tut, was er tun soll, statt den Vertrag der Fassade. Seit 0.12
+  // quantisiert die Haertung nicht mehr — der Wunsch landet unveraendert in den Params, die
+  // builtin-Engine interpoliert ihren Einstiegspunkt selbst (denoiseEntry im Scheduler).
+  it("builtin: initImageData erreicht run() unveraendert, denoising landet unveraendert in den Params", async () => {
     let auftrag: unknown = null;
     const api = createImageGenerationApi(
       deps({
@@ -256,7 +256,7 @@ describe("generate() — img2img", () => {
 
     expect(auftrag).toBe("AAAA");
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.image.params.denoising).toBe(0.5);
+    if (r.ok) expect(r.image.params.denoising).toBe(0.6);
   });
 });
 

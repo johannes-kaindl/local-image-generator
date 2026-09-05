@@ -59,9 +59,9 @@ export interface GenerateRequest {
   /** img2img (Spec 4a): Vorlagen-Pixel CHW [-1,1], BEREITS auf Zielgroesse (Base64→Pixel
    *  braucht DOM und sitzt in png.ts/local-engine — Pure-Core-Schnitt). undefined = txt2img. */
   initPixels?: Float32Array;
-  /** Effektive, schon GEHAERTETE Aenderungsstaerke (Raster {1/steps..1}). Die Engine leitet
-   *  daraus nur noch den Einstiegspunkt ab — mit denoiseRaster, derselben Formel wie die
-   *  Haertung. `d` ist bereits Rasterwert, die Ableitung ist exakt. */
+  /** Schon GEHAERTETE Aenderungsstaerke, kontinuierlich in [0,1]. Die Engine leitet daraus
+   *  ihren Einstiegspunkt selbst ab (denoiseEntry im Scheduler, interpoliert zwischen zwei
+   *  Sigma-Stufen statt zu runden). */
   denoising?: number;
 }
 

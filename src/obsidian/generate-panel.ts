@@ -421,12 +421,13 @@ export class GeneratePanel implements HubPanel<TabId> {
       }
     }
 
-    // Denoise-Raster (builtin): dieselbe Klemm-Falle wie beim Steps-Block oben — der Browser
-    // rastet/klemmt `value` SELBST, sobald `min`/`step` sich aendern, deshalb die Anzeige
-    // BEDINGUNGSLOS aus dem (moeglicherweise vom Browser veraenderten) `value` nachziehen.
-    const raster = vm.controls.denoiseRaster;
-    const dMin = String(raster ? raster.min : DENOISING.min);
-    const dStep = String(raster ? raster.step : DENOISING.step);
+    // Seit 0.12 keine builtin-Rasterung mehr — beide Modi nutzen dieselbe Aufloesung
+    // (DENOISING.min/step). Der Block bleibt trotzdem bestehen: dieselbe Klemm-Falle wie
+    // beim Steps-Block oben (Browser rastet/klemmt `value` SELBST, sobald `min`/`step`
+    // sich aendern), deshalb die Anzeige BEDINGUNGSLOS aus dem (moeglicherweise vom
+    // Browser veraenderten) `value` nachziehen.
+    const dMin = String(DENOISING.min);
+    const dStep = String(DENOISING.step);
     if (this.denoiseEl.min !== dMin || this.denoiseEl.step !== dStep) {
       const vorher = Number(this.denoiseEl.value);
       this.denoiseEl.min = dMin;

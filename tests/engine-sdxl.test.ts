@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OrtValue, Session } from "../src/core/engine";
 import { SdxlTurboEngine } from "../src/core/engine-sdxl";
-import { denoiseRaster } from "../src/core/params";
 import { gaussianArray } from "../src/core/pipeline/prng";
 import { denoiseEntry, makeSchedule, scaleInput } from "../src/core/pipeline/scheduler";
 
@@ -283,8 +282,9 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     expect(encoderCalls).toHaveLength(1);
     expect(encoderCalls[0]!["sample"]!.dims).toEqual([1, 3, 1024, 1024]);
     const unetCalls = rec.feeds.filter((f) => "timestep" in f);
-    const { tStart } = denoiseRaster(steps, denoising);
-    expect(unetCalls).toHaveLength(steps - tStart);
+    const sched = makeSchedule(steps);
+    const { startAt } = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+    expect(unetCalls).toHaveLength(steps - startAt);
   });
 
   it("img2img: Start-Latents tragen SDXLs EIGENE vaeScaling (0.13025), nicht SD-Turbos 0.18215 (F2, Teil b)", async () => {
@@ -319,9 +319,9 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
       initPixels: new Float32Array(3 * side * side),
       denoising,
     });
-    const { tStart } = denoiseRaster(steps, denoising);
     const schedule = makeSchedule(steps);
-    const sigma = schedule.sigmas[tStart]!;
+    const entry = denoiseEntry(steps, denoising, schedule.sigmas, schedule.timesteps);
+    const sigma = entry.sigma;
     const noise0 = gaussianArray(seed, 1)[0]!;
     const expected = scaleInput(new Float32Array([2 * vaeScaling + noise0 * sigma]), sigma)[0]!;
     expect(seenFirstSample[0]![0]).toBeCloseTo(expected, 4);

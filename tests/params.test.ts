@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hardenParams, denoiseRaster } from "../src/core/params";
+import { hardenParams } from "../src/core/params";
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { CFG, DEFAULT_SIZE, DENOISING, STEPS } from "../src/core/generation";
 
@@ -167,19 +167,19 @@ describe("hardenParams", () => {
 });
 
 describe("hardenParams — Ausgangsbild und denoising", () => {
-  // Seit 0.11 akzeptiert die eingebaute Engine eine Vorlage — sie rastert das Teil-Denoising
-  // nur auf `steps` Einstiegspunkte. Die Notiz traegt den EFFEKTIVEN Wert (denoiseRaster),
-  // nicht den Wunsch: eine Haertung, eine Wahrheit.
-  it("rastert denoising im builtin-Modus auf die Einstiegspunkte von `steps` statt es zu streichen", () => {
+  // Bis 0.11 rasterte die Haertung den Wert im builtin-Modus auf die Einstiegspunkte
+  // von `steps`. Seit 0.12 interpoliert die Engine (denoiseEntry) — die Haertung reicht
+  // den Wunsch durch, und die Notiz traegt ihn unveraendert.
+  it("reicht denoising im builtin-Modus unveraendert durch", () => {
     const p = hardenParams(
       { prompt: "x", initImage: { ref: "Bilder/a.png" }, denoising: 0.6, steps: 4 },
       ctx("builtin"),
     );
     expect(p.initImage).toBe("Bilder/a.png");
-    expect(p.denoising).toBe(0.5); // denoiseRaster(4, 0.6) => effective 0.5
+    expect(p.denoising).toBe(0.6); // frueher 0.5 (gerastert)
   });
 
-  it("nimmt ohne Angabe den Denoising-Default, der bereits auf dem Raster liegt", () => {
+  it("nimmt ohne Angabe den Denoising-Default unveraendert", () => {
     const p = hardenParams({ prompt: "x", initImage: { ref: "a.png" }, steps: 4 }, ctx("builtin"));
     expect(p.denoising).toBe(0.75);
   });
@@ -251,20 +251,5 @@ describe("eine Haertung, zwei Aufrufer", () => {
     expect(voll).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 8 });
     // nur was der Aufrufer wirklich sagen darf, unterscheidet sich
     expect(schmal.steps).toBe(8);
-  });
-});
-
-describe("denoiseRaster", () => {
-  it("rastert auf steps Stufen und liefert den Einstiegspunkt", () => {
-    expect(denoiseRaster(4, 1)).toEqual({ tStart: 0, effective: 1 });
-    expect(denoiseRaster(4, 0.75)).toEqual({ tStart: 1, effective: 0.75 });
-    expect(denoiseRaster(4, 0.6)).toEqual({ tStart: 2, effective: 0.5 });   // round(2.4)=2
-    expect(denoiseRaster(4, 0.7)).toEqual({ tStart: 1, effective: 0.75 });  // round(2.8)=3
-    expect(denoiseRaster(4, 0.25)).toEqual({ tStart: 3, effective: 0.25 });
-  });
-  it("klemmt auf mindestens einen Step", () => {
-    expect(denoiseRaster(4, 0)).toEqual({ tStart: 3, effective: 0.25 });
-    expect(denoiseRaster(1, 0)).toEqual({ tStart: 0, effective: 1 });
-    expect(denoiseRaster(1, 1)).toEqual({ tStart: 0, effective: 1 });
   });
 });
