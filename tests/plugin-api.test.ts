@@ -14,6 +14,7 @@ function deps(over: Partial<ApiDeps> = {}): ApiDeps {
   return {
     getMode: () => "builtin",
     builtinModel: () => "sd-turbo",
+    workflowSlots: () => null,
     readiness: () => ({ ready: true }),
     recheckServer: async () => {},
     isBusy: () => false,
@@ -238,6 +239,7 @@ describe("generate() — img2img", () => {
             defaultSteps: 4,
             model: BUILTIN_MODELS["sd-turbo"].id,
             builtinModel: "sd-turbo",
+            workflowSlots: null,
             now: new Date("2026-08-31T12:00:00"),
             randomSeed: () => 7,
           }),

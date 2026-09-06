@@ -2,6 +2,7 @@
 // der Server hält die Modelle, das Plugin bietet generische, ehrliche Regler.
 import { modelById, type BuiltinModelId } from "./model-manifest";
 import type { EngineChoice } from "./settings";
+import type { WorkflowSlots } from "./comfy/workflow";
 
 export interface SizeOption { width: number; height: number; }
 
@@ -61,24 +62,59 @@ export interface BackendCapabilities {
   sizes: readonly SizeOption[] | null;
 }
 
+/** Der Kontext, aus dem die Faehigkeiten folgen. Bewusst eine diskriminierte Union statt
+ *  weiterer Stellungsargumente: `model` wurde zu einem Pflichtfeld, weil ein still auf den
+ *  Default zurueckfallender Aufruf genau der Mechanismus war, der C1 unsichtbar hielt
+ *  (local-engine.ts rechnete SDXL-Anfragen auf SD-Turbos 512²). Ein optionaler dritter
+ *  Parameter machte denselben Mechanismus fuer `slots` wieder auf; als Union ist der
+ *  Fehler nicht verboten, sondern unmoeglich. */
+export type BackendContext =
+  | { mode: "builtin"; model: BuiltinModelId }
+  | { mode: "server" }
+  | { mode: "comfy"; slots: WorkflowSlots | null };
+
 /** Was ein Backend ehrlich kann. Im builtin-Modus haengt das Ergebnis vom AKTIVEN Modell ab
- *  (SD-Turbo: eine Größe, SDXL-Turbo: zwei) — `model` ist deshalb PFLICHT, kein Default mehr
- *  (Final-Review-Fund, 2026-08-24): ein still auf `DEFAULT_BUILTIN_MODEL_ID` zurueckfallender
- *  Aufruf ohne zweites Argument war genau der Mechanismus, der C1 (`local-engine.ts` rechnete
- *  SDXL-Turbo-Anfragen still auf SD-Turbos 512²) im Vorfeld unsichtbar hielt — ein Test, der
- *  nur "ohne Modellargument gilt der Default" belegte, waere nach C1 eine Rechtfertigung fuer
- *  denselben Fehler gewesen. `HardenContext.builtinModel` ist schon seit Task 12 Pflichtfeld;
- *  jeder Produktionsaufrufer uebergab bereits ein Modell. Der Server-Zweig bleibt vom Argument
- *  unberuehrt: er kennt kein "Modell" in diesem Sinn, der Server waehlt selbst. */
-export function backendCapabilities(mode: EngineChoice, model: BuiltinModelId): BackendCapabilities {
-  if (mode !== "builtin") {
+ *  (SD-Turbo: eine Größe, SDXL-Turbo: zwei); im comfy-Modus vom hinterlegten Workflow — `model`
+ *  bzw. `slots` sind deshalb PFLICHT, kein Default mehr (Final-Review-Fund, 2026-08-24): ein
+ *  still auf `DEFAULT_BUILTIN_MODEL_ID` zurueckfallender Aufruf ohne zweites Argument war genau
+ *  der Mechanismus, der C1 (`local-engine.ts` rechnete SDXL-Turbo-Anfragen still auf SD-Turbos
+ *  512²) im Vorfeld unsichtbar hielt — ein Test, der nur "ohne Modellargument gilt der Default"
+ *  belegte, waere nach C1 eine Rechtfertigung fuer denselben Fehler gewesen. Als Union statt
+ *  eines optionalen dritten Stellungsarguments: der Fehler ist damit nicht verboten, sondern
+ *  unmoeglich. Der Server-Zweig bleibt von einem Modell unberuehrt: er kennt kein "Modell" in
+ *  diesem Sinn, der Server waehlt selbst. */
+export function backendCapabilities(ctx: BackendContext): BackendCapabilities {
+  if (ctx.mode === "server") {
     return {
       negativePrompt: true, cfg: true, initImage: true,
       minSteps: STEPS.min, maxSteps: STEPS.max,
       fixedSize: null, sizes: null,
     };
   }
-  const m = modelById(model);
+  if (ctx.mode === "comfy") {
+    // Ohne brauchbaren Workflow ist nichts bedienbar. Generieren ist in dem Zustand
+    // ohnehin gesperrt; die Statuszeile nennt den Grund.
+    if (ctx.slots === null) {
+      return {
+        negativePrompt: false, cfg: false, initImage: false,
+        minSteps: STEPS.min, maxSteps: STEPS.max,
+        fixedSize: null, sizes: null,
+      };
+    }
+    return {
+      // Der Negativ-Slot ist Teil der Sampler-Erkennung — er existiert per Definition.
+      negativePrompt: true,
+      // patchWorkflow fasst CFG bewusst nicht an: Sampler, Scheduler, CFG, LoRAs und
+      // Upscaler gehoeren dem Nutzer.
+      cfg: false,
+      // Stufe 1 (Spec §0): braucht /upload/image und einen LoadImage-Slot.
+      initImage: false,
+      minSteps: STEPS.min, maxSteps: STEPS.max,
+      // Beides gesichert durch die Abweisung in inspectWorkflow (Spec §4).
+      fixedSize: null, sizes: null,
+    };
+  }
+  const m = modelById(ctx.model);
   const only = m.sizes.length === 1 ? (m.sizes[0] ?? null) : null;
   return {
     negativePrompt: false,
@@ -91,4 +127,17 @@ export function backendCapabilities(mode: EngineChoice, model: BuiltinModelId): 
     fixedSize: only,
     sizes: m.sizes,
   };
+}
+
+/** Aus den drei Feldern, die Panel, Haertung und Provider-API alle drei fuehren, den
+ *  Kontext bauen. EINE Stelle, damit die drei nicht auseinanderlaufen — dieselbe
+ *  Begruendung wie fuer die eine Haertungsquelle. */
+export function toBackendContext(
+  mode: EngineChoice,
+  builtinModel: BuiltinModelId,
+  workflowSlots: WorkflowSlots | null,
+): BackendContext {
+  if (mode === "builtin") return { mode, model: builtinModel };
+  if (mode === "comfy") return { mode, slots: workflowSlots };
+  return { mode: "server" };
 }

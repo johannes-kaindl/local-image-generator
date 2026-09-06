@@ -31,6 +31,7 @@ const base: PanelState = {
   builtinModel: "sd-turbo",
   showModelPicker: false,
   mode: "server",
+  workflow: { kind: "unconfigured" },
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
   run: { kind: "idle" },

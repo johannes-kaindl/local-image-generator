@@ -1,8 +1,10 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
-import { backendCapabilities, type SizeOption } from "./generation";
+import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
+import { slotsOf, type WorkflowState } from "./comfy/state";
+import type { EngineChoice } from "./settings";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -64,8 +66,15 @@ export interface GenParams {
 }
 
 export interface PanelState {
-  /** Welches Backend gerade gilt (settings.engine). */
-  mode: "builtin" | "server";
+  /** Welches Backend gerade gilt (settings.engine). Als EngineChoice (nicht nur
+   *  "builtin" | "server"), seit es den comfy-Modus gibt — die UI-Verzweigungen hier
+   *  behandeln ihn bewusst noch als Server (spaetere Task, s. AGENTS/Task-5-Bericht). */
+  mode: EngineChoice;
+  /** Der Zustand des hinterlegten ComfyUI-Workflows — der GANZE Zustand, nicht nur die
+   *  Slots: das ViewModel braucht ihn spaeter (Statuszeile), und zwei Quellen fuer dieselbe
+   *  Sache waeren genau der Drift, gegen den die eine Haertungsquelle steht. Die Slots
+   *  leitet dieses Modul selbst per `slotsOf()` ab. */
+  workflow: WorkflowState;
   /** Aenderungsstaerke des Denoise-Reglers, null wenn keine Vorlage gesetzt ist. Liegt im
    *  State (nicht nur im DOM), weil `recipeUnchanged` sie vergleichen muss: derselbe Seed
    *  mit anderer Staerke ergibt ein anderes Bild. */
@@ -287,7 +296,7 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     || s.run.kind === "loading-model" || s.run.kind === "external";
   const builtin = s.mode === "builtin";
   const backendReady = builtin ? s.engine.kind === "ready" : s.server.kind === "ok";
-  const caps = backendCapabilities(s.mode, s.builtinModel);
+  const caps = backendCapabilities(toBackendContext(s.mode, s.builtinModel, slotsOf(s.workflow)));
 
   const status = builtin ? engineStatus(s) : serverStatus(s);
   const empty = builtin ? engineEmpty(s, busy) : serverEmpty(s, busy);

@@ -23,7 +23,7 @@ import {
   type BuiltinModelId,
 } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
-import { workflowStateFrom, type WorkflowState } from "./core/comfy/state";
+import { slotsOf, workflowStateFrom, type WorkflowState } from "./core/comfy/state";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
   createImageGenerationApi,
@@ -75,10 +75,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
-  // `workflow` ist noch nicht Teil von PanelState — das Feld wandert dorthin, sobald ein
-  // Konsument (Panel-UI, Haertung) es braucht; bis dahin haengt es per Intersection an,
-  // um der bestehenden PanelState-Form nicht vorzugreifen.
-  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> & { workflow: WorkflowState } = {
+  // `workflow` ist seit Task 5 Teil von PanelState (der ganze Zustand, nicht nur die Slots) —
+  // die fruehere Intersection ist damit aufgeloest.
+  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> = {
     initImage: null,
     denoising: null,
     missingBytes: null,
@@ -109,6 +108,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.api = createImageGenerationApi({
       getMode: () => this.settings.engine,
       builtinModel: () => this.settings.builtinModel,
+      workflowSlots: () => slotsOf(this.state.workflow),
       readiness: () => this.apiReadiness(),
       // Der EINE Netzaufruf hinter `api.recheck()`. `checkServer()` schreibt `state.server`
       // und wirft nicht — ein unerreichbarer Server ist dort ein Ergebnis; die Fassade liest
@@ -339,6 +339,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       defaultSteps: this.settings.defaultSteps,
       model: this.currentModelName(),
       builtinModel: this.settings.builtinModel,
+      workflowSlots: slotsOf(this.state.workflow),
       now: new Date(),
       randomSeed: () => Math.floor(Math.random() * 2 ** 31),
     };

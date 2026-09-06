@@ -8,6 +8,7 @@ const ctx = (mode: "builtin" | "server", builtinModel: keyof typeof BUILTIN_MODE
   defaultSteps: 20,
   model: mode === "builtin" ? BUILTIN_MODELS[builtinModel].id : "someModel.safetensors",
   builtinModel: BUILTIN_MODELS[builtinModel].id,
+  workflowSlots: null,
   now: new Date("2026-08-22T22:15:00"),
   randomSeed: () => 4242,
 });
@@ -245,7 +246,7 @@ describe("eine Haertung, zwei Aufrufer", () => {
   // durch dieselbe Haertung — dieser Test haelt fest, dass der schmale Auftrag dieselben
   // Backend-Wahrheiten bekommt wie der volle, statt eigener Defaults.
   const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODELS["sd-turbo"].id,
-              builtinModel: BUILTIN_MODELS["sd-turbo"].id,
+              builtinModel: BUILTIN_MODELS["sd-turbo"].id, workflowSlots: null,
               now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
 
   it("der schmale Auftrag erbt dieselben Backend-Wahrheiten wie der volle", () => {

@@ -1,8 +1,9 @@
-import { backendCapabilities, CFG, DEFAULT_SIZE, DENOISING, type SizeOption } from "./generation";
+import { backendCapabilities, toBackendContext, CFG, DEFAULT_SIZE, DENOISING, type SizeOption } from "./generation";
 import type { BuiltinModelId } from "./model-manifest";
 import { isoStamp } from "./filename";
 import type { EngineChoice } from "./settings";
 import type { GenParams } from "./viewmodel";
+import type { WorkflowSlots } from "./comfy/workflow";
 import { clampInt } from "../vendor/kit/num";
 
 /** Was ein Aufrufer wuenschen darf. Nur `prompt` ist Pflicht. */
@@ -38,6 +39,11 @@ export interface HardenContext {
    *  ungenutzt (backendCapabilities ignoriert `model`, wenn mode !== "builtin"), aber trotzdem
    *  Pflicht: ein optionales Feld waere wieder ein stiller Default gewesen. */
   builtinModel: BuiltinModelId;
+  /** Die Slots des hinterlegten ComfyUI-Workflows, oder null ohne brauchbaren Workflow —
+   *  `backendCapabilities` braucht sie, um im comfy-Modus zu urteilen. Pflichtfeld aus
+   *  demselben Grund wie `builtinModel`: ein optionales Feld waere wieder ein stiller
+   *  Default gewesen. */
+  workflowSlots: WorkflowSlots | null;
   /** Wird eingefroren — die Notiz beschreibt das Bild, das man sieht. */
   now: Date;
   /** Injiziert statt Math.random(), damit die Haertung testbar bleibt. */
@@ -87,7 +93,7 @@ function nearestSize(width: number, height: number, sizes: readonly SizeOption[]
 }
 
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
-  const caps = backendCapabilities(ctx.mode, ctx.builtinModel);
+  const caps = backendCapabilities(toBackendContext(ctx.mode, ctx.builtinModel, ctx.workflowSlots));
   // clampInt gibt seinen Fallback UNGEPRUEFT zurueck — ein defaultSteps von 20 landete im
   // builtin-Modus (dessen Katalog-Maximum liegt seit 0.12 bei 8, davor 4) sonst unveraendert
   // im Ergebnis. Deshalb wird auch er geklemmt;
