@@ -185,6 +185,7 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 36 | Ein kaputter Workflow (kein Sampler-Node) zeigt seinen **Klartext** — eine gültige Datei bringt `is-ok` | beide Richtungen wie Punkt 17: eine Prüfung, die nur die Fehlermeldung liest, besteht mit einer Statuszeile, die immer denselben Text zeigt |
 | 37 | Ein echter Lauf gegen den ComfyUI-Mock (`scripts/mock-comfy.mjs`) liefert ein Bild | am **Zähler/den Bytes des Mocks** gemessen, den der Treiber selbst per `fetch` abfragt — dieselbe Form wie Punkt 2/3, nicht „der Prüfling behauptet Erfolg" |
 | 38 | Die Ergebnis-Notiz trägt die vom Mock **empfangene** Schrittzahl, nicht den Workflow-Default | misst Spec §4 direkt: der Workflow-Default (20) und die angefragte Zahl (3) sind absichtlich verschieden, damit ein Test, der den falschen Wert liest, nicht zufällig grün bleibt |
+| 40 | Die grossen Formate (0.12.1) stehen im **Server**-Dropdown und **nicht** im builtin | beide Richtungen, und die zweite ist die Aussage: dass `2048x1152` im Server auftaucht, belegt nur, dass die Liste ankommt — dass es im builtin FEHLT, belegt die Trennung der Quellen (dort speist der Modellkatalog, nicht `SIZES`) |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -567,6 +568,53 @@ Punkt 30 gesetzte Vorlage; Punkte **26/27** grün mit der Zwischenstufe 0.625 (S
 0.5 und 19.59 von 0.75 entfernt, SDXL-Turbo 29.88 / 23.12 — Schwelle 2, Rasterung wäre exakt 0).
 Die Aufräum-Warnung aus Punkt 30 („Vorlage ließ sich nicht entfernen") blieb in allen Anläufen
 aus.
+
+### § 2026-09-06 (abends) — Punkt 40: die Groessenliste, gerendert
+
+**Warum ein eigener Punkt und nicht eine Zeile in 17.** Punkt 17 misst SICHTBARKEIT von
+Reglern über `getComputedStyle`; hier geht es um den INHALT eines Dropdowns. Beide wechseln
+den Modus, aber ein Punkt, der zwei verschiedene Fragen trägt, meldet bei Rot nicht, welche
+davon gebrochen ist — dieselbe Trennung wie bei 38/39.
+
+**Warum die builtin-Richtung die wichtigere ist.** Der Anlass von 0.12.1 war eine
+Beschränkung, die in der `SIZES`-Liste saß statt im Backend: Draw Things mit Flux kann bis
+2048, das Dropdown bot nur 1024. Die naheliegende Reparatur — „dann nimm überall `SIZES`" —
+wäre der Fehler in die andere Richtung gewesen: das Panel böte dann Formate an, die die
+eingebaute Engine gar nicht rechnen kann. Ein Punkt, der nur prüft, dass `2048x1152`
+*auftaucht*, bliebe dabei grün.
+
+**Robust gegen die Modellwahl, gemessen statt angenommen:** SD-Turbos Katalog ist
+`[512x512]`, SDXL-Turbos `[512x512, 1024x1024]` — `2048x1152` kommt in keinem builtin-Katalog
+vor. Der Punkt braucht deshalb weder ein geladenes Modell noch einen bestimmten
+`builtinModel`-Stand. Käme je ein Modell mit großem Katalog dazu, ist diese Zeile die Stelle,
+an der man es merkt.
+
+**Zwei Gegenproben, je eine pro Richtung — gefahren 2026-09-06 abends:**
+
+| Mutation | Meldung | Ergebnis |
+|---|---|---|
+| `2048x1152` aus `SIZES` entfernt | „Server-Dropdown ohne 2048x1152 (hat: 512x512, …)" | ✅ rot, 5/6 |
+| `sizeOptions = SIZES` statt `vm.controls.sizes ?? SIZES` | „builtin-Dropdown bietet 2048x1152 an — dort speist der Modellkatalog, nicht SIZES" | ✅ rot, 5/6 |
+| beide zurückgenommen | — | grün, 6/6 |
+
+Erst die zweite Zeile belegt, dass der Punkt die Trennung der Quellen misst und nicht bloß
+das Vorhandensein einer Zeichenkette. Eine einzelne Gegenprobe hätte hier gereicht, um sich
+sicher zu fühlen, und die falsche Hälfte abgesichert.
+
+### 2026-09-06 (abends) · 0.14-dev (Punkt 40) · **Zweitinstanz** (eigenes Profil, Port 9347) · ohne Mocks · **6/6 grün, 14 übersprungen**
+
+`--quick` gegen den Staging-Vault, weder A1111- noch ComfyUI-Mock gestartet — der neue Punkt
+braucht beides nicht (er wechselt den Modus und liest Optionen). Gemessen im builtin-Modus mit
+**SDXL-Turbo** als gewähltem Modell, daher die zwei Optionen in der Erfolgsmeldung:
+
+```
+✓ 40. Die grossen Formate stehen im Server-Dropdown und NICHT im builtin
+     — server 10 Optionen inkl. 2048x1152 · builtin 2 ohne 2048x1152 (512x512, 1024x1024)
+```
+
+Die 14 übersprungenen sind dieselben wie im Lauf davor (kein Server, keine Assets, kein
+ComfyUI-Mock) — ein `--quick`-Lauf ohne Mocks ist kein bestandener Smoke, sondern ein
+Teil-Lauf, und die Abschlusszeile sagt das.
 
 ### 2026-09-06 (nachmittags) · 0.13.0 + Punkt 39 · **Zweitinstanz** (eigenes Profil, Port 9347) · ComfyUI-Mock (8189), **A1111 bewusst AUS** · **10/10 grün, 9 übersprungen**
 
