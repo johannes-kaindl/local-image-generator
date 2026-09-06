@@ -338,9 +338,15 @@ export class GeneratePanel implements HubPanel<TabId> {
     const steps = Math.min(range.max, Math.max(range.min, entry.steps));
     this.stepsEl.value = String(steps);
     this.stepsValueEl.setText(String(steps));
-    const cfg = Math.min(CFG.max, Math.max(CFG.min, entry.cfg));
-    this.cfgEl.value = String(cfg);
-    this.cfgValueEl.setText(String(cfg));
+    // `cfg: null` heisst „der Eintrag sagt nichts ueber CFG" (comfy-Lauf) — dann bleibt der
+    // Regler stehen, wo er steht. Ihn zu setzen ginge nur mit einer erfundenen Zahl, und ohne
+    // diesen Zweig faellt `null` durch die Klemme auf CFG.min (Math.max(1, null) === 1) und
+    // riesse den Regler bei jedem zurueckgeladenen comfy-Rezept auf 1.
+    if (entry.cfg !== null) {
+      const cfg = Math.min(CFG.max, Math.max(CFG.min, entry.cfg));
+      this.cfgEl.value = String(cfg);
+      this.cfgValueEl.setText(String(cfg));
+    }
     // Die Vorlage selbst setzt der HOST (nur er kann den Vault lesen) — hier nur der Regler.
     const denoise = entry.denoising ?? DENOISING.default;
     this.denoiseEl.value = String(denoise);

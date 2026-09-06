@@ -286,14 +286,37 @@ describe("hardenParams — comfy ueber die Produktionsroute (toBackendContext)",
     randomSeed: () => 4242,
   };
 
-  it("neutralisiert CFG und die Vorlage — die Haertung geht wirklich ueber toBackendContext", () => {
+  it("meldet CFG als unbestimmt und laesst die Vorlage fallen — die Haertung geht wirklich ueber toBackendContext", () => {
     const p = hardenParams({ prompt: "x", cfg: 9, initImage: { ref: "a.png" } }, c);
-    expect(p.cfg).toBe(1);
+    // Seit C1 (Final-Review 2026-09-06) `null` statt 1: das Plugin hat den Wert nicht
+    // bestimmt, es hat ihn nicht auf „keine Guidance" gesetzt.
+    expect(p.cfg).toBeNull();
     expect(p.initImage).toBeNull();
   });
 
   it("laesst den Negativ-Prompt durch — comfy kann ihn, anders als builtin", () => {
     const p = hardenParams({ prompt: "x", negativePrompt: "blurry" }, c);
     expect(p.negativePrompt).toBe("blurry");
+  });
+});
+
+// C1 (Final-Review 2026-09-06): `cfg` hat drei Ausgaenge, einen je Modus — und der
+// comfy-Ausgang ist der Grund fuer den Null-Fall. Zusammen in EINEM describe, weil die drei
+// nur nebeneinander zeigen, dass `null` kein "keine Guidance" ist (das waere builtins 1),
+// sondern "das Plugin hat den Wert nicht bestimmt".
+describe("hardenParams — cfg je Modus", () => {
+  const comfySlots = { sampler: "1", positive: "2", negative: "3", latent: "4", seedField: "seed" as const, stepsField: "steps" as const, workflowSteps: 6 };
+
+  it("builtin: 1 — SD-Turbo ist destilliert und kennt keine Guidance", () => {
+    expect(hardenParams({ prompt: "x", cfg: 9 }, ctx("builtin")).cfg).toBe(1);
+  });
+
+  it("comfy: null — patchWorkflow fasst das CFG-Feld des Samplers nicht an", () => {
+    const p = hardenParams({ prompt: "x", cfg: 9 }, { ...ctx("server"), mode: "comfy" as const, workflowSlots: comfySlots });
+    expect(p.cfg).toBeNull();
+  });
+
+  it("server: der gesetzte Wert, unveraendert", () => {
+    expect(hardenParams({ prompt: "x", cfg: 9 }, ctx("server")).cfg).toBe(9);
   });
 });

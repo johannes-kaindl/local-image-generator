@@ -122,7 +122,18 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
     // Ein Regler, den das Backend nicht kann, wird nicht abgelehnt, sondern neutralisiert —
     // der Aufrufer sieht am Rueckgabewert, was daraus wurde (Keine-Attrappen-Linie).
     negativePrompt: caps.negativePrompt ? (input.negativePrompt ?? "") : "",
-    cfg: caps.cfg ? finite(input.cfg, CFG.default) : 1,
+    // Drei Ausgaenge, einer je Modus — und der Unterschied zwischen den beiden unteren ist
+    // der ganze Punkt (C1, Final-Review 2026-09-06):
+    //   builtin → 1     "keine Guidance" ist hier WAHR: SD-Turbo ist destilliert.
+    //   comfy   → null  Das Plugin hat den Wert nicht bestimmt — `patchWorkflow` fasst das
+    //                   CFG-Feld des Samplers nicht an, der Lauf rechnet mit dem Wert des
+    //                   Nutzer-Workflows. Eine 1 hier stuende als Tatsache in jeder
+    //                   Ergebnis-Notiz, und wer das Bild reproduzieren will, stellte seinen
+    //                   Workflow auf 1 und bekaeme ein anderes Bild.
+    //   server  → Wert  unveraendert, wie bisher.
+    // Verzweigt ueber `ctx.mode`, nicht ueber `caps.cfg`: `caps.cfg === false` sagt nur „kein
+    // Regler", nicht, WARUM — und genau diese zwei Warum unterscheiden sich hier.
+    cfg: ctx.mode === "comfy" ? null : caps.cfg ? finite(input.cfg, CFG.default) : 1,
     width: size.width,
     height: size.height,
     steps,

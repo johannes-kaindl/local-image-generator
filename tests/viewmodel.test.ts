@@ -417,7 +417,10 @@ describe("generateEnabled kennt img2img", () => {
     negativePrompt: baseParams.negativePrompt,
     seed: baseParams.seed,
     steps: baseParams.steps,
-    cfg: baseParams.cfg,
+    // `PanelState.cfg` ist der REGLERWERT (immer eine Zahl), `GenParams.cfg` das Ergebnis
+    // der Haertung (seit 0.13 auch `null` = vom Backend bestimmt) — der Fallback haelt die
+    // beiden Typen auseinander, ohne die Gleichheit dieses Falls (7) anzutasten.
+    cfg: baseParams.cfg ?? base.cfg,
     width: baseParams.width,
     height: baseParams.height,
     image: { dataUrl: "data:,", params: baseParams },

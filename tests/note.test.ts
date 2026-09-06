@@ -45,6 +45,16 @@ describe("buildImageNote", () => {
     expect(note).toContain("cfg: 7");
   });
 
+  // C1 (Final-Review 2026-09-06): im comfy-Modus bestimmt das Plugin das CFG NICHT — der
+  // Workflow laeuft mit dem Wert, den der Nutzer eingestellt hat. Eine Notiz mit `cfg: 1`
+  // waere dieselbe erfundene Angabe, gegen die die Steps-Abweisung gebaut wurde. Der zweite
+  // Fall ist die Gegenprobe: ohne ihn waere der Test von "cfg wird NIE geschrieben" nicht
+  // unterscheidbar.
+  it("laesst cfg bei null weg — und schreibt es bei einer Zahl sehr wohl", () => {
+    expect(buildImageNote(params({ cfg: null }), "x.png")).not.toContain("cfg:");
+    expect(buildImageNote(params({ cfg: 1 }), "x.png")).toContain("cfg: 1");
+  });
+
   it("Frontmatter enthält negative_prompt nur bei nicht-leerem Wert, direkt nach prompt", () => {
     const note = buildImageNote(params({ negativePrompt: "blurry, low quality" }), "x.png");
     expect(note).toMatch(/prompt: an apple\nnegative_prompt: "blurry, low quality"\nseed:/);

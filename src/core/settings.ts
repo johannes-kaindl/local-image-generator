@@ -32,8 +32,11 @@ export interface HistoryEntry {
   negativePrompt: string;
   seed: number;
   steps: number;
-  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). */
-  cfg: number;
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). `null` heisst „vom Backend
+   *  bestimmt, nicht vom Plugin" (comfy-Modus) — dieselbe Bedeutung wie in `GenParams.cfg`,
+   *  und der Grund, warum `migrateHistory` unten zwischen FEHLEND (Alt-Eintrag → 7) und
+   *  ausdruecklich `null` unterscheiden muss. */
+  cfg: number | null;
   model: string;
   width: number;
   height: number;
@@ -160,7 +163,13 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
       height: typeof h.height === "number" ? h.height : 512,
       // Migration 0.4→0.5: Alt-Einträge kannten weder negativePrompt noch cfg (Spec §5/§8).
       negativePrompt: typeof h.negativePrompt === "string" ? h.negativePrompt : "",
-      cfg: typeof h.cfg === "number" ? h.cfg : 7,
+      // Seit 0.13 ist `null` ein GUELTIGER cfg-Wert (comfy: „vom Backend bestimmt") und muss
+      // vom FEHLENDEN Feld eines Alt-Eintrags unterschieden werden — `typeof null` ist
+      // "object", ein einfaches `typeof === "number"` haette den comfy-Eintrag beim naechsten
+      // Laden still auf 7 zurueckgebogen und damit genau die Zahl behauptet, die die
+      // Ergebnis-Notiz bewusst weglaesst. JSON schreibt `null` als null und laesst ein
+      // fehlendes Feld weg — die beiden Faelle sind also wirklich unterscheidbar.
+      cfg: typeof h.cfg === "number" ? h.cfg : h.cfg === null ? null : 7,
       // Migration 0.7→0.8: img2img ist neu. null heisst „war keins" — ein Vorgabewert waere
       // eine Angabe ueber einen Lauf, der nie stattgefunden hat (Spec §1).
       denoising: typeof h.denoising === "number" ? h.denoising : null,

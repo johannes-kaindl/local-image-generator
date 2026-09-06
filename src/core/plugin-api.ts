@@ -60,7 +60,18 @@ export interface ApiRequest {
 export interface ApiParams {
   prompt: string; negativePrompt: string;
   width: number; height: number;
-  steps: number; seed: number; cfg: number;
+  steps: number; seed: number;
+  /** `null` heisst: **das Plugin hat den Wert nicht bestimmt** — im comfy-Modus rechnet der
+   *  Workflow des Nutzers mit seinem eigenen CFG, und `patchWorkflow` fasst das Feld nicht
+   *  an. Eine Zahl waere dort eine Falschaussage: ein Konsument schriebe sie in seine eigene
+   *  Notiz, und der Wert galt nie.
+   *
+   *  **`apiVersion` bleibt trotzdem 1.** Zwei Gruende: gemessen liest kein Konsument im
+   *  Workspace dieses Feld (vier Repos geprueft), und der Vertrag beschreibt `ApiParams`
+   *  ausdruecklich als „was die Haertung still ueberschrieben hat" — im comfy-Modus hat sie
+   *  nichts ueberschrieben, `null` ist also die vertragstreue Antwort und keine neue Semantik.
+   *  Dieselbe additive Logik wie bei `engine: "comfy"` und `recheck()` in 0.10.0. */
+  cfg: number | null;
   model: string;      // im Server-Modus wählt ihn der Server, wir melden ihn nur
   created: string;    // lokale Zeit ohne Offset, wie in den Ergebnis-Notizen
   /** Nicht-null ⇔ es wurde von einer Vorlage aus weitergerechnet (img2img). Der Konsument

@@ -29,7 +29,11 @@ export function buildImageNote(params: GenParams, imageLink: string): string {
     ...(params.negativePrompt.trim() !== "" ? { negative_prompt: params.negativePrompt } : {}),
     seed: params.seed,
     steps: params.steps,
-    cfg: params.cfg,
+    // cfg nur, wenn das Plugin den Wert bestimmt hat. `null` heisst „vom Backend bestimmt"
+    // (comfy-Modus: der Workflow traegt sein eigenes CFG) — eine Zahl stuende dort als
+    // Tatsache und schickte jeden, der das Bild reproduzieren will, auf den falschen Wert.
+    // Dasselbe Muster wie `denoising` und `negative_prompt` zwei Zeilen weiter.
+    ...(params.cfg !== null ? { cfg: params.cfg } : {}),
     // Beide nur bei einem img2img-Lauf — und `init_image` zusaetzlich nur, wenn die Vorlage
     // eine benennbare Herkunft hat. Ein API-Lauf schickt Bytes ohne Vault-Datei; die Notiz
     // behauptet dann keine Quelle, nennt aber sehr wohl die Aenderungsstaerke.

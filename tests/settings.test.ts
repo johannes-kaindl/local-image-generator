@@ -292,6 +292,21 @@ describe("Historie-Migration 0.5 (negativePrompt/cfg)", () => {
     });
     expect(s.history[0]).toMatchObject({ negativePrompt: "ugly", cfg: 9 });
   });
+
+  // C1 (Final-Review 2026-09-06): seit dem comfy-Modus ist `cfg: null` ein GUELTIGER Wert
+  // ("vom Backend bestimmt, nicht vom Plugin") und darf nicht wie ein fehlendes Feld auf 7
+  // zurueckgebogen werden — sonst behauptete ein neu geladener Eintrag genau die Zahl, die
+  // die Notiz bewusst weglaesst. Das fehlende Feld (Alt-Eintrag) bleibt daneben bei 7.
+  it("history-Migration erhaelt cfg: null, backfillt aber ein FEHLENDES cfg auf 7", () => {
+    const s = validate({
+      history: [
+        { prompt: "a", seed: 1, steps: 2, model: "m", width: 512, height: 512, created: "x", negativePrompt: "", cfg: null },
+        { prompt: "b", seed: 1, steps: 2, model: "m", width: 512, height: 512, created: "x", negativePrompt: "" },
+      ],
+    });
+    expect(s.history[0]?.cfg).toBeNull();
+    expect(s.history[1]?.cfg).toBe(7);
+  });
 });
 
 describe("engine-Migration (0.6)", () => {

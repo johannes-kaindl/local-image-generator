@@ -24,7 +24,11 @@ export interface ImageRequest {
   height: number;
   steps: number;
   seed: number;
-  cfg: number;
+  /** `null` heisst „das Plugin hat den Wert nicht bestimmt" (comfy-Modus, s. GenParams.cfg).
+   *  Der A1111-Client laesst `cfg_scale` dann weg, statt eine Zahl zu erfinden — im
+   *  Server-Modus kommt hier per Haertung immer eine Zahl an, der Weglass-Zweig ist also die
+   *  ehrliche Antwort auf einen Fall, den dieser Client gar nicht sieht. */
+  cfg: number | null;
   /** Die BYTES der Vorlage (Base64-PNG ohne `data:`-Praefix), null bei txt2img. Heisst
    *  bewusst anders als `GenParams.initImage` (dort: der Vault-PFAD) — der Auftrag traegt
    *  das Bild, das Rezept nur seine Herkunft. Bei gleichem Namen haette der Spread
@@ -59,7 +63,7 @@ export class A1111Client implements ImageBackend {
       height: req.height,
       steps: req.steps,
       seed: req.seed,
-      cfg_scale: req.cfg,
+      ...(req.cfg !== null ? { cfg_scale: req.cfg } : {}),
       ...(img2img ? { init_images: [req.initImageData], denoising_strength: req.denoising } : {}),
     });
     // Der Endpunktname steht in der Meldung: ein Server, der txt2img kann und img2img nicht

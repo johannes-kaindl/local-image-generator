@@ -48,8 +48,14 @@ export interface GenParams {
   negativePrompt: string;
   seed: number;
   steps: number;
-  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). */
-  cfg: number;
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). **`null` heisst: vom Backend
+   *  bestimmt, nicht vom Plugin** — im comfy-Modus fasst `patchWorkflow` das CFG-Feld des
+   *  Samplers bewusst nicht an, der Lauf rechnet also mit dem Wert des Nutzer-Workflows.
+   *  Eine Zahl hier waere eine Angabe ueber etwas, das dieses Plugin nicht entschieden hat —
+   *  dieselbe Erfindung, gegen die die Steps-Abweisung steht. Die Notiz laesst das Feld dann
+   *  weg (note.ts), wie bei `denoising` und `negative_prompt`. builtin traegt dagegen eine
+   *  ECHTE 1: SD-Turbo ist destilliert und kennt keine Guidance. */
+  cfg: number | null;
   model: string;
   width: number;
   height: number;
