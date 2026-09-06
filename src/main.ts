@@ -33,7 +33,7 @@ import {
   type ApiSaveResult,
   type ImageGenerationApi,
 } from "./core/plugin-api";
-import { parseOptionsModel, ProgressPoller, A1111Client, type ImageBackend } from "./core/txt2img";
+import { parseOptionsModel, ProgressPoller, A1111Client, statusUrlFor, type ImageBackend } from "./core/txt2img";
 import { formatBytes, partialDownloadLabel, type EngineState, type GenParams, type PanelState, type ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { httpGetJson, httpPostJson } from "./obsidian/http";
@@ -45,7 +45,6 @@ import { base64OfDataUrl, dataUrlToBytes, decodeInitImage, rgbaToDataUrl } from 
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { ImagePickerModal } from "./obsidian/image-picker";
 import { GeneratorView, VIEW_TYPE, type PanelRecipe, type ViewHost } from "./obsidian/view";
-import { normalizeEndpoint } from "./vendor/kit/endpoint";
 import { mergeSettings } from "./vendor/kit/settings";
 import { validateSettings } from "./vendor/kit/settings_schema";
 import { pickLang, setLang, t } from "./vendor/kit/i18n";
@@ -627,9 +626,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.state.server = { kind: "checking" };
     this.refreshViews();
     try {
-      const r = await httpGetJson(`${normalizeEndpoint(ep)}/sdapi/v1/options`);
+      const r = await httpGetJson(statusUrlFor(this.settings.engine, ep));
       if (this.unloaded) return this.state.server; // Plugin entladen → keine späten State-Mutationen mehr
-      this.state.server = r.status === 200 ? { kind: "ok", modelName: parseOptionsModel(r.json) } : { kind: "unreachable" };
+      // ComfyUI liefert in /system_stats keinen Modellnamen — das Modell steht im
+      // Workflow. `modelName: null` ist die richtige Aussage; die UI zeigt dann
+      // "(im Server gewählt)", was hier woertlich stimmt.
+      this.state.server = r.status === 200
+        ? { kind: "ok", modelName: this.settings.engine === "comfy" ? null : parseOptionsModel(r.json) }
+        : { kind: "unreachable" };
     } catch {
       if (this.unloaded) return this.state.server;
       this.state.server = { kind: "unreachable" };

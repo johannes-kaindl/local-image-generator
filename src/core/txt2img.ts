@@ -3,6 +3,17 @@
 // Spricht ZWEI Endpunkte: txt2img und (seit 0.8) img2img. Der Auftrag entscheidet, nicht
 // der Aufrufer — deshalb heisst die Klasse nicht mehr Txt2ImgClient.
 import { normalizeEndpoint } from "../vendor/kit/endpoint";
+import type { EngineChoice } from "./settings";
+
+/** Der Status-Endpunkt je Server-Sorte. Die REGISTRY fuehrt diese Probe nebenan als
+ *  Kit-Kandidaten mit dem Vermerk, die zwei Exemplare unterschieden sich NUR in der URL —
+ *  genau das ist hier die ganze Verzweigung. `builtin` hat keinen Server und kommt hier
+ *  nie an; die Signatur nimmt den Modus trotzdem, damit der Aufrufer nicht selbst
+ *  entscheiden muss, ob er fragen darf. */
+export function statusUrlFor(mode: EngineChoice, endpoint: string): string {
+  const base = normalizeEndpoint(endpoint);
+  return mode === "comfy" ? `${base}/system_stats` : `${base}/sdapi/v1/options`;
+}
 
 export type HttpPostJson = (url: string, body: unknown) => Promise<{ status: number; json: unknown }>;
 
