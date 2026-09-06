@@ -23,6 +23,7 @@ import {
   type BuiltinModelId,
 } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
+import { workflowStateFrom, type WorkflowState } from "./core/comfy/state";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
   createImageGenerationApi,
@@ -74,13 +75,17 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
-  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> = {
+  // `workflow` ist NICHT Teil von PanelState (das bekommt sein Feld erst in Task 5) — hier
+  // per Intersection angehaengt, damit dieser State-Slot schon existiert, ohne der noch
+  // nicht angepassten PanelState-Form vorzugreifen.
+  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> & { workflow: WorkflowState } = {
     initImage: null,
     denoising: null,
     missingBytes: null,
     downloadedModels: [],
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
+    workflow: { kind: "unconfigured" },
     run: { kind: "idle" },
     image: null,
     editorActive: false,
@@ -248,6 +253,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     await this.modelStore.migrateLegacyKeys(assetsFor("sd-turbo"));
     if (this.settings.engine === "builtin") void this.refreshEngineState();
     else void this.checkServer();
+    if (this.settings.engine === "comfy") void this.loadWorkflow();
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
     // Settings-Tab-Öffnung): Bestandsinstallationen können noch ~2,5 GB alte SD-Turbo-
     // Gewichte im Cache-API-Speicher haben (0.x, In-Process-Engine). Hinweis statt
@@ -629,6 +635,30 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
     this.refreshViews();
     return this.state.server;
+  }
+
+  /** Workflow-Datei lesen und beurteilen. Laeuft beim Start (nur im comfy-Modus), nach dem
+   *  Setzen des Pfades und beim Moduswechsel — nicht vor jedem Lauf: ein Workflow aendert
+   *  sich nicht zwischen zwei Klicks, und ein Vault-Read pro Klick waere Rauschen. */
+  async loadWorkflow(): Promise<WorkflowState> {
+    const path = this.settings.comfyWorkflowPath.trim();
+    let raw: string | null = null;
+    if (path !== "") {
+      // Form wie ueberall sonst in main.ts: getAbstractFileByPath + instanceof TFile.
+      // Ein Ordner unter dem Pfad ist hier dasselbe wie "nicht da".
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) {
+        try {
+          raw = await this.app.vault.cachedRead(file);
+        } catch {
+          raw = null;
+        }
+      }
+    }
+    if (this.unloaded) return this.state.workflow; // keine spaeten State-Mutationen
+    this.state.workflow = workflowStateFrom(path, raw);
+    this.refreshViews();
+    return this.state.workflow;
   }
 
   refreshViews(): void {
