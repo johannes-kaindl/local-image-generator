@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-09-06
+
 ### Added
 
 - **A third backend: ComfyUI.** Point the plugin at a running ComfyUI server, hand it a

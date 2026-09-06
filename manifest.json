@@ -1,7 +1,7 @@
 {
   "id": "local-image-generator",
   "name": "Local Image Generator",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "minAppVersion": "1.8.7",
   "description": "Generate images right in your vault — built-in SD-Turbo on your GPU, or your local Draw Things / A1111 server. Private, on-device, no cloud.",
   "author": "Johannes Kaindl",
