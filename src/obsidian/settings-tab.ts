@@ -97,9 +97,14 @@ export class LigSettingTab extends PluginSettingTab {
       desc: t("settings.showModelPicker.desc"),
       control: { type: "toggle", key: "showModelPicker" },
     };
+    // Name und Beschreibung nach Modus: es ist DASSELBE Feld (`settings.endpoint`), aber im
+    // comfy-Modus eine andere Software mit einem anderen Standard-Port. Die A1111-Fassung
+    // dort stehen zu lassen, schickte den ComfyUI-Nutzer zu Draw Things — und verschwieg,
+    // dass ein aus dem Server-Modus uebernommener Endpunkt hier stehenbleibt und antwortet,
+    // ohne ComfyUIs API zu bedienen.
     const serverRow: SettingDefinitionItem<keyof LigSettings> = {
-      name: t("settings.server.name"),
-      desc: t("settings.server.desc"),
+      name: mode === "comfy" ? t("settings.comfyServer.name") : t("settings.server.name"),
+      desc: mode === "comfy" ? t("settings.comfyServer.desc") : t("settings.server.desc"),
       render: (setting) => this.renderServer(setting),
     };
     // Picker-Knopf + Textfeld teilen sich eine Zeile — als Control nicht abbildbar, deshalb
@@ -305,7 +310,10 @@ export class LigSettingTab extends PluginSettingTab {
 
     setting
       .addText((tf) => {
-        tf.setPlaceholder("http://127.0.0.1:7860");
+        // Der Platzhalter nennt den Port des GEWAEHLTEN Modus — ComfyUI hoert standardmaessig
+        // auf 8188, A1111/Draw Things auf 7860. Dasselbe Feld, zwei Erwartungen: ein
+        // 7860-Platzhalter im comfy-Modus ist die erste falsche Fährte.
+        tf.setPlaceholder(this.plugin.settings.engine === "comfy" ? "http://127.0.0.1:8188" : "http://127.0.0.1:7860");
         tf.setValue(this.plugin.settings.endpoint).onChange(async (v) => {
           await this.setControlValue("endpoint", v);
           void this.plugin.checkServer();

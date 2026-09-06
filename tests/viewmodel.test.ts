@@ -524,6 +524,25 @@ describe("Status im comfy-Modus", () => {
     expect(ohneWorkflow.generateEnabled).toBe(false);
   });
 
+  // I3 (Final-Review 2026-09-06): im comfy-Modus fiel der Leerzustand auf den Server-Text
+  // zurueck und schickte den Nutzer zu Draw Things — an genau der Stelle, an der er Hilfe
+  // braucht. Beide Zeilen gehoeren zusammen: der Port belegt den comfy-Text, die
+  // Draw-Things-Zeile belegt, dass es nicht mehr der Server-Text ist (nur zusammen sind sie
+  // von einem beliebig geaenderten Server-Text unterscheidbar).
+  it("nennt bei fehlendem Endpunkt ComfyUIs Port statt Draw Things", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, server: { kind: "unconfigured" } });
+    expect(vm.empty?.text).toContain("8188");
+    expect(vm.empty?.text).not.toContain("Draw Things");
+    expect(vm.status.text).toContain("ComfyUI");
+  });
+
+  it("erklaert bei unerreichbarem Endpunkt den uebernommenen A1111-Endpunkt", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, server: { kind: "unreachable" } });
+    expect(vm.empty?.ctaAction).toBe("recheck");
+    expect(vm.empty?.text).toContain("8188");
+    expect(vm.status.text).toContain("8188");
+  });
+
   it("zeigt Negativ-Prompt, aber keinen CFG-Regler", () => {
     const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW });
     expect(vm.controls.negative).toBe(true);

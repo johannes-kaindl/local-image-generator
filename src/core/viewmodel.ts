@@ -241,6 +241,16 @@ function comfyStatus(s: PanelState): PanelViewModel["status"] {
   if (w.kind === "unconfigured") return { icon: "circle-x", text: t("status.noWorkflow"), cls: "is-error" };
   if (w.kind === "missing") return { icon: "circle-x", text: t("status.workflowMissing", w.path), cls: "is-error" };
   if (w.kind === "invalid") return { icon: "circle-x", text: workflowProblemText(w.reason), cls: "is-error" };
+  // Der SERVER-Teil bekommt eigene Saetze, obwohl der Zustand derselbe ist: der Endpunkt ist
+  // zwischen Server- und comfy-Modus GETEILT. Wer umstellt, behaelt seinen A1111-Endpunkt —
+  // der Statuscheck ist dann zu Recht streng, aber „ist die API aktiviert?" schickt den
+  // Nutzer auf die falsche Fehlersuche: der Server antwortet, er ist nur der falsche.
+  // Ein Laufzeitfehler bleibt vorn (wie in serverStatus), sonst verdeckte die
+  // Endpunkt-Meldung die konkrete Fehlermeldung des letzten Laufs.
+  if (s.run.kind !== "error") {
+    if (s.server.kind === "unconfigured") return { icon: "circle-x", text: t("status.noComfyEndpoint"), cls: "is-error" };
+    if (s.server.kind === "unreachable") return { icon: "circle-x", text: t("status.comfyUnreachable"), cls: "is-error" };
+  }
   return serverStatus(s);
 }
 
@@ -266,6 +276,13 @@ function comfyEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
   if (s.workflow.kind !== "ok") {
     return { text: t("empty.noWorkflow"), ctaLabel: t("empty.noWorkflowCta"), ctaAction: "settings" };
   }
+  // Eigene Texte aus demselben Grund wie in comfyStatus: der Server-Leerzustand schickte den
+  // ComfyUI-Nutzer an genau der Stelle, an der er Hilfe braucht, zu Draw Things — und nannte
+  // ComfyUIs Standard-Port nirgends. CTA und Aktion bleiben dieselben.
+  if (s.server.kind === "unconfigured")
+    return { text: t("empty.noComfyServer"), ctaLabel: t("empty.noServerCta"), ctaAction: "settings" };
+  if (s.server.kind === "unreachable")
+    return { text: t("empty.comfyUnreachable"), ctaLabel: t("empty.unreachableCta"), ctaAction: "recheck" };
   return serverEmpty(s, busy);
 }
 
