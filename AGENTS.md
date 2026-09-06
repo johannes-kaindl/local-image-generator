@@ -481,6 +481,11 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   ihn ueber die Klemme auf `CFG.min` zu reissen. `apiVersion` bleibt trotzdem 1: `ApiParams`
   ist per Vertrag „was die Haertung still ueberschrieben hat", und im comfy-Modus hat sie
   nichts ueberschrieben.
+  **Seit 2026-09-06 ist das LIVE gedeckt, nicht nur unit-getestet: GUI-Smoke-Punkt 39** misst
+  am laufenden Wirt, dass die comfy-Notiz keine `cfg:`-Zeile traegt — und prueft davor
+  `seed:`/`model:`, weil ein Punkt auf die ABWESENHEIT einer Zeile sonst gerade dann gruen
+  waere, wenn die Notiz gar nicht geschrieben wurde. Gegenprobe gefahren (comfy-Zweig auf `1`
+  zurueckgestellt → rot mit „Notiz behauptet cfg: 1", waehrend Punkt 38 gruen blieb).
 - **`/history` ist ComfyUIs ERGEBNISkanal, nicht sein Fortschritt — ein geworfener Poll darf
   den Lauf nicht beenden.** `comfyTransport().getJson` faehrt bewusst mit kurzem Zeitlimit
   (3 s, im Sekundentakt gepollt) und `httpGetJson` WIRFT beim Ablauf; `waitForImage` faengt

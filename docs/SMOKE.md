@@ -8,10 +8,19 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
 
 ## Voraussetzungen
 
-⚠️ **Zuerst prüfen, wer sonst an Obsidian hängt.** Obsidian ist Single-Instance — ein
-`quit` trifft die Instanz, an der möglicherweise eine andere Session arbeitet, und zerstört
-deren Zustand. Der eigene Lauf ist danach sauber grün; der Schaden entsteht woanders und
-fällt nicht auf.
+⚠️ **Zuerst prüfen, wer sonst an Obsidian hängt.** Ein `quit` trifft die Instanz, an der
+möglicherweise eine andere Session arbeitet, und zerstört deren Zustand. Der eigene Lauf ist
+danach sauber grün; der Schaden entsteht woanders und fällt nicht auf.
+
+⚠️ **Hier stand: „Obsidian ist Single-Instance".** Das ist seit 2026-09-02 gemessen widerlegt
+(Dach-`AGENTS.md`): die Sperre hängt am PROFIL, nicht am Rechner — mit eigenem
+`--user-data-dir` und eigenem Debug-Port läuft eine zweite Instanz parallel zur regulären.
+Für einen Lauf, der die reguläre Instanz nicht anfassen soll, ist das der Ausweg statt einer
+Nachfrage. **Den Port dabei nicht aus einem Beispiel abschreiben:** am 2026-09-06 lief bereits
+eine fremde Zweitinstanz auf der in der Doku genannten 9333, der eigene Start bekam den Port
+nicht, und `curl` beantwortete die Frage „läuft meine Instanz?" mit dem Fenstertitel der
+fremden — eine Kollision, die sich nicht als Fehler meldet, sondern als plausibles falsches
+Ergebnis.
 
 ```bash
 lsof -nP -iTCP:9222 -sTCP:LISTEN >/dev/null && echo "läuft bereits — NICHT beenden"
@@ -37,10 +46,32 @@ Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt
    Erreichbarkeit **vorab** und sagt an, was fehlt:
 
    - **Voller Lauf:** Abbruch mit Ansage — die Punkte 5–11 erzeugen ein echtes Bild.
-   - **`--quick`:** läuft weiter, überspringt die Punkte 2, 3 und 4. Gemessen werden 1 und 12
-     — die Punkte, die ohne jede Server-Verbindung eine Aussage haben. Punkt 4 gehört dazu,
-     obwohl er nur die Bedienbarkeit eines Knopfes prüft: `generateEnabled` verlangt
-     `server.kind === "ok"`, der Knopf ist ohne Server also zurecht gesperrt.
+   - **`--quick`:** läuft weiter, überspringt die Punkte 2, 3, 4 — **und seit 2026-09-06
+     auch 18e und 19**. Gemessen werden 1, 12, 17, 18a/18b und (bei laufendem Mock) 35–39
+     — die Punkte, die ohne Server-Verbindung eine Aussage haben. Punkt 4 gehört zu den
+     übersprungenen, obwohl er nur die Bedienbarkeit eines Knopfes prüft: `generateEnabled`
+     verlangt `server.kind === "ok"`, der Knopf ist ohne Server also zurecht gesperrt.
+
+     **Warum 18e und 19 nachgezogen wurden — der Guard deckte nicht, was er zu decken schien.**
+     Gemessen am 2026-09-06 beim ComfyUI-Lauf: 2/3/4 wurden korrekt übersprungen, 18e
+     (`recheck()`) und 19 (img2img) dagegen **rot**, obwohl sie denselben Server brauchen.
+     Punkt 19 trug sogar einen eigenen Guard — er prüfte nur das Falsche: die Zählerdatei
+     `.mock-a1111-counts.json` **überlebt den Mock-Prozess**, ein Altbestand liest sich also
+     als „Mock läuft". Gefährlich war es, weil `recheck()` in derselben Arbeit geändert worden
+     war: die naheliegende Reaktion („bekannt rot, betrifft den A1111-Pfad, nicht meine
+     Änderung") hätte die einzige Messung dieser Änderung ausfallen lassen — mit einer
+     Begründung, die sich richtig anfühlt. Aufgefallen ist es, weil der Lauf wiederholt wurde,
+     nicht weil der Treiber es sagte (CORE-TEST-02 g).
+
+     ⚠️ **Der Server-Guard ist nicht die einzige Umgebungsbedingung, die falsch-rot färbt.**
+     Im selben Lauf blieb Punkt 36 rot, weil der Treiber die Sprache aus
+     `localStorage.getItem("language")` ableitete — und Obsidian schreibt diesen Key **nur bei
+     einer expliziten Sprachumstellung**. Auf der Systemsprache ist er leer, während der
+     Renderer sehr wohl übersetzt (gemessen: `ls: null`, `i18next.language: "de"`,
+     `documentElement.lang: "de"`), also verglich der Treiber englische Erwartungen gegen
+     deutsche Darstellung. Erste Quelle ist seither `window.i18next.language` — dieselbe, aus
+     der Obsidians `getLanguage()` speist, das auch das Plugin selbst nimmt (`src/main.ts`);
+     `localStorage` und `documentElement.lang` bleiben Rückfallebenen.
 
    Übersprungene Punkte stehen in der Abschlusszeile (`… · N übersprungen (NICHT gemessen)`),
    damit ein Teil-Lauf nicht als bestandener Smoke zitiert wird. Antwortet der Server dagegen
@@ -254,10 +285,33 @@ macht genau diesen Fehlgriff sichtbar.
 Repo, still, weil er hier nicht mitläuft (s. AGENTS.md). Start: `npm run smoke:comfy` (Port
 8189, überschreibbar mit `MOCK_COMFY_PORT`).
 
-**Gegenprobe:** noch **nicht gefahren** — diese Punkte sind gebaut und lokal gegen den Mock
-(`curl`) formtreu verifiziert, aber noch nie gegen ein laufendes Obsidian gemessen (Aufgaben-
-Zuschnitt: das Schreiben und das Fahren sind zwei getrennte Aufgaben, s. Task-10-Report). Bis zum
-ersten Lauf gilt für alle vier: **unbewiesen, nicht grün geführt.**
+**Gegenprobe:** gefahren — 35–38 am 2026-09-06 im Freigabe-Lauf zu 0.13.0 (15/15, zwei
+verifizierte Gegenproben), Punkt 39 am selben Tag nachmittags (s. den Lauf-Eintrag unten).
+
+### § 2026-09-06 (nachmittags) — Punkt 39: was NICHT in der Notiz steht
+
+**Warum die cfg-Zeile einen eigenen Prüfpunkt bekommt statt einer Zeile in Punkt 38.** Der
+Critical des Branch-Reviews war, dass jede ComfyUI-Notiz `cfg: 1` behauptete, während
+`patchWorkflow` das CFG-Feld des Samplers gar nicht anfasst — der Nutzer-Workflow rechnet mit
+seinem eigenen Wert. Behoben ist das seit 0.13.0 (`cfg` ist `number | null`, `note.ts` lässt das
+Feld weg), gedeckt war es aber nur durch Unit-Tests und **eine einmalige Live-Messung von Hand**
+— also durch nichts, was ein späterer Umbau wieder auslösen würde. Punkt 38 misst, was
+DRINSTEHT (die empfangene Schrittzahl); Punkt 39 misst, was NICHT drinsteht. Beide teilen sich
+denselben Lauf, aber nicht denselben Namen: ein Punkt, der zwei Aussagen trägt, meldet bei Rot
+nicht, welche der beiden gebrochen ist.
+
+**Warum Punkt 39 zuerst `seed:` und `model:` prüft.** Ein Prüfpunkt auf die ABWESENHEIT einer
+Zeile ist grün, sobald die Notiz leer, unvollständig oder gar nicht geschrieben ist — er wäre
+also genau dann am freundlichsten, wenn am meisten kaputt ist. `buildImageNote` schreibt `seed`
+und `model` **unbedingt** (kein `...(bedingung ? … : {})`), sie können deshalb nicht aus
+demselben Grund fehlen wie `cfg`. Ohne beide meldet der Punkt Rot mit dem Klartext, dass die
+Abwesenheit von `cfg` hier ohne Aussage wäre.
+
+**Gegenprobe (gefahren 2026-09-06):** in `src/core/params.ts` den comfy-Zweig von
+`cfg: ctx.mode === "comfy" ? null : …` auf `cfg: caps.cfg ? … : 1` zurückgestellt, deployt,
+Lauf wiederholt → Punkt 39 **rot** mit „Notiz behauptet cfg: 1 — der Workflow rechnet mit
+seinem eigenen Wert, das Plugin setzt ihn nie", Punkt 38 blieb dabei **grün**. Die zwei Punkte
+trennen also tatsächlich, statt gemeinsam auf denselben Defekt zu reagieren.
 
 ### § 2026-08-24 (Phase 4) — Punkte 24/25: Bild-INHALT, nicht nur Bild-Form
 
@@ -493,6 +547,48 @@ Punkt 30 gesetzte Vorlage; Punkte **26/27** grün mit der Zwischenstufe 0.625 (S
 0.5 und 19.59 von 0.75 entfernt, SDXL-Turbo 29.88 / 23.12 — Schwelle 2, Rasterung wäre exakt 0).
 Die Aufräum-Warnung aus Punkt 30 („Vorlage ließ sich nicht entfernen") blieb in allen Anläufen
 aus.
+
+### 2026-09-06 (nachmittags) · 0.13.0 + Punkt 39 · **Zweitinstanz** (eigenes Profil, Port 9347) · ComfyUI-Mock (8189), **A1111 bewusst AUS** · **10/10 grün, 9 übersprungen**
+
+Zweck des Laufs war die Umgebung selbst: gemessen wurde, ob ein Treiberlauf **ohne**
+A1111-Server rote Punkte hinterlässt, die nichts über den Prüfling sagen — plus die Gegenprobe
+für den neuen Punkt 39.
+
+**Aufbau, der die Aussage trägt:** Der A1111-Mock lief NICHT, seine Zählerdatei
+`.mock-a1111-counts.json` lag aber vom Vormittag noch da — genau der Zustand, in dem Punkt 19
+seinen eigenen Guard für erfüllt hielt und rot wurde. Der ComfyUI-Mock lief. Gemessen wurde
+gegen eine **zweite Obsidian-Instanz** mit eigenem `--user-data-dir` und Port 9347, weil an der
+regulären zwei fremde Vaults offen standen (`10_Pallas`, `AUSDRUCKEN_UND_LOESCHEN`) und die
+Treiber `clickReal` benutzen, das Fenster nach vorn reißt.
+
+**Ergebnis, drei Läufe:**
+
+| Lauf | 18e / 19 | 36 | 39 |
+|---|---|---|---|
+| vorher (Bestand) | **rot** | **rot** (Sprache) | — (existierte nicht) |
+| nachher | übersprungen | grün | **grün** |
+| Mutation in `hardenParams` | übersprungen | grün | **rot** — „Notiz behauptet cfg: 1" |
+
+Abschlusszeile des Bestätigungslaufs: **10/10 grün · 9 übersprungen (NICHT gemessen)** — kein
+roter Punkt übrig, der nur an der Umgebung liegt. Das war die Abnahmebedingung.
+
+⚠️ **Was dieser Lauf NICHT belegt:** 18e und 19 selbst. Sie sind übersprungen, also ungemessen —
+der Lauf zeigt, dass ihr Ausbleiben jetzt als Ausbleiben gemeldet wird, nicht dass sie
+funktionieren. Ihre letzte echte Messung ist der 0.13.0-Freigabe-Lauf vom Vormittag. Ein
+Freigabe-Smoke braucht weiterhin beide Mocks.
+
+**Drei Umgebungs-Fallen, gemessen statt vermutet:**
+
+- **`obsidian://open?path=…` registriert den Staging-Vault unter Obsidian 1.14.0 nicht mehr.**
+  Zweimal versucht (URL-kodiert und mit rohen Slashes), beide Male ohne Wirkung: kein neues
+  Fenster, kein Eintrag in `obsidian.json`. Die Dach-`AGENTS.md` führt diesen Weg als Ausweg für
+  genau diesen Fall — gemessen wurde er dort unter 1.13.7. Ob 1.14 ihn absichtlich geschlossen
+  hat, ist offen; der Weg über ein eigenes Profil mit selbst geschriebener `obsidian.json` trägt.
+- **Port 9333 aus dem Doku-Beispiel war belegt** (eine `vault-rag`-Session), der eigene Start
+  bekam ihn nicht, und `curl` antwortete mit dem Fenstertitel der FREMDEN Instanz — was sich wie
+  „meine Instanz hat den falschen Vault geöffnet" liest. Aufgefallen ist es an einer
+  Cross-Session-Nachricht, nicht an einer Fehlermeldung.
+- **Die Sprache kommt nicht aus `localStorage`** (s. Voraussetzungen oben) — das war Punkt 36.
 
 ### 2026-09-05 · 0.12-dev (img2img-Steuerung A+B) · Staging-Vault · A1111-Mock (7861) + Asset-Mock (7862) · **34/34 grün**, zwei neue Punkte mit Gegenprobe
 

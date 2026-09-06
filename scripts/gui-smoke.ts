@@ -112,6 +112,10 @@ const NAME_18D = "18d. generate() im builtin-Modus laedt ohne Klick KEIN Byte";
  *  demselben Grund wie NAME_18D. */
 const NAME_29 = "29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1)";
 const NAME_30 = "30. Denoise-Wert (0.6) kommt UNVERAENDERT in der Ergebnis-Notiz an";
+/** Namen von Punkt 38/39 — je an zwei Stellen gebraucht (Messung + die Auslass-Liste in
+ *  `runComfyChecks`), aus demselben Grund wie NAME_18D. */
+const NAME_38 = "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl";
+const NAME_39 = "39. Die comfy-Notiz traegt KEINE cfg-Zeile (der Workflow bestimmt den Wert)";
 /** Zielordner für Bild + Ergebnis-Notiz. Wird angelegt und am Ende wieder entfernt
  *  (außer mit `--keep`) — so muss der Treiber keine Dateien aus fremden Ordnern fischen. */
 const SMOKE_FOLDER = "_lig-gui-smoke";
@@ -1030,7 +1034,7 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
  * Bereitschafts-Gate endet ein builtin-`generate()` ohne Assets als
  * `{ ok: false, reason: "failed" }` — nicht als stiller Download.
  */
-async function runApiCheck(cdp: Cdp, endpoint: string): Promise<void> {
+async function runApiCheck(cdp: Cdp, endpoint: string, serverErreichbar: boolean): Promise<void> {
   const form = await cdp.evaluate<{ version: unknown; keys: string[]; status: Record<string, unknown> }>(`
     const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
     if (!api) return { version: null, keys: [], status: {} };
@@ -1055,7 +1059,7 @@ async function runApiCheck(cdp: Cdp, endpoint: string): Promise<void> {
   );
 
   await runApiFailureCheck(cdp, endpoint);
-  await runRecheckCheck(cdp, endpoint);
+  await runRecheckCheck(cdp, endpoint, serverErreichbar);
 }
 
 /**
@@ -1169,8 +1173,18 @@ async function runApiFailureCheck(cdp: Cdp, endpoint: string): Promise<void> {
  * keinen entfernten Zustand), und das deckt `tests/plugin-api.test.ts` am injizierten Fake ab —
  * eine Zaehlung, die am Wirt gar nicht moeglich waere.
  */
-async function runRecheckCheck(cdp: Cdp, endpoint: string): Promise<void> {
+async function runRecheckCheck(cdp: Cdp, endpoint: string, serverErreichbar: boolean): Promise<void> {
   const NAME = "18e. recheck() heilt einen veralteten unreachable-Zustand";
+  // Der Punkt heilt gegen einen ERREICHBAREN Endpunkt — ohne ihn bleibt `recheck()` zurecht
+  // bei `unreachable`, und der Punkt meldete einen Umgebungsmangel als Defekt am Prueflig.
+  // Gemessen 2026-09-06 (CORE-TEST-02 (g)): 2/3/4 wurden korrekt uebersprungen, 18e und 19
+  // rot. Gefaehrlich war das, weil `recheck()` in derselben Arbeit geaendert worden war und
+  // „bekannt rot, betrifft den A1111-Pfad" die einzige Messung dieser Aenderung ausfallen
+  // liess — mit einer Begruendung, die sich richtig anfuehlt.
+  if (!serverErreichbar) {
+    skip(NAME, `Bild-Server unter ${endpoint} nicht erreichbar — ohne ihn kann recheck() nichts heilen`);
+    return;
+  }
   const zustand = () =>
     cdp.evaluate<{ ready: unknown; reason: unknown; mode: string }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
@@ -1328,8 +1342,16 @@ function mockCounts(): Record<string, number> | null {
  * wechselt und vergisst zurückzustellen, nicht zu einer falschen ROT-Meldung führt (die
  * Anfrage ginge dann an keinen Endpunkt, der Zähler bliebe bei 0).
  */
-async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
+async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichbar: boolean, endpoint: string): Promise<void> {
   const NAME = "19. Ein Lauf mit Vorlage geht an /sdapi/v1/img2img";
+  // Server-Guard VOR dem Modus-Wechsel: der Punkt schickt eine echte Anfrage an den
+  // A1111-Endpunkt. Die Zaehlerdatei unten allein traegt das nicht — sie ueberlebt den
+  // Mock-Prozess, ein Altbestand liest sich also als „Mock laeuft", und der Punkt wird rot,
+  // weil niemand antwortet (gemessen 2026-09-06, CORE-TEST-02 (g)).
+  if (!serverErreichbar) {
+    skip(NAME, `Bild-Server unter ${endpoint} nicht erreichbar — der Lauf haette keinen Adressaten`);
+    return;
+  }
   await cdp
     .evaluate(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
@@ -2452,17 +2474,34 @@ async function runComfyRealRunCheck(cdp: Cdp, comfyEndpoint: string, generateTim
 }
 
 /**
- * Punkt 38: die Ergebnis-Notiz traegt die Schrittzahl, die der Mock TATSAECHLICH empfangen
- * hat — nicht den Workflow-DEFAULT (20, absichtlich anders gewaehlt) und nicht blind den
+ * Punkte 38 und 39 aus EINEM Lauf: die Ergebnis-Notiz des comfy-Modus, von zwei Seiten.
+ *
+ * **38** misst, was DRINSTEHT: die Schrittzahl, die der Mock TATSAECHLICH empfangen hat —
+ * nicht den Workflow-DEFAULT (20, absichtlich anders gewaehlt) und nicht blind den
  * Request-Rohwert, sondern das, was auf der Leitung ankam (Spec §4: nur Zahlen, die wirklich
- * gesetzt wurden). Ein eigener, kurzer Lauf (nicht der von Punkt 37): der Mock haelt nur den
- * ZULETZT empfangenen Graphen, ein gemeinsam genutzter Lauf waere ein Wettlauf mit Punkt 37s
- * eigenem Bild-Vergleich.
+ * gesetzt wurden).
+ *
+ * **39** misst, was NICHT drinsteht: keine `cfg:`-Zeile. `patchWorkflow` fasst das CFG-Feld
+ * des Samplers nicht an, der Nutzer-Workflow rechnet mit seinem eigenen Wert — eine Zahl in
+ * der Notiz waere eine Behauptung ueber etwas, das das Plugin nie gesetzt hat. Genau das war
+ * der Critical, den elf gruene Task-Reviews ueberlebt haben (`cfg: 1` in JEDER comfy-Notiz);
+ * gedeckt ist der Fix seither durch Unit-Tests und eine einmalige Live-Messung von Hand, also
+ * durch nichts, was ein spaeterer Umbau wieder ausloesen wuerde.
+ * ⚠️ Ein Punkt, der die ABWESENHEIT einer Zeile prueft, ist gruen, sobald die Notiz leer,
+ * unvollstaendig oder gar nicht geschrieben ist — er muss also zuerst belegen, dass ueberhaupt
+ * ein Rezept-Frontmatter dasteht. Dafuer `seed:` und `model:`: beide schreibt `buildImageNote`
+ * unbedingt (kein `...(bedingung ? … : {})`), sie koennen also nicht aus demselben Grund
+ * fehlen wie `cfg`.
+ *
+ * Ein eigener, kurzer Lauf (nicht der von Punkt 37): der Mock haelt nur den ZULETZT
+ * empfangenen Graphen, ein gemeinsam genutzter Lauf waere ein Wettlauf mit Punkt 37s eigenem
+ * Bild-Vergleich.
  */
-async function runComfyNoteStepsCheck(cdp: Cdp, vorbedingungErreicht: boolean): Promise<void> {
-  const NAME = "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl";
+async function runComfyNoteChecks(cdp: Cdp, vorbedingungErreicht: boolean): Promise<void> {
+  const NAME = NAME_38;
   if (!vorbedingungErreicht) {
     skip(NAME, "Vorbedingung 37 nicht erreicht (Mock/Lauf nicht messbar)");
+    skip(NAME_39, "Vorbedingung 37 nicht erreicht (Mock/Lauf nicht messbar)");
     return;
   }
 
@@ -2477,7 +2516,11 @@ async function runComfyNoteStepsCheck(cdp: Cdp, vorbedingungErreicht: boolean): 
     return saved.ok ? { ok: true } : { ok: false, reason: saved.reason };
   `);
   if (!gespeichert.ok) {
-    record(NAME, false, `generate()/save() schlugen fehl: ${gespeichert.reason ?? "unbekannt"}`);
+    const grund = `generate()/save() schlugen fehl: ${gespeichert.reason ?? "unbekannt"}`;
+    record(NAME, false, grund);
+    // 39 ebenfalls melden statt weglassen: ein Punkt, der aus der Bilanz verschwindet, sieht
+    // aus wie einer, der nie existierte (CORE-TEST-19).
+    skip(NAME_39, grund);
     return;
   }
 
@@ -2517,20 +2560,37 @@ async function runComfyNoteStepsCheck(cdp: Cdp, vorbedingungErreicht: boolean): 
       ? `Notiz und Mock stimmen ueberein: steps=${notizSteps ?? "?"} (Workflow-Default 20 haette abgewichen)`
       : teile.join(" · "),
   );
+
+  // --- 39. Keine cfg-Zeile ---------------------------------------------------
+  // Zuerst die Kontrollbedingung, dann die eigentliche Aussage: ohne `seed:` und `model:`
+  // stuende hier kein Rezept-Frontmatter, und „keine cfg-Zeile" waere trivial wahr.
+  const cfgZeile = body?.match(/^cfg:\s*(.*)$/m)?.[1];
+  const kontrolle = body !== null && /^seed:\s*\S/m.test(body) && /^model:\s*\S/m.test(body);
+  const cfgTeile: string[] = [];
+  if (body === null) cfgTeile.push("keine Ergebnis-Notiz gefunden");
+  else if (!kontrolle) cfgTeile.push("Notiz traegt kein Rezept-Frontmatter (seed/model fehlen) — die Abwesenheit von cfg waere hier ohne Aussage");
+  else if (cfgZeile !== undefined) cfgTeile.push(`Notiz behauptet cfg: ${cfgZeile} — der Workflow rechnet mit seinem eigenen Wert, das Plugin setzt ihn nie`);
+
+  record(
+    NAME_39,
+    cfgTeile.length === 0,
+    cfgTeile.length === 0 ? "Rezept-Frontmatter vorhanden (seed/model), cfg-Zeile fehlt — wie vorgesehen" : cfgTeile.join(" · "),
+  );
 }
 
 /**
- * Orchestriert Punkte 35–38: EIGENER Zustand (Endpunkt, Workflow-Pfad, Modus), im `finally`
+ * Orchestriert Punkte 35–39: EIGENER Zustand (Endpunkt, Workflow-Pfad, Modus), im `finally`
  * vollstaendig zurueckgesetzt — Konvention „Vorbedingung herstellen, nicht erben" (wie
  * `runRecheckCheck`). Braucht `scripts/mock-comfy.mjs` (`npm run smoke:comfy`); ohne ihn
- * werden alle vier Punkte uebersprungen statt geraten.
+ * werden alle fuenf Punkte uebersprungen statt geraten.
  */
 async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs: number): Promise<void> {
   const NAMEN = [
     "35. Modus-Wechsel zu ComfyUI blendet Negativ-Prompt/CFG richtig um (drei Modi, eigene Erwartungstabelle)",
     "36. Ein kaputter Workflow zeigt seinen Klartext — eine gueltige Datei bringt is-ok",
     "37. Ein echter Lauf gegen den ComfyUI-Mock liefert ein Bild",
-    "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl",
+    NAME_38,
+    NAME_39,
   ];
   const up = await fetch(`${comfyEndpoint.replace(/\/+$/, "")}/system_stats`, { signal: AbortSignal.timeout(3000) })
     .then((r) => r.status === 200)
@@ -2569,7 +2629,7 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     await runComfyVisibilityCheck(cdp);
     await runComfyWorkflowStatusCheck(cdp, brokenPath, validPath);
     const base64 = await runComfyRealRunCheck(cdp, comfyEndpoint, generateTimeoutMs);
-    await runComfyNoteStepsCheck(cdp, base64 !== null);
+    await runComfyNoteChecks(cdp, base64 !== null);
   } finally {
     await cdp
       .evaluate(`
@@ -2758,7 +2818,22 @@ async function main(): Promise<void> {
     // Die Sprache des Wirts übernehmen, damit die Label-Vergleiche unten gegen genau die
     // Strings laufen, die der Renderer rendert. Die Strings kommen aus src/ — derselben
     // Quelle wie im Plugin, kein zweiter, driftender Satz Erwartungen im Treiber.
-    const rawLang = await cdp.evaluate<string | null>(`return window.localStorage.getItem("language");`);
+    // ⚠️ NICHT `localStorage.getItem("language")` allein: Obsidian schreibt den Key nur, wenn
+    // die Sprache EXPLIZIT umgestellt wurde. Laeuft die App auf der Systemsprache, ist er leer,
+    // waehrend der Renderer sehr wohl uebersetzt — der Treiber fiele auf "en" zurueck und
+    // vergliche englische Erwartungen gegen deutsche Darstellung. Das ergibt rote Punkte, die
+    // nichts ueber den Pruefling sagen (gemessen 2026-09-06 an Punkt 36: `ls: null`,
+    // `i18next.language: "de"`, `documentElement.lang: "de"`).
+    // Erste Quelle ist deshalb `i18next.language` — dieselbe, aus der Obsidians `getLanguage()`
+    // speist, das auch das Plugin selbst nimmt (src/main.ts). Die zwei anderen bleiben als
+    // Rueckfallebenen stehen, falls eine Obsidian-Version die interne i18next-Instanz nicht
+    // mehr am `window` fuehrt.
+    const rawLang = await cdp.evaluate<string | null>(`
+      return (window.i18next && window.i18next.language)
+        || window.localStorage.getItem("language")
+        || document.documentElement.lang
+        || null;
+    `);
     registerI18n();
     setLang(pickLang(rawLang));
 
@@ -3432,13 +3507,16 @@ async function main(): Promise<void> {
     await runControlVisibilityCheck(cdp);
 
     // --- 18. Die Provider-API am laufenden Obsidian --------------------------
-    // Bewusst ausserhalb der --builtin/--quick-Bedingung: der Punkt braucht weder Server
-    // noch Assets, nur die registrierte Plugin-Instanz.
-    await runApiCheck(cdp, endpoint);
+    // Bewusst ausserhalb der --builtin/--quick-Bedingung: 18a–18d brauchen weder Server
+    // noch Assets, nur die registrierte Plugin-Instanz. 18e braucht den Server sehr wohl —
+    // die Erreichbarkeit wird deshalb durchgereicht, nicht dort neu erhoben (dieselbe
+    // Quelle wie fuer 2/3/4, ein Guard-Begriff im ganzen Treiber).
+    await runApiCheck(cdp, endpoint, probe.reachable);
 
     // --- 19. img2img am laufenden Wirt ---------------------------------------
-    // Braucht den Server-Modus (die eingebaute Engine kann kein img2img) und den Mock.
-    await runImg2ImgCheck(cdp, generateTimeoutMs);
+    // Braucht den Server-Modus (die eingebaute Engine kann kein img2img) UND einen
+    // antwortenden Endpunkt — beides, nicht nur das erste.
+    await runImg2ImgCheck(cdp, generateTimeoutMs, probe.reachable, endpoint);
 
     // --- 35–38. ComfyUI-Backend (Task 10) ------------------------------------
     // Eigener Mock (scripts/mock-comfy.mjs, `npm run smoke:comfy`), eigener Zustand — die
