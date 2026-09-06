@@ -21,15 +21,22 @@ export interface WorkflowSlots {
   latent: string;
   /** Variiert je Sampler: KSampler → "seed", KSamplerAdvanced/SamplerCustom → "noise_seed". */
   seedField: "seed" | "noise_seed";
-  /** null = dieser Sampler kennt kein Steps-Feld (z. B. SamplerCustom via sigmas). */
-  stepsField: "steps" | null;
+  /** Anders als in der Quelle NICHT nullable: ein Sampler ohne Steps-Feld wird abgewiesen
+   *  (Spec §4). Grund ist die Ergebnis-Notiz — `GenParams.steps` hat keinen Null-Fall, und
+   *  es gibt keinen ehrlichen Eintrag fuer "das Plugin hat den Wert nicht bestimmt". */
+  stepsField: "steps";
+  /** Die im Workflow eingestellte Schrittzahl, als Startwert des Reglers. null, wenn das
+   *  Feld ein Verweis auf einen anderen Node ist statt eines Zahlenliterals. */
+  workflowSteps: number | null;
 }
 
 export type InspectError =
   | { kind: "not-an-object" }
   | { kind: "no-sampler" }
   | { kind: "ambiguous-sampler"; ids: string[] }
-  | { kind: "dangling-ref"; field: string; id: string };
+  | { kind: "dangling-ref"; field: string; id: string }
+  | { kind: "no-steps-field" }
+  | { kind: "no-size-fields" };
 
 export type InspectResult =
   | { ok: true; slots: WorkflowSlots }
@@ -79,6 +86,17 @@ export function inspectWorkflow(graph: unknown): InspectResult {
     resolved[field] = target;
   }
 
+  // Die Regel aus Spec §4: nutzbar ist ein Workflow, in den wir alle fuenf Werte setzen
+  // koennen, die wir anschliessend in die Notiz schreiben. Die Pruefung sitzt hier und
+  // nicht in patchWorkflow, weil patchWorkflow pure bleibt und nicht urteilt — es
+  // ueberspringt fehlende Felder stumm, was dort richtig ist.
+  if (!("steps" in sampler.inputs)) return { ok: false, error: { kind: "no-steps-field" } };
+  const latentInputs = (nodes[resolved.latent_image!] as ComfyNode).inputs;
+  if (!("width" in latentInputs) || !("height" in latentInputs)) {
+    return { ok: false, error: { kind: "no-size-fields" } };
+  }
+  const rawSteps = sampler.inputs.steps;
+
   return {
     ok: true,
     slots: {
@@ -90,7 +108,10 @@ export function inspectWorkflow(graph: unknown): InspectResult {
       // KSamplerAdvanced ein neues, unbenutztes Feld an — das Bild käme, wäre aber bei
       // jedem Wurf identisch. Ein stiller Fehler, der erst beim Vergleich auffällt.
       seedField: "noise_seed" in sampler.inputs ? "noise_seed" : "seed",
-      stepsField: "steps" in sampler.inputs ? "steps" : null,
+      stepsField: "steps",
+      // Ein Verweis auf einen anderen Node (["9", 0]) ist patchbar, aber kein Startwert —
+      // nur ein Zahlenliteral zeigt uns, was der Workflow-Autor eingestellt hat.
+      workflowSteps: typeof rawSteps === "number" && Number.isInteger(rawSteps) ? rawSteps : null,
     },
   };
 }
@@ -99,8 +120,8 @@ export interface PatchValues {
   prompt: string;
   negativePrompt: string;
   seed: number;
-  /** null = Steps aus dem Workflow übernehmen. */
-  steps: number | null;
+  /** Anders als in der Quelle nicht nullable — s. WorkflowSlots.stepsField. */
+  steps: number;
   width: number;
   height: number;
 }
@@ -118,10 +139,7 @@ export function patchWorkflow(graph: ComfyGraph, slots: WorkflowSlots, v: PatchV
   out[slots.positive]!.inputs.text = v.prompt;
   out[slots.negative]!.inputs.text = v.negativePrompt;
   out[slots.sampler]!.inputs[slots.seedField] = v.seed;
-
-  if (v.steps !== null && slots.stepsField !== null) {
-    out[slots.sampler]!.inputs[slots.stepsField] = v.steps;
-  }
+  out[slots.sampler]!.inputs[slots.stepsField] = v.steps;
 
   // Nicht jeder Latent-Node hat Maße (LatentFromBatch, LatentUpscale mit Verweis).
   // Ein blind gesetztes width/height legte dort ein totes Feld an.

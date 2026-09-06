@@ -18,7 +18,7 @@ describe("inspectWorkflow", () => {
     if (!r.ok) return;
     expect(r.slots).toEqual({
       sampler: "3", positive: "6", negative: "7", latent: "5",
-      seedField: "seed", stepsField: "steps",
+      seedField: "seed", stepsField: "steps", workflowSteps: 6,
     });
   });
 
@@ -30,12 +30,17 @@ describe("inspectWorkflow", () => {
     expect(r.ok && r.slots.seedField).toBe("noise_seed");
   });
 
-  it("meldet stepsField null, wenn der Sampler keine Steps kennt", () => {
+  // Vorher (Quelle yijing-oracle) galt ein Sampler ohne Steps-Feld als gueltig mit
+  // `stepsField: null` — Spec §4 dreht das um: derselbe Graph wird jetzt ABGEWIESEN,
+  // weil das Plugin sonst keinen ehrlichen Wert fuer die Ergebnis-Notiz haette.
+  it("weist einen Sampler ohne Steps-Feld ab (SamplerCustom via sigmas)", () => {
     const g = clone();
     g["3"] = { class_type: "SamplerCustom", inputs: {
       noise_seed: 1, sigmas: ["10", 0], positive: ["6", 0], negative: ["7", 0], latent_image: ["5", 0] } };
     const r = inspectWorkflow(g);
-    expect(r.ok && r.slots.stepsField).toBe(null);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.kind).toBe("no-steps-field");
   });
 
   it("scheitert bei zwei Samplern statt zu raten", () => {
@@ -69,6 +74,58 @@ describe("inspectWorkflow", () => {
       expect(inspectWorkflow(bad).ok).toBe(false);
     }
   });
+
+  it("weist einen Sampler ohne steps-Feld ab", () => {
+    const g = {
+      "1": { class_type: "SamplerCustom", inputs: { positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0], noise_seed: 1 } },
+      "2": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "3": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "4": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512 } },
+    };
+    const r = inspectWorkflow(g);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("no-steps-field");
+  });
+
+  it("weist einen Latent-Node ohne Masse ab", () => {
+    const g = {
+      "1": { class_type: "KSampler", inputs: { positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0], seed: 1, steps: 20 } },
+      "2": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "3": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "4": { class_type: "LatentUpscale", inputs: { samples: ["5", 0] } },
+      "5": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512 } },
+    };
+    const r = inspectWorkflow(g);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("no-size-fields");
+  });
+
+  it("liest die eingestellte Schrittzahl aus dem Sampler", () => {
+    const g = {
+      "1": { class_type: "KSampler", inputs: { positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0], seed: 1, steps: 6 } },
+      "2": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "3": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "4": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512 } },
+    };
+    const r = inspectWorkflow(g);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.slots.workflowSteps).toBe(6);
+  });
+
+  it("meldet workflowSteps null, wenn der Wert kein Zahlenliteral ist", () => {
+    // In ComfyUI kann `steps` ein VERWEIS auf einen anderen Node sein (["9", 0]) statt
+    // einer Zahl. Dann ist der Slot patchbar, der Startwert aber unbekannt.
+    const g = {
+      "1": { class_type: "KSampler", inputs: { positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0], seed: 1, steps: ["9", 0] } },
+      "2": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "3": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+      "4": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512 } },
+      "9": { class_type: "PrimitiveInt", inputs: { value: 6 } },
+    };
+    const r = inspectWorkflow(g);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.slots.workflowSteps).toBeNull();
+  });
 });
 
 const VALUES: PatchValues = {
@@ -82,7 +139,7 @@ const VALUES: PatchValues = {
 
 describe("patchWorkflow", () => {
   const slots = { sampler: "3", positive: "6", negative: "7", latent: "5",
-                  seedField: "seed" as const, stepsField: "steps" as const };
+                  seedField: "seed" as const, stepsField: "steps" as const, workflowSteps: 6 };
 
   it("setzt Prompt, Negativ, Seed, Steps und Größe", () => {
     const out = patchWorkflow(SDXL, slots, VALUES);
@@ -110,15 +167,10 @@ describe("patchWorkflow", () => {
     expect(out["3"]!.inputs.sampler_name).toBe("euler");
   });
 
-  it("schreibt steps nicht, wenn steps null ist", () => {
-    const out = patchWorkflow(SDXL, slots, { ...VALUES, steps: null });
-    expect(out["3"]!.inputs.steps).toBe(6); // Wert aus dem Workflow
-  });
-
-  it("schreibt steps nicht, wenn der Sampler kein Steps-Feld hat", () => {
-    const out = patchWorkflow(SDXL, { ...slots, stepsField: null }, VALUES);
-    expect(out["3"]!.inputs.steps).toBe(6);
-  });
+  // Die beiden Faelle "steps: null" und "stepsField: null" sind entfallen: seit Spec §4
+  // ist PatchValues.steps nicht mehr nullable und stepsField immer "steps" — inspectWorkflow
+  // weist einen Workflow ohne Steps-Feld ab, bevor patchWorkflow je einen solchen slots-Wert
+  // zu sehen bekommt. Ein Test dafuer waere ein Typfehler, kein Verhaltenstest mehr.
 
   it("schreibt in noise_seed, wenn der Sampler das so nennt", () => {
     const g = clone();
