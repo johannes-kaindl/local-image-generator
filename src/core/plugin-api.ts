@@ -238,11 +238,13 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
     status: readStatus,
 
     async recheck(): Promise<ApiStatus> {
-      // Nur der Server-Modus hat einen entfernten Zustand, der sich hinter unserem Ruecken
-      // aendern kann. GPU und Assets kennt das Plugin selbst, und `status()` liest sie
-      // ohnehin bei jedem Aufruf frisch — ein „Neupruefen", das dort nichts pruefte, waere
-      // genau die Attrappe, die dieses Plugin sonst weglaesst (Keine-Attrappen-Linie).
-      if (deps.getMode() === "server") await deps.recheckServer();
+      // Server UND comfy haben einen entfernten Zustand, der sich hinter unserem Ruecken
+      // aendern kann (der A1111-Endpunkt bzw. der ComfyUI-Server) — beide fragt derselbe
+      // `deps.recheckServer()`-Weg ab (main.ts::checkServer() ist modusneutral). GPU und
+      // Assets kennt das Plugin selbst, und `status()` liest sie ohnehin bei jedem Aufruf
+      // frisch — ein „Neupruefen", das dort nichts pruefte, waere genau die Attrappe, die
+      // dieses Plugin sonst weglaesst (Keine-Attrappen-Linie).
+      if (deps.getMode() === "server" || deps.getMode() === "comfy") await deps.recheckServer();
       return readStatus();
     },
 

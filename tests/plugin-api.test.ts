@@ -83,6 +83,25 @@ describe("recheck()", () => {
     expect(s.reason).toBeNull();
   });
 
+  it("heilt auch im comfy-Modus ein veraltetes unreachable — ComfyUI ist derselbe entfernte Zustand wie der A1111-Server", async () => {
+    let erreichbar = false;
+    const api = createImageGenerationApi(
+      deps({
+        getMode: () => "comfy",
+        readiness: () => (erreichbar ? { ready: true } : { ready: false, reason: "unreachable" }),
+        recheckServer: async () => {
+          erreichbar = true;
+        },
+      }),
+    );
+    expect(api.status().reason).toBe("unreachable");
+
+    const s = await api.recheck();
+
+    expect(s.ready).toBe(true);
+    expect(s.reason).toBeNull();
+  });
+
   it("macht im builtin-Modus KEINEN Netzaufruf — dort gibt es keinen entfernten Zustand", async () => {
     let netzaufrufe = 0;
     const api = createImageGenerationApi(

@@ -131,7 +131,13 @@ export class GeneratePanel implements HubPanel<TabId> {
       this.host.setBuiltinModel(this.modelPickEl.value as BuiltinModelId);
     });
     controls.createSpan({ text: t("generate.steps"), cls: "lig-label" });
-    const startSteps = String(this.host.getSettings().defaultSteps);
+    // Im comfy-Modus hat der Nutzer seinen Workflow schon auf einen Wert gebracht (Spec §3)
+    // — der ist der bessere Startwert als der generische Default. Nur beim Mount gelesen
+    // (Mount-once, s. Modulkopf): ein spaeterer Workflow-Wechsel wirkt erst beim naechsten
+    // Oeffnen des Panels, nicht live auf einen schon gezeichneten Regler.
+    const state0 = this.host.getPanelState();
+    const workflowSteps = state0.mode === "comfy" && state0.workflow.kind === "ok" ? state0.workflow.slots.workflowSteps : null;
+    const startSteps = String(workflowSteps ?? this.host.getSettings().defaultSteps);
     this.stepsEl = controls.createEl("input", {
       cls: "lig-steps",
       attr: {

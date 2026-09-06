@@ -3,7 +3,7 @@
 import { t } from "../vendor/kit/i18n";
 import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
-import { slotsOf, type WorkflowState } from "./comfy/state";
+import { slotsOf, type WorkflowProblem, type WorkflowState } from "./comfy/state";
 import type { EngineChoice } from "./settings";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
@@ -226,6 +226,43 @@ function serverStatus(s: PanelState): PanelViewModel["status"] {
   return runStatus(s);
 }
 
+/** Im comfy-Modus gibt es ZWEI Bedingungen. Der Workflow wird zuerst gemeldet, weil er der
+ *  naeher liegende Fehler ist: einen Server startet man einmal, einen Workflow legt man
+ *  fuer diese Aufgabe hin. Der Server kommt danach, mit denselben Meldungen wie im
+ *  A1111-Modus — er ist derselbe Zustand. */
+function comfyStatus(s: PanelState): PanelViewModel["status"] {
+  const w = s.workflow;
+  if (w.kind === "unconfigured") return { icon: "circle-x", text: t("status.noWorkflow"), cls: "is-error" };
+  if (w.kind === "missing") return { icon: "circle-x", text: t("status.workflowMissing", w.path), cls: "is-error" };
+  if (w.kind === "invalid") return { icon: "circle-x", text: workflowProblemText(w.reason), cls: "is-error" };
+  return serverStatus(s);
+}
+
+/** Ein Satz je Ausgang, kein generisches "Workflow ungueltig": der Nutzer soll wissen,
+ *  WAS er an seinem Graphen aendern muss. */
+export function workflowProblemText(p: WorkflowProblem): string {
+  switch (p.kind) {
+    case "json": return t("workflow.err.json");
+    case "not-an-object": return t("workflow.err.notAnObject");
+    case "no-sampler": return t("workflow.err.noSampler");
+    case "ambiguous-sampler": return t("workflow.err.ambiguous", p.ids.join(", "));
+    case "dangling-ref": return t("workflow.err.dangling", p.field, p.id);
+    case "no-steps-field": return t("workflow.err.noSteps");
+    case "no-size-fields": return t("workflow.err.noSize");
+  }
+}
+
+/** Wie bei der Statuszeile: fehlt/ist ungueltig der Workflow, ist das der naeher liegende
+ *  Fehler und bekommt den Settings-CTA — ein erreichbarer, aber falsch konfigurierter
+ *  Server waere hier die falsche Anlaufstelle. Steht der Workflow, gilt derselbe
+ *  Leerzustand wie im Server-Modus. */
+function comfyEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
+  if (s.workflow.kind !== "ok") {
+    return { text: t("empty.noWorkflow"), ctaLabel: t("empty.noWorkflowCta"), ctaAction: "settings" };
+  }
+  return serverEmpty(s, busy);
+}
+
 function engineStatus(s: PanelState): PanelViewModel["status"] {
   if (s.run.kind === "error") return { icon: "circle-x", text: t("status.error", s.run.message), cls: "is-error" };
   const e = s.engine;
@@ -298,11 +335,14 @@ export function buildViewModel(s: PanelState): PanelViewModel {
   const busy = s.run.kind === "contacting" || s.run.kind === "generating"
     || s.run.kind === "loading-model" || s.run.kind === "external";
   const builtin = s.mode === "builtin";
-  const backendReady = builtin ? s.engine.kind === "ready" : s.server.kind === "ok";
+  const comfy = s.mode === "comfy";
+  const backendReady = builtin
+    ? s.engine.kind === "ready"
+    : s.server.kind === "ok" && (!comfy || s.workflow.kind === "ok");
   const caps = backendCapabilities(toBackendContext(s.mode, s.builtinModel, slotsOf(s.workflow)));
 
-  const status = builtin ? engineStatus(s) : serverStatus(s);
-  const empty = builtin ? engineEmpty(s, busy) : serverEmpty(s, busy);
+  const status = builtin ? engineStatus(s) : comfy ? comfyStatus(s) : serverStatus(s);
+  const empty = builtin ? engineEmpty(s, busy) : comfy ? comfyEmpty(s, busy) : serverEmpty(s, busy);
 
   const modelLabel = builtin
     ? t("generate.modelBuiltin", modelById(s.builtinModel).label)

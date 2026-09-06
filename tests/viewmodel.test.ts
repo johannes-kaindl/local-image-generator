@@ -3,6 +3,7 @@ import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
 import { buildViewModel, formatBytes, formatElapsed, partialDownloadLabel, type GenParams, type PanelState } from "../src/core/viewmodel";
 import { assetsFor, RUNTIME_WASM, totalBytes } from "../src/core/model-manifest";
+import type { WorkflowState } from "../src/core/comfy/state";
 
 beforeEach(() => {
   registerI18n();
@@ -48,6 +49,27 @@ const base: PanelState = {
 
 /** Basis + Overrides — spart das Ausschreiben aller PanelState-Felder in jedem Test. */
 const stateOf = (overrides: Partial<PanelState>): PanelState => ({ ...base, ...overrides });
+
+/** Alias fuer die comfy-Tests unten — dieselbe Basis wie `base`, nur unter dem Namen, den
+ *  der Task-9-Brief benutzt. */
+const PANEL_DEFAULT = base;
+
+/** Ein gueltig eingelesener Workflow (inspectWorkflow-Ausgabe), fuer Tests, die nur
+ *  brauchen, dass der Workflow-Zustand "ok" ist — die konkreten Node-IDs sind beliebig. */
+const OK_WORKFLOW: WorkflowState = {
+  kind: "ok",
+  path: "w.json",
+  json: "{}",
+  slots: {
+    sampler: "3",
+    positive: "6",
+    negative: "7",
+    latent: "5",
+    seedField: "seed",
+    stepsField: "steps",
+    workflowSteps: 20,
+  },
+};
 
 describe("buildViewModel — server state", () => {
   it("unconfigured: Fehler-Status, Empty mit Settings-CTA, Generate disabled", () => {
@@ -468,5 +490,34 @@ describe("Groessen-Zeile (Spec 0.9 §6.3)", () => {
   it("die Sichtbarkeit haengt an sizes.length, nicht am Modellnamen", () => {
     const vm = buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" });
     expect(vm.controls.sizes).toHaveLength(2);
+  });
+});
+
+describe("Status im comfy-Modus", () => {
+  const basis = { ...PANEL_DEFAULT, mode: "comfy" as const, server: { kind: "ok", modelName: null } as const };
+
+  it("meldet den Workflow-Fehler, nicht den Server", () => {
+    const vm = buildViewModel({ ...basis, workflow: { kind: "invalid", path: "w.json", reason: { kind: "no-sampler" } } });
+    expect(vm.status.cls).toBe("is-error");
+    // Brief-Text ist "No sampler found..." (kleines s) — die grossgeschriebene Fassung im
+    // Brief-Test war ein Tippfehler, der Text selbst ist woertlich aus Step 6 uebernommen.
+    expect(vm.status.text).toContain("sampler");
+  });
+
+  it("meldet einen unerreichbaren Server auch bei gutem Workflow", () => {
+    const vm = buildViewModel({ ...basis, server: { kind: "unreachable" }, workflow: OK_WORKFLOW });
+    expect(vm.status.cls).toBe("is-error");
+  });
+
+  it("ist erst bereit, wenn Server UND Workflow stimmen", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, prompt: "x" });
+    expect(vm.generateEnabled).toBe(true);
+  });
+
+  it("zeigt Negativ-Prompt, aber keinen CFG-Regler", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW });
+    expect(vm.controls.negative).toBe(true);
+    expect(vm.controls.cfg).toBe(false);
+    expect(vm.controls.initImage).toBe(false);
   });
 });
