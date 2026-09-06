@@ -116,6 +116,7 @@ const NAME_30 = "30. Denoise-Wert (0.6) kommt UNVERAENDERT in der Ergebnis-Notiz
  *  `runComfyChecks`), aus demselben Grund wie NAME_18D. */
 const NAME_38 = "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl";
 const NAME_39 = "39. Die comfy-Notiz traegt KEINE cfg-Zeile (der Workflow bestimmt den Wert)";
+const NAME_40 = "40. Die grossen Formate stehen im Server-Dropdown und NICHT im builtin";
 /** Zielordner für Bild + Ergebnis-Notiz. Wird angelegt und am Ende wieder entfernt
  *  (außer mit `--keep`) — so muss der Treiber keine Dateien aus fremden Ordnern fischen. */
 const SMOKE_FOLDER = "_lig-gui-smoke";
@@ -1010,6 +1011,84 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
       ? `${MODUS_REGLER.length} Regler je Richtung (getComputedStyle) · Steps geklemmt ${vorher.steps.wert} → ${drin.steps.anzeige}/${drin.steps.max}, zurück ${raus.steps.anzeige}/${raus.steps.max} · Denoise unveraendert bei Steps 4→3: min/step ${raster.min}/${raster.step}, value ${raster.wert} → „${raster.anzeige}"`
       : teile.join(" · "),
   );
+}
+
+/**
+ * Punkt 40: die grossen Formate (0.12.1) stehen im SERVER-Dropdown und NICHT im builtin.
+ *
+ * Was die Unit-Tests bereits decken, misst dieser Punkt bewusst NICHT: Anzahl, 64er-
+ * Vielfache, Paarigkeit (`tests/generation.test.ts`) und die builtin-Klemmung
+ * (`tests/params.test.ts`). Gemessen wird die GERENDERTE Haelfte — dieselbe Lehre wie bei
+ * den Anzeigefehlern vom 2026-08-21, die im Zustand korrekt waren und nur im DOM daneben
+ * lagen. Der Weg von `SIZES` ins Dropdown ist zwar nur eine `for`-Schleife
+ * (`generate-panel.ts`), aber genau dort sass 0.12.1s Anlass: die Beschraenkung auf 1024
+ * stand in der LISTE, nicht im Backend, und niemand sah es, bis jemand einen
+ * Desktop-Hintergrund erzeugen wollte.
+ *
+ * **Beide Richtungen, und die zweite ist die eigentliche Aussage.** Dass `2048x1152` im
+ * Server-Modus auftaucht, belegt nur, dass die Liste ankommt. Dass es im builtin-Modus
+ * FEHLT, belegt die Trennung der Quellen: dort speist der Modellkatalog
+ * (`model-manifest.ts`), nicht `SIZES`. Ein Punkt, der nur die erste Richtung prueft,
+ * bliebe gruen, wenn jemand `sizeOptions` auf `SIZES` verdrahtet — und dann boete das
+ * Panel Formate an, die die eingebaute Engine gar nicht rechnen kann.
+ *
+ * ⓘ **Robust gegen die Modellwahl, gemessen statt angenommen:** von den builtin-Katalogen
+ * traegt SD-Turbo `[512x512]` und SDXL-Turbo `[512x512, 1024x1024]` — `2048x1152` kommt in
+ * KEINEM vor. Der Punkt braucht deshalb weder ein geladenes Modell noch einen bestimmten
+ * `builtinModel`-Stand; er laeuft in jedem Setup. Kaeme je ein Modell mit grossem Katalog
+ * dazu, ist diese Zeile die Stelle, an der man es merkt.
+ */
+async function runSizeListCheck(cdp: Cdp): Promise<void> {
+  const NAME = NAME_40;
+  const GROSS = "2048x1152";
+
+  const vorherigerModus = await cdp.evaluate<string>(
+    `return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.engine;`,
+  );
+
+  const optionenIn = async (mode: "builtin" | "server"): Promise<string[]> => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== ${JSON.stringify(mode)}) await p.setEngine(${JSON.stringify(mode)});
+      p.refreshViews();
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 800));
+    // Gemessen wird das DOM, nicht `capabilities.sizes` — der Zustand war beim Anlass-Bug
+    // korrekt und trotzdem stand die Option nicht im Dropdown.
+    return await cdp.evaluate<string[]>(`
+      const sel = document.querySelector(".lig-size");
+      return sel ? [...sel.querySelectorAll("option")].map((o) => o.value) : [];
+    `);
+  };
+
+  try {
+    const server = await optionenIn("server");
+    const builtin = await optionenIn("builtin");
+
+    const teile: string[] = [];
+    if (server.length === 0) teile.push("kein .lig-size-Dropdown im Server-Modus gefunden");
+    else if (!server.includes(GROSS)) teile.push(`Server-Dropdown ohne ${GROSS} (hat: ${server.join(", ")})`);
+    if (builtin.length === 0) teile.push("kein .lig-size-Dropdown im builtin-Modus gefunden");
+    else if (builtin.includes(GROSS)) teile.push(`builtin-Dropdown bietet ${GROSS} an — dort speist der Modellkatalog, nicht SIZES`);
+
+    record(
+      NAME,
+      teile.length === 0,
+      teile.length === 0
+        ? `server ${server.length} Optionen inkl. ${GROSS} · builtin ${builtin.length} ohne ${GROSS} (${builtin.join(", ")})`
+        : teile.join(" · "),
+    );
+  } finally {
+    await cdp
+      .evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        if (p.settings.engine !== ${JSON.stringify(vorherigerModus)}) await p.setEngine(${JSON.stringify(vorherigerModus)});
+        p.refreshViews();
+        return true;
+      `)
+      .catch(() => undefined);
+  }
 }
 
 /**
@@ -3518,6 +3597,11 @@ async function main(): Promise<void> {
     // liest `getComputedStyle` — kein Download, kein Asset-Server, keine Generierung. Er läuft
     // damit in jedem Lauf, auch im schnellen.
     await runControlVisibilityCheck(cdp);
+
+    // --- 40. Groessenliste, gerendert gemessen ------------------------------
+    // Ebenfalls ausserhalb der --builtin/--quick-Bedingung: er wechselt nur den Modus und
+    // liest Optionen — kein Download, kein Server, keine Generierung.
+    await runSizeListCheck(cdp);
 
     // --- 18. Die Provider-API am laufenden Obsidian --------------------------
     // Bewusst ausserhalb der --builtin/--quick-Bedingung: 18a–18d brauchen weder Server
