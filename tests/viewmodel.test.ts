@@ -515,6 +515,13 @@ describe("Status im comfy-Modus", () => {
   it("ist erst bereit, wenn Server UND Workflow stimmen", () => {
     const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, prompt: "x" });
     expect(vm.generateEnabled).toBe(true);
+    // I4 (Final-Review 2026-09-06): der Name behauptet eine Konjunktion, der Rumpf prueft
+    // ohne diese Zeile nur den EINEN Punkt, an dem beide Konjunkte wahr sind. Streicht
+    // jemand die Workflow-Bedingung aus `buildViewModel`, bliebe die Suite gruen — und der
+    // Generate-Knopf waere im comfy-Modus ohne brauchbaren Workflow klickbar, ohne dass
+    // etwas passiert. Der Server ist hier unveraendert `ok`; nur der Workflow fehlt.
+    const ohneWorkflow = buildViewModel({ ...basis, workflow: { kind: "missing", path: "w.json" }, prompt: "x" });
+    expect(ohneWorkflow.generateEnabled).toBe(false);
   });
 
   it("zeigt Negativ-Prompt, aber keinen CFG-Regler", () => {
