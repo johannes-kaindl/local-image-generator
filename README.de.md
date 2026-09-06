@@ -1,6 +1,6 @@
 # Local Image Generator
 
-Bilder in Obsidian erzeugen — auf dem eigenen Rechner, ohne Cloud und ohne Konto. Zwei
+Bilder in Obsidian erzeugen — auf dem eigenen Rechner, ohne Cloud und ohne Konto. Drei
 Wege, wählbar in den Einstellungen:
 
 - **Eingebaut (Standard):** ein Modell rechnet **auf deiner GPU in Obsidian** per
@@ -16,8 +16,16 @@ Wege, wählbar in den Einstellungen:
   [SD.Next](https://github.com/vladmandic/sdnext) über deren gemeinsame, A1111-kompatible
   HTTP-API — mit den Modellen, die er geladen hat, und allen Reglern (Negativ-Prompt,
   Guidance, Größen).
+- **ComfyUI:** zeigt auf deinen eigenen laufenden ComfyUI-Server und übernimmt einen
+  Workflow, den du im API-Format exportiert hast — das Plugin patcht vor jedem Lauf
+  Prompt, Seed, Schrittzahl und Größe in genau diesen Workflow hinein und lässt alles
+  andere (Sampler, Scheduler, LoRAs, Upscaler) unangetastet, wie du es gebaut hast. Kein
+  img2img, kein Fortschrittsbalken (ComfyUIs eigener Server weist eine WebSocket-Verbindung
+  aus Obsidian heraus ab, deshalb zählt die Statuszeile stattdessen Sekunden), kein
+  CFG-Regler — die vollständige Liste dessen, was dieser Modus nicht kann, steht im
+  Changelog.
 
-So oder so verlassen Prompts und Bilder deinen Rechner nie.
+In jedem Fall verlassen Prompts und Bilder deinen Rechner nie.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/gitea/v/release/jkaindl/local-image-generator?gitea_url=https%3A%2F%2Fgit.jkaindl.de&label=release)](https://git.jkaindl.de/jkaindl/local-image-generator/releases)
