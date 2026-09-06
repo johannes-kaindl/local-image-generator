@@ -69,9 +69,20 @@ Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt
      einer expliziten Sprachumstellung**. Auf der Systemsprache ist er leer, während der
      Renderer sehr wohl übersetzt (gemessen: `ls: null`, `i18next.language: "de"`,
      `documentElement.lang: "de"`), also verglich der Treiber englische Erwartungen gegen
-     deutsche Darstellung. Erste Quelle ist seither `window.i18next.language` — dieselbe, aus
-     der Obsidians `getLanguage()` speist, das auch das Plugin selbst nimmt (`src/main.ts`);
-     `localStorage` und `documentElement.lang` bleiben Rückfallebenen.
+     deutsche Darstellung. Erste Quelle ist seither `document.documentElement.lang` — dort
+     spiegelt Obsidian die GELADENE Sprache, also das, was `getLanguage()` liefert und woraus
+     auch das Plugin selbst seine Sprache zieht (`src/main.ts`); `localStorage` bleibt
+     Rückfallebene.
+
+     ⓘ **Der Fix ist übernommen, nicht erfunden** — `vault-rag/scripts/gui-smoke.ts:347`
+     (2026-09-03) und, noch früher, `apple-health/scripts/shots.ts:676` (2026-08-18), dort mit
+     der schärferen Beobachtung: `localStorage` sagte „de", während die Oberfläche auf Englisch
+     stand. Damit ist es die **dritte unabhängige Entdeckung derselben Sache in drei Repos** —
+     und keine der beiden früheren stand in der `REGISTRY.md`, war also nicht auffindbar.
+     Gemessen am 2026-09-06 über alle 24 Treiber im Dach: **sechs tragen die defekte Fassung
+     weiter** (`audio-interface`, `epub-exporter`, `obsidian-transmute` ×2, `vault-crews`,
+     `yijing-oracle` — durchweg `shots.ts`, wo eine falsch erkannte Sprache falsch beschriftete
+     README-Bilder erzeugt statt nur roter Prüfpunkte).
 
    Übersprungene Punkte stehen in der Abschlusszeile (`… · N übersprungen (NICHT gemessen)`),
    damit ein Teil-Lauf nicht als bestandener Smoke zitiert wird. Antwortet der Server dagegen

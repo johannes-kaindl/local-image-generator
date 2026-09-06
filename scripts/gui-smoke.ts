@@ -2824,16 +2824,23 @@ async function main(): Promise<void> {
     // vergliche englische Erwartungen gegen deutsche Darstellung. Das ergibt rote Punkte, die
     // nichts ueber den Pruefling sagen (gemessen 2026-09-06 an Punkt 36: `ls: null`,
     // `i18next.language: "de"`, `documentElement.lang: "de"`).
-    // Erste Quelle ist deshalb `i18next.language` — dieselbe, aus der Obsidians `getLanguage()`
-    // speist, das auch das Plugin selbst nimmt (src/main.ts). Die zwei anderen bleiben als
-    // Rueckfallebenen stehen, falls eine Obsidian-Version die interne i18next-Instanz nicht
-    // mehr am `window` fuehrt.
-    const rawLang = await cdp.evaluate<string | null>(`
-      return (window.i18next && window.i18next.language)
-        || window.localStorage.getItem("language")
-        || document.documentElement.lang
-        || null;
-    `);
+    // Erste Quelle ist deshalb `document.documentElement.lang` — dort spiegelt Obsidian die
+    // GELADENE Sprache, also das, was `getLanguage()` liefert und woraus auch das Plugin
+    // selbst seine Sprache zieht (`src/main.ts`). `localStorage` bleibt als Rueckfallebene.
+    //
+    // ⓘ **Uebernommen aus `vault-rag/scripts/gui-smoke.ts:347` (2026-09-03), nicht selbst
+    // erfunden** — dort ist derselbe Defekt zwei Wochen frueher aufgetreten, und in
+    // `apple-health/scripts/shots.ts:676` (2026-08-18) noch einmal drei Wochen frueher, dort
+    // mit der schaerferen Beobachtung: `localStorage` sagte "de", waehrend die Oberflaeche
+    // auf Englisch stand. Diese Fassung ist damit die dritte unabhaengige Entdeckung
+    // derselben Sache und die erste, die die beiden anderen kennt.
+    // ⚠️ Der verifizierte Lauf vom 2026-09-06 fuhr mit `i18next.language` an erster Stelle;
+    // die Umstellung auf `documentElement.lang` ist durch dieselbe Messung gedeckt (beide
+    // Quellen lieferten "de", `localStorage` lieferte `null`), aber nicht durch einen
+    // eigenen Lauf. Bewusst angeglichen statt eine dritte Variante zu etablieren.
+    const rawLang = await cdp.evaluate<string | null>(
+      `return document.documentElement.lang || (window.localStorage && localStorage.getItem("language")) || null;`,
+    );
     registerI18n();
     setLang(pickLang(rawLang));
 
