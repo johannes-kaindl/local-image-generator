@@ -435,6 +435,42 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   fuer Panel und API, und eine Doppel-Zeitstempel-Setzung wuerde die zwei berichten
   unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
   Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
+- **Der dritte Modus-Wert faellt an rund einem Dutzend Stellen in den else-Zweig — und `tsc`
+  warnt dort seit der comfy-Task NICHT mehr.** `PanelState.mode` wurde von `"builtin" |
+  "server"` auf `EngineChoice` geweitet (noetig, weil `getPanelState()` `settings.engine`
+  hineinschreibt, das seit dem comfy-Backend `"comfy"` fuehrt). Vorher haette ein dritter
+  Wert an jeder `=== "builtin"`-Verzweigung einen Typfehler erzwungen; seit der Weitung
+  kompiliert `else` klaglos durch, egal ob die Behandlung als Server dort richtig ist oder
+  nicht. Der Wächter ist damit von `tsc` auf DIESE LISTE gewechselt — genau der Fehlermodus,
+  vor dem der Absatz zum verlorenen Session-Wachhund weiter oben warnt (nur in einer Datei
+  festgehalten, die beim naechsten Umbau nicht mitgelesen wird). Fuer die meisten Stellen ist
+  „comfy ist strukturell ein Server" sogar richtig (kein A1111-Endpunkt, aber ebenfalls kein
+  In-Process-Modell) — die folgenden VIER sind es NICHT, mit Schadensbild:
+  - **`main.ts::apiReadiness` (`this.settings.engine === "builtin"` → sonst Server-Zweig)** —
+    leitet comfy-Bereitschaft aus `state.server` ab, also dem A1111-Endpunkt. Ein Fremdplugin
+    ueber die Provider-API bekaeme `ready: true`, sobald irgendein Server unter dem
+    eingetragenen Endpunkt antwortet — unabhaengig davon, ob ueberhaupt ein Workflow
+    hinterlegt ist.
+  - **`main.ts::currentModelName` (dieselbe Verzweigung)** — liefert fuer comfy den
+    Modellnamen des A1111-Servers (`state.server.modelName`), und `hardenParams` schreibt ihn
+    unveraendert in `GenParams.model` und damit in die Ergebnis-Notiz. Eine Falschaussage in
+    genau dem Artefakt, dessen Ehrlichkeit die Keine-Attrappen-Linie schuetzt.
+  - **`main.ts::setEngine` (Aufraeumzweig haengt an `mode === "server"`)** — ein Wechsel
+    builtin → comfy bricht deshalb weder einen laufenden Modell-Download ab noch gibt er die
+    GPU-Sessions frei; beide bleiben unter dem gewechselten Modus aktiv.
+  - **`settings-tab.ts` (Engine-Dropdown-Handler, `setEngine(clean === "server" ? "server" :
+    "builtin")`)** — sobald die dritte Dropdown-Option existiert, springt die Auswahl
+    „ComfyUI" beim Speichern still auf `builtin` zurueck, ohne Fehler und ohne Notice.
+  Nachrichtlich, geringeres oder noch ungeklaertes Schadensbild: `plugin-api.ts::recheck()`
+  (faellt fuer comfy ins builtin-No-op, obwohl ComfyUI sehr wohl einen entfernten Zustand
+  hat, den ein Nutzer aendern kann, waehrend das Plugin laeuft), sowie mehrere reine
+  `mode === "builtin" ? engine : server`-Leseverzweigungen in `main.ts` (u. a. beim
+  Initialisieren des Engine-Zustands, in `runGeneration()` und in `generate()`) und in
+  `core/viewmodel.ts` (`buildViewModel`, `recipeUnchanged`) — dort zeigt sich comfy im
+  builtin-Modus falsch als „Server bereit"/„Server-Endpunkt" statt an seinem eigenen
+  Workflow-Zustand gemessen zu werden; solange das Engine-Dropdown `"comfy"` noch nicht
+  anbietet, bleibt der Schaden folgenlos. **Diese Liste ist die Deckung, bis eine spaetere
+  Task jede Stelle einzeln entscheidet — nicht der Code selbst.**
 
 ## Vertrieb: Sideloader statt Community-Store (seit 2026-09-02)
 

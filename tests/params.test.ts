@@ -268,3 +268,32 @@ describe("eine Haertung, zwei Aufrufer", () => {
     expect(schmal.steps).toBe(8);
   });
 });
+
+// Fix-Runde 1 (Review-Befund 1): die drei bisherigen comfy-Tests in generation.test.ts bauen
+// das BackendContext-Objekt von Hand — sie pruefen backendCapabilities(), nie die Verdrahtung
+// ueber toBackendContext(). Ohne DIESEN Test bliebe eine geloeschte comfy-Zeile in
+// toBackendContext() (Fallback auf "server") unbemerkt: hardenParams liesse dann einen CFG-Wert
+// durch, den patchWorkflow gar nicht anfasst — genau die Attrappe, gegen die diese Task steht.
+describe("hardenParams — comfy ueber die Produktionsroute (toBackendContext)", () => {
+  const slots = { sampler: "1", positive: "2", negative: "3", latent: "4", seedField: "seed" as const, stepsField: "steps" as const, workflowSteps: 6 };
+  const c = {
+    mode: "comfy" as const,
+    defaultSteps: 20,
+    model: "irgendein-checkpoint.safetensors",
+    builtinModel: BUILTIN_MODELS["sd-turbo"].id,
+    workflowSlots: slots,
+    now: new Date("2026-08-22T22:15:00"),
+    randomSeed: () => 4242,
+  };
+
+  it("neutralisiert CFG und die Vorlage — die Haertung geht wirklich ueber toBackendContext", () => {
+    const p = hardenParams({ prompt: "x", cfg: 9, initImage: { ref: "a.png" } }, c);
+    expect(p.cfg).toBe(1);
+    expect(p.initImage).toBeNull();
+  });
+
+  it("laesst den Negativ-Prompt durch — comfy kann ihn, anders als builtin", () => {
+    const p = hardenParams({ prompt: "x", negativePrompt: "blurry" }, c);
+    expect(p.negativePrompt).toBe("blurry");
+  });
+});

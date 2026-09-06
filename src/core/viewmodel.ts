@@ -68,7 +68,10 @@ export interface GenParams {
 export interface PanelState {
   /** Welches Backend gerade gilt (settings.engine). Als EngineChoice (nicht nur
    *  "builtin" | "server"), seit es den comfy-Modus gibt — die UI-Verzweigungen hier
-   *  behandeln ihn bewusst noch als Server (spaetere Task, s. AGENTS/Task-5-Bericht). */
+   *  (`buildViewModel`, `recipeUnchanged`) behandeln ihn bewusst noch als Server (spaetere
+   *  Task). Vollstaendige Liste + Schadensbild je Stelle: AGENTS.md
+   *  § "Architecture notes / Gotchas" — "Der dritte Modus-Wert faellt an rund einem Dutzend
+   *  Stellen in den else-Zweig". */
   mode: EngineChoice;
   /** Der Zustand des hinterlegten ComfyUI-Workflows — der GANZE Zustand, nicht nur die
    *  Slots: das ViewModel braucht ihn spaeter (Statuszeile), und zwei Quellen fuer dieselbe

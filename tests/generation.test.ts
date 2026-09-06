@@ -153,5 +153,10 @@ describe("backendCapabilities im comfy-Modus", () => {
     expect(c.negativePrompt).toBe(false);
     expect(c.cfg).toBe(false);
     expect(c.initImage).toBe(false);
+    // Auch die restlichen vier Felder gehoeren zur Sperre — halb gesperrt waere keine Sperre.
+    expect(c.minSteps).toBe(STEPS.min);
+    expect(c.maxSteps).toBe(STEPS.max);
+    expect(c.sizes).toBeNull();
+    expect(c.fixedSize).toBeNull();
   });
 });
