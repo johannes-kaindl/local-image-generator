@@ -115,8 +115,12 @@ if (api?.apiVersion === 1) {
 
 `status().capabilities` tells you what the active backend can honour. The built-in engine
 is guidance-free and fixed at 512×512, so a CFG or size control in your UI would be a prop.
-`capabilities.initImage` is `true` in both modes — both backends can start from an existing
-image.
+`capabilities.initImage` is `true` for the built-in engine and for a server, and `false` in
+ComfyUI mode — ask the field rather than the mode.
+
+`r.image.params.cfg` can be `null`: it means the plugin did not determine the value, which
+happens in ComfyUI mode, where the user's workflow carries its own CFG. If you write the
+params into a note, leave the field out in that case instead of substituting a number.
 
 To generate from a reference image, pass it as base64 (no `data:` prefix) plus an optional
 `denoising` between 0 and 1 (default `0.75` — higher means further from the original):
