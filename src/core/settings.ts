@@ -13,7 +13,7 @@ import {
   type SettingsSchema,
 } from "../vendor/kit/settings_schema";
 
-export type EngineChoice = "builtin" | "server";
+export type EngineChoice = "builtin" | "server" | "comfy";
 
 /** Ein Stil-Baustein, der per Chip an den Prompt gehängt wird. */
 export interface StylePreset {
@@ -94,6 +94,10 @@ export interface LigSettings {
   /** Ob die Settings ueberhaupt eine Modellwahl anzeigen (Spec 0.9 §6.1). Default aus:
    *  bis zur zweiten Stufe gab es keine Wahl zu treffen. */
   showModelPicker: boolean;
+  /** Vault-Pfad der ComfyUI-Workflow-Datei (API-Format). Leer = keiner gesetzt; das ist
+   *  eine Aussage, kein Fehler — wie bei `endpoint`. Nur der Pfad, nie das JSON: ein
+   *  Workflow ist 3–15 KB und data.json wird bei jedem saveSettings() ganz geschrieben. */
+  comfyWorkflowPath: string;
 }
 
 export const DEFAULT_PRESETS: StylePreset[] = [
@@ -122,6 +126,7 @@ export const DEFAULT_SETTINGS: LigSettings = {
   // denselben Wert laufen beim naechsten Modellwechsel auseinander (Nachlese 0.9.0).
   builtinModel: DEFAULT_BUILTIN_MODEL_ID,
   showModelPicker: false,
+  comfyWorkflowPath: "",
 };
 
 /** Filter + Backfill der Historie — Migration 0.3→0.4 (width/height) und 0.4→0.5
@@ -191,7 +196,7 @@ export function migrateSettings(raw: unknown): unknown {
  *  früheren Feld-Sanitizer. Ein leerer String ist hier kein Fehler, sondern eine Aussage
  *  (leerer outputFolder = Obsidians Attachment-Logik). */
 export const SETTINGS_SCHEMA: SettingsSchema<LigSettings> = {
-  engine: oneOf<EngineChoice>(["builtin", "server"]),
+  engine: oneOf<EngineChoice>(["builtin", "server", "comfy"]),
   assetBaseUrl: nonEmptyString({ trim: true }),
   // check(...), NICHT clampIntField(1, 50): der Kombinator ist String-tolerant und trunct
   // Floats ("3" → 3, 2.5 → 2). Hier gilt ein Wert, der kein ganzzahliger Schritt im Bereich
