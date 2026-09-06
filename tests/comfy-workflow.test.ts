@@ -1,4 +1,5 @@
 // uebernommen aus yijing-oracle/tests/comfy-workflow.test.ts, 2026-09-06
+// (mitsamt tests/fixtures/comfy-sdxl.json, byte-identisch)
 import { describe, expect, it } from "vitest";
 import { inspectWorkflow, patchWorkflow, type ComfyGraph, type PatchValues } from "../src/core/comfy/workflow";
 import sdxl from "./fixtures/comfy-sdxl.json";

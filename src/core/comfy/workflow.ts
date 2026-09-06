@@ -107,7 +107,11 @@ export interface PatchValues {
 
 /** Setzt die Reading-Werte in eine **Kopie** des Graphen. Alles, was nicht in `slots`
  *  benannt ist, bleibt unverändert — Sampler-Name, Scheduler, CFG, LoRAs und Upscaler
- *  gehören dem Nutzer und sind bewusst nicht konfigurierbar. */
+ *  gehören dem Nutzer und sind bewusst nicht konfigurierbar.
+ *
+ *  **Aufrufvertrag:** `slots` muss aus `inspectWorkflow()` **desselben Graphen** stammen.
+ *  Ein Aufruf mit gecachten Slots gegen einen neu geladenen Graphen produziert undefined.
+ *  Die Non-null-Assertions in dieser Funktion beruhen darauf, dass dieser Vertrag eingehalten wird. */
 export function patchWorkflow(graph: ComfyGraph, slots: WorkflowSlots, v: PatchValues): ComfyGraph {
   const out = JSON.parse(JSON.stringify(graph)) as ComfyGraph;
 
