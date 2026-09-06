@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows
   it does, the plugin only fills in what it fills in.
   Client and workflow inspection are carried over from `yijing-oracle`, not built from
   scratch (`src/core/comfy/client.ts`, `src/core/comfy/workflow.ts`).
+  One thing to know when switching from server mode: **the endpoint field is shared between
+  the two modes.** Your Draw Things / AUTOMATIC1111 address stays in it, and it will answer —
+  just not to ComfyUI's API. ComfyUI listens on port 8188 by default; the settings row and
+  the panel's empty state say so in this mode.
 
 ### What ComfyUI mode does not do (on purpose)
 
@@ -35,6 +39,21 @@ Read this before switching, not after a run comes back looking wrong:
   LoRA or upscaler nodes — those belong to whoever built the workflow. The negative-prompt
   field IS available, because the negative-prompt node is part of how the plugin recognizes
   a usable workflow in the first place.
+- **No CFG in the result note either — the field is left out, not filled with a guess.**
+  Because the plugin does not set CFG, it does not claim one: a result note from a ComfyUI
+  run carries no `cfg:` line at all, the same way it carries no `denoising:` line for a
+  txt2img run. Writing `cfg: 1` there would have been an invented value — anyone
+  reproducing the image would set their workflow to 1 and get a different picture. Built-in
+  mode still writes `cfg: 1`, because there it is true: SD-Turbo is distilled and has no
+  guidance. (API consumers: `ApiParams.cfg` can now be `null`, meaning "determined by the
+  backend, not by the plugin". `apiVersion` stays 1 — this is additive.)
+- **`width` and `height` in the result note are the size the plugin ASKED for, not
+  necessarily the size of the file.** They are written into the workflow's latent node; what
+  a later node in your graph does with that is your graph's business. Upscaler chains are the
+  normal case in ComfyUI, so a note may well say 768×768 next to a 3072×3072 image. This is
+  not fixable from here without reading the image back and second-guessing the workflow —
+  treat those two fields as "what went in", the same way `model` in server mode is whatever
+  the server reports rather than something the plugin chose.
 - **A workflow without a plain `steps` field on its sampler, or without `width`/`height` on
   its latent node, is rejected outright** — not silently run with a guessed step count or
   size. `SamplerCustom` nodes commonly wire `steps` through a separate scheduler/sigma node
@@ -51,6 +70,12 @@ Read this before switching, not after a run comes back looking wrong:
 `apiVersion` stays 1 — this is an additive change, not a breaking one. A ComfyUI backend
 without a usable workflow reports `ready: false` with `reason: "not-configured"`, the same
 reason a server backend reports without an endpoint.
+
+`ApiParams.cfg` is now `number | null`. `null` means the plugin did not determine the value —
+it happens only in ComfyUI mode, where the workflow carries its own CFG. If you write the
+returned params into a note of your own, leave the field out when it is `null` rather than
+substituting a number; that is exactly what this plugin's own result note does. Built-in and
+server mode are unchanged (`1` and the requested value).
 
 ## [0.12.1] — 2026-09-05
 

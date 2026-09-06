@@ -73,9 +73,11 @@ export interface GenParams {
 
 export interface PanelState {
   /** Welches Backend gerade gilt (settings.engine). Als EngineChoice (nicht nur
-   *  "builtin" | "server"), seit es den comfy-Modus gibt — die UI-Verzweigungen hier
-   *  (`buildViewModel`, `recipeUnchanged`) behandeln ihn bewusst noch als Server (spaetere
-   *  Task). Vollstaendige Liste + Schadensbild je Stelle: AGENTS.md
+   *  "builtin" | "server"), seit es den comfy-Modus gibt. `buildViewModel` verzweigt fuer
+   *  comfy inzwischen ausdruecklich (`comfyStatus`/`comfyEmpty`); **offen ist nur noch
+   *  `recipeUnchanged`**, das den comfy-Fall weiter in den Server-Vergleich faltet — folgenlos
+   *  fuer die Richtigkeit der Notiz, aber `generateEnabled` sperrt dort ein unveraendertes
+   *  Rezept nie. Vollstaendige Liste + Schadensbild je Stelle: AGENTS.md
    *  § "Architecture notes / Gotchas" — "Der dritte Modus-Wert faellt an rund einem Dutzend
    *  Stellen in den else-Zweig". */
   mode: EngineChoice;

@@ -2,10 +2,21 @@
 // ComfyUI-Backend: Workflow absenden, auf das Ergebnis warten, Bild holen. Pure
 // (kein obsidian-Import) — der Transport wird injiziert, wie bei ChatClient/Txt2ImgClient.
 //
+// ⚠️ IN DIESEM REPO GIBT ES DEN WEBSOCKET NICHT: `obsidian/comfy-progress.ts` existiert hier
+// nicht, und `reportProgress()` wird von niemandem gefuettert. Der Socket ist bewusst
+// weggelassen — ComfyUI 0.30.0 weist eine aus Obsidians Renderer geoeffnete Verbindung mit
+// 403 ab, weil der Origin `app://obsidian.md` nicht zum Host passt. Die Statuszeile zaehlt
+// deshalb Sekunden, wie bei Draw Things ohne `/sdapi/v1/progress`. Der folgende Absatz stammt
+// aus der Quelle (yijing-oracle) und beschreibt DEREN Aufbau; er bleibt stehen, weil er die
+// Rollenverteilung erklaert, auf die der Code hier gebaut ist — hier faellt die eine Haelfte
+// einfach weg:
+//
 // Arbeitsteilung mit dem WebSocket (obsidian/comfy-progress.ts): der Socket liefert NUR
 // die Fortschrittsanzeige. Ob der Lauf gelang, steht in /history — dort ist auch der
 // Fehlerfall vollständig abgebildet (status_str + messages, gemessen an ComfyUI 0.30.0).
 // Fällt der Socket aus, verliert der Nutzer den Balken, nicht das Bild.
+//
+// Genau deshalb ist /history hier der ERGEBNISkanal und kein Nebenweg — s. `waitForImage`.
 import { normalizeEndpoint } from "../../vendor/kit/endpoint";
 import { type ImageBackend, type ImageRequest } from "../txt2img";
 import { inspectWorkflow, patchWorkflow, type ComfyGraph } from "./workflow";

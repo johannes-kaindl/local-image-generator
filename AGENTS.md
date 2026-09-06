@@ -435,26 +435,64 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   gemeinsame Bedingung, die stillschweigend annimmt, es gaebe nur „kann alles" und „kann
   wenig". `MODUS_REGLER` selbst bleibt daneben bestehen (Punkt 17 prueft weiterhin nur
   builtin/server) — die beiden Listen sind nicht dieselbe Datenquelle mit zwei Namen.
-- **`scripts/mock-a1111.mjs` hat einen fremden Konsumenten (s. u.) — `mock-comfy.mjs` ist
-  deshalb eine eigene Datei, kein dritter Fall in derselben.** Details unten unter „GUI-Smoke
-  ohne echten Bild-Server".
-- **Die aus `yijing-oracle` uebernommenen `src/core/comfy/{client,workflow}.ts` tragen
-  Non-null-Assertions (`!`), die das Original NICHT hat.** Grund: `yijing-oracle` faehrt
-  `noUncheckedIndexedAccess` nicht (oder auf `false`), dieses Repo mit `true` — jeder
-  Record-/Array-Indexzugriff ist hier `T | undefined` typisiert, wo das Original `T` sieht.
-  Die Assertionen sind an jeder Stelle either INTERN bewiesen (ein Guard schliesst
-  `undefined` vorher aus, z. B. `candidates[0]!` nach `length > 1` ausgeschlossen) oder
-  EXTERN bedingt und mit Doc-Kommentar versehen (z. B. `out[slots.positive]!` in
-  `patchWorkflow`, sicher nur wenn `slots` aus `inspectWorkflow()` desselben Graphen
-  stammt). **Ein kuenftiger Re-Sync aus `yijing-oracle` ueberschreibt diese Zeilen ohne
-  Warnung** — der Herkunftsstempel deklariert die Uebernahme, nicht die lokale Abweichung.
-  Wer die Module neu zieht, muss die `!`-Stellen aus dem Diff dieser Task erneut einfuegen,
-  nicht nur die Datei kopieren.
+- **`src/core/comfy/workflow.ts` ist KEIN Vendoring mehr, sondern ein FORK von
+  `yijing-oracle` mit einer benannten inhaltlichen Abweichung — `client.ts` dagegen liegt
+  nahe am Original.** Der Herkunftsstempel in Zeile 1 deklariert beide Male die Uebernahme,
+  nicht die Abweichung; wer die Dateien neu zieht und nur den Stempel liest, ueberschreibt
+  in `workflow.ts` eine Zusage, die dieses Repo gegeben hat. Der Unterschied zwischen den
+  beiden Dateien ist der Punkt dieses Eintrags:
+  - **`client.ts`:** technische Anpassungen an diesen Baum, keine Verhaltensaenderung.
+    Non-null-Assertions traegt die Datei ⚠️ **keine** — eine frueher hier stehende Fassung
+    behauptete das fuer beide Module und war fuer `client.ts` gemessen falsch. Eigene
+    Abweichung ist dagegen der gefangene `/history`-Poll in `waitForImage` (I1,
+    Branch-Abschlussreview 2026-09-06): ein geworfener Poll beendet den Lauf hier nicht.
+  - **`workflow.ts`:** vier zusammenhaengende inhaltliche Aenderungen, die zusammen die
+    Keine-Attrappen-Zusage fuer Steps und Groesse TRAGEN — (1) `WorkflowSlots.stepsField` ist
+    nicht mehr nullable, (2) das Feld `workflowSteps` ist neu (Startwert des Reglers), (3)
+    die Fehlerausgaenge `no-steps-field` und `no-size-fields` samt ihrer Pruefungen in
+    `inspectWorkflow` sind neu, (4) `patchWorkflow` schreibt Steps deshalb unbedingt statt
+    bedingt. Wer diese Datei neu zieht und nur „die `!` wieder einsetzen" abarbeitet, hat
+    die ganze Abweisungsregel entfernt — und das Plugin schriebe wieder erfundene Werte in
+    die Ergebnis-Notiz (Begruendung im Eintrag „Ein ComfyUI-Workflow ohne setzbare Steps
+    oder Bildmasse wird ABGEWIESEN" weiter oben).
+  Non-null-Assertions in `workflow.ts` (`noUncheckedIndexedAccess` ist hier `true`, im
+  Original nicht) sind daneben die kleinere Sorte Abweichung: an jeder Stelle entweder INTERN
+  bewiesen (ein Guard schliesst `undefined` vorher aus, z. B. `candidates[0]!` nach
+  ausgeschlossenem `length > 1`) oder EXTERN bedingt und mit Doc-Kommentar versehen (z. B.
+  `out[slots.positive]!` in `patchWorkflow`, sicher nur wenn `slots` aus `inspectWorkflow()`
+  desselben Graphen stammt). **Ein Re-Sync ist damit keine Kopie, sondern ein Merge** — die
+  vier Punkte oben gehoeren danach wieder drin, nicht nur die Assertionen.
 - **„Speichern & als Vorlage" speichert wirklich — das ist der Punkt.** Der Knopf legt das
   Ergebnis erst im Vault ab und macht dann dessen Pfad zur Vorlage. Ohne das entstuende eine
   Vorlage ohne benennbare Herkunft, und die Ergebnis-Notiz muesste „Vorlage: das vorige
   Ergebnis" behaupten. Legt nur das Bild an, nie eine Notiz — `createMode` gilt fuer
   Ergebnisse, nicht fuer Zwischenschritte.
+- **`cfg: null` heisst „vom Backend bestimmt", `cfg: 1` heisst „keine Guidance" — die zwei
+  nicht zusammenlegen.** Die Haertung verzweigt fuer `cfg` ueber `ctx.mode`, nicht ueber
+  `caps.cfg`: builtin traegt eine echte 1 (SD-Turbo ist destilliert), comfy traegt `null`
+  (`patchWorkflow` fasst das CFG-Feld des Samplers nicht an, der Nutzer-Workflow entscheidet),
+  server traegt den gesetzten Wert. `note.ts` laesst das Feld bei `null` weg — wie `denoising`
+  und `negative_prompt`. Vorher stand in JEDER ComfyUI-Notiz `cfg: 1`, ein Wert, der nie galt
+  (C1, Branch-Abschlussreview 2026-09-06). Das ist dieselbe Erfindung, gegen die die
+  Steps-Abweisung steht, nur in die andere Richtung entschieden — wer `caps.cfg === false`
+  wieder als „also 1" liest, baut sie zurueck. Zwei Folgestellen haengen daran: die
+  Historien-Migration muss FEHLEND (Alt-Eintrag → 7) von ausdruecklich `null` unterscheiden
+  (`typeof null` ist "object"), und `applyRecipe` laesst den Regler bei `null` stehen, statt
+  ihn ueber die Klemme auf `CFG.min` zu reissen. `apiVersion` bleibt trotzdem 1: `ApiParams`
+  ist per Vertrag „was die Haertung still ueberschrieben hat", und im comfy-Modus hat sie
+  nichts ueberschrieben.
+- **`/history` ist ComfyUIs ERGEBNISkanal, nicht sein Fortschritt — ein geworfener Poll darf
+  den Lauf nicht beenden.** `comfyTransport().getJson` faehrt bewusst mit kurzem Zeitlimit
+  (3 s, im Sekundentakt gepollt) und `httpGetJson` WIRFT beim Ablauf; `waitForImage` faengt
+  das und pollt weiter, die Deadline der Schleife ist die Notbremse. Ohne das Fangen beendete
+  ein einziger langsamer Poll `generate()`, waehrend das Bild auf dem Server fertig war —
+  ComfyUI stallt seinen Loop regelmaessig (Modell-Laden beim ersten Lauf, VAE-Decode grosser
+  Bilder). Dieselbe Doktrin wie beim A1111-Fortschritt („Timeout und 5xx sind voruebergehend
+  und pollen weiter"), und derselbe Grund, warum der kurze Timeout hier bleiben DARF: er ist
+  nur zulaessig, solange das try/catch daneben steht. Die Gesamtfrist setzt der Wirt
+  (`makeComfyClient`, 30 min) auf dieselbe Groessenordnung wie den A1111-Weg — der
+  Client-Default von 10 min laesst einen Lauf mit Upscaler-Kette an einer Grenze scheitern,
+  die in keinem Setting steht (I1, Branch-Abschlussreview 2026-09-06).
 - **Die Haertung hat genau eine Quelle** (`src/core/params.ts`, `hardenParams`). Zwei
   Haertungen bedeuten, dass die API andere Werte meldet, als das Panel in die Notiz schreibt.
 - **Ein Fremdlauf hinterlaesst im Panel KEINE Spur — auch nicht als Fehler.** `runGeneration`
@@ -525,6 +563,21 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   ::recheck()` prueft seit Task 8 `deps.getMode() === "server" || deps.getMode() === "comfy"`
   (kein builtin-No-op mehr fuer comfy) und `core/viewmodel.ts::buildViewModel` verzweigt seit
   Task 8/9 explizit fuer comfy (`comfyStatus`/`comfyEmpty`) statt es als Server zu behandeln.
+  ⚠️ **Drei weitere Verzweigungen fehlten in dieser Liste (Final-Review 2026-09-06) — und eine
+  Liste, die den Compiler ersetzen soll, ist nur so viel wert wie ihre Vollstaendigkeit:**
+  - **`main.ts::generate()`s Bereitschafts-Waechter** — korrekt behandelt: die Defensive
+    hinter dem ViewModel prueft im Nicht-builtin-Zweig zusaetzlich
+    `settings.engine !== "comfy" || state.workflow.kind === "ok"`. Ohne das startete ein Klick
+    im comfy-Modus einen Lauf ohne brauchbaren Workflow.
+  - **`main.ts::makeComfyClient()`** — korrekt behandelt: sie IST der comfy-Zweig der
+    Backend-Wahl in `runGeneration()` und wirft bei nicht-`ok`-Workflow, statt einen leeren
+    Graphen zu senden.
+  - **die initiale `state.engine`-Zuweisung im `onload`**
+    (`settings.engine === "builtin" ? "gpu-checking" : "not-downloaded"`) — folgenlos, aber
+    nicht „richtig": der comfy-Modus landet dort im Server-Zweig und traegt einen
+    Engine-Zustand, den in diesem Modus niemand liest (`engineStatus`/`engineEmpty` laufen nur
+    im builtin-Zweig). Wer den Engine-Zustand je modusuebergreifend liest, muss hier zuerst
+    hinsehen.
   **Einzige noch offene Stelle:** `core/viewmodel.ts::recipeUnchanged` faltet den comfy-Fall
   weiterhin in den Server-Vergleich (`s.server.kind === "ok" && s.server.modelName === p?.model`).
   Da `modelName` im comfy-Modus laut obigem Fix immer `null` ist, schlaegt dieser Vergleich
