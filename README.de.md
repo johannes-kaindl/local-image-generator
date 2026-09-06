@@ -182,6 +182,25 @@ das Plugin wurde zwischen deinem `generate()`- und `save()`-Aufruf deaktiviert).
 `null`, wenn das Backend keinen Fortschritt meldet (Draw Things hat keinen Fortschritts-Endpunkt)
 — zeig in dem Fall einen unbestimmten Spinner.
 
+
+### Einen Lauf abbrechen
+
+Ein `AbortSignal` mitgeben, dann kommt der Lauf als `{ ok: false, reason: "aborted" }` zurück:
+
+```js
+const ctl = new AbortController();
+const r = await api.generate({ prompt: "ein See in der Dämmerung", signal: ctl.signal });
+```
+
+**Was ein Abbruch bewirkt, hängt vom Modus ab.** Eingebaut: ein echter Stopp — die
+Diffusionsschleife hört zwischen zwei Schritten auf, der Decoder läuft gar nicht erst.
+Server und ComfyUI: es endet nur das *Warten*; der Server rechnet das Bild fertig, wir sehen
+es nur nicht mehr an. Obsidians `requestUrl` kennt weder Abort noch Timeout, ein laufender
+HTTP-Aufruf lässt sich also nicht zurücknehmen.
+
+Für einen Stapellauf ist das trotzdem die nützliche Hälfte: das begonnene Bild läuft aus, das
+nächste startet nicht mehr. Ohne Signal ändert sich nichts — `apiVersion` bleibt 1.
+
 ## Installation
 
 Dieses Plugin wird **nicht über den Community-Store verteilt**. Es liegt auf einer eigenen

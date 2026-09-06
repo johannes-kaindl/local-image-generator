@@ -463,6 +463,9 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
     behauptete das fuer beide Module und war fuer `client.ts` gemessen falsch. Eigene
     Abweichung ist dagegen der gefangene `/history`-Poll in `waitForImage` (I1,
     Branch-Abschlussreview 2026-09-06): ein geworfener Poll beendet den Lauf hier nicht.
+    **Zweite eigene Abweichung seit 2026-09-06: `generate` und `waitForImage` kennen ein
+    `AbortSignal`** (Provider-API `signal`). Ein Re-Sync aus `yijing-oracle` entfernt sie —
+    und damit die halbe Zusage des Vertrags fuer den comfy-Modus.
   - **`workflow.ts`:** vier zusammenhaengende inhaltliche Aenderungen, die zusammen die
     Keine-Attrappen-Zusage fuer Steps und Groesse TRAGEN — (1) `WorkflowSlots.stepsField` ist
     nicht mehr nullable, (2) das Feld `workflowSteps` ist neu (Startwert des Reglers), (3)
@@ -515,6 +518,33 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   (`makeComfyClient`, 30 min) auf dieselbe Groessenordnung wie den A1111-Weg — der
   Client-Default von 10 min laesst einen Lauf mit Upscaler-Kette an einer Grenze scheitern,
   die in keinem Setting steht (I1, Branch-Abschlussreview 2026-09-06).
+- **`signal` ist im builtin-Modus ein ECHTER Abbruch und in den HTTP-Modi nur ein Ende der
+  WARTEZEIT — und diese Asymmetrie ist die Zusage, nicht ihr Mangel.** Die eingebaute Engine
+  prueft zwischen zwei Diffusionsschritten (`runDiffusion`, `throwIfAborted`) und laesst den
+  VAE-Decoder gar nicht erst laufen; `A1111Client` und `ComfyClient` koennen einen laufenden
+  Aufruf nicht zuruecknehmen (`requestUrl` kennt weder Abort noch Timeout) und pruefen
+  deshalb VOR dem Absenden bzw. zwischen zwei Polls. Der Server rechnet fertig.
+  **Nicht „vereinheitlichen"**: ein `signal`, das in beiden Modi dasselbe verspricht, muesste
+  im Server-Modus luegen — dieselbe Attrappe wie ein CFG-Regler ohne Wirkung. Der Nutzen im
+  Server-Modus ist trotzdem echt und der Grund fuer das Feature: bei einem Stapellauf laeuft
+  das begonnene Bild aus, das NAECHSTE startet nicht mehr.
+  ⚠️ **`tsc` verengt `req.signal?.aborted` nach der ersten Pruefung auf `false | undefined`**
+  und meldet die zweite (nach `await deps.run(...)`) als TS2367 — der Compiler haette hier
+  also die noetige Pruefung wegargumentiert, weil er nicht weiss, dass das Feld genau
+  waehrend des `await` umspringt. Deshalb steht in `plugin-api.ts` eine kleine Funktion
+  (`abgebrochen()`) statt zweier direkter Vergleiche: ein Aufruf sagt „neu lesen". Wer sie
+  wieder inline schreibt, bekommt den Typfehler zurueck — oder, schlimmer, loescht die
+  zweite Pruefung, und dann meldet ein Abbruch waehrend des Laufs `failed` mit roher
+  Backend-Meldung.
+  ⚠️ **`reason: "aborted"` steht bewusst NICHT in `ApiFailure`:** den Union teilt sich
+  `generate()` mit `status()`, und ein Status kann nicht „abgebrochen" sein — dieselbe
+  Trennung wie bei `failed`. `apiVersion` bleibt 1: wer kein `signal` schickt, sieht den Wert
+  nie.
+  ⓘ Der Abbruch waehrend des Laufs wird am ZUSTAND des Signals erkannt, nie am Meldungstext
+  des Backends — ein Textvergleich braeche bei jeder Uebersetzung und bei jedem Backend, das
+  anders formuliert. Die Gegenprobe dazu ist ein eigener Test („meldet einen ECHTEN
+  Fehlschlag weiter als failed, auch wenn ein Signal mitlaeuft"): ohne ihn verschluckte ein
+  gesetztes `signal` jede Backend-Meldung.
 - **Die Haertung hat genau eine Quelle** (`src/core/params.ts`, `hardenParams`). Zwei
   Haertungen bedeuten, dass die API andere Werte meldet, als das Panel in die Notiz schreibt.
 - **Ein Fremdlauf hinterlaesst im Panel KEINE Spur — auch nicht als Fehler.** `runGeneration`

@@ -195,6 +195,24 @@ and `save()` calls).
 is `"loading-model"` or `"generating"`; `pct` is `0`–`100`, or `null` when the backend reports
 no progress (Draw Things has no progress endpoint) — show an indeterminate spinner in that case.
 
+
+### Cancelling a run
+
+Pass an `AbortSignal` and the run comes back as `{ ok: false, reason: "aborted" }`:
+
+```js
+const ctl = new AbortController();
+const r = await api.generate({ prompt: "a lake at dusk", signal: ctl.signal });
+```
+
+**What cancelling actually does depends on the mode.** Built-in: a real stop — the diffusion
+loop quits between two steps and the decoder never runs. Server and ComfyUI: only the waiting
+ends; the server finishes the image, you just stop looking at it. Obsidian's `requestUrl`
+knows neither abort nor timeout, so an HTTP call already in flight cannot be taken back.
+
+For a batch this is still the useful half: the image in progress finishes remotely, the next
+one never starts. Passing no signal changes nothing — `apiVersion` stays 1.
+
 ## Installation
 
 This plugin is **not distributed through the community store**. It lives on its own forge,

@@ -78,6 +78,33 @@ describe("ComfyClient", () => {
     expect(body.prompt["3"]!.inputs.steps).toBe(9);
   });
 
+  it("signal: bricht die WARTESCHLEIFE ab, nachdem der Auftrag schon in der Queue liegt", async () => {
+    // Die ehrliche Haelfte der Zusage: der Auftrag ist abgeschickt und ComfyUI rechnet ihn
+    // fertig — wir hoeren nur auf hinzusehen. Gemessen daran, dass NACH dem Abbruch kein
+    // weiterer /history-Poll mehr kommt; der POST dagegen ist bereits passiert.
+    const ctl = new AbortController();
+    const pending = { PID: { status: { status_str: "running" }, outputs: {} } };
+    const { transport, calls } = stub({ historySteps: [pending, pending, pending] });
+    const echterGetJson = transport.getJson;
+    transport.getJson = async (url) => {
+      ctl.abort(); // beim ERSTEN Poll abbrechen
+      return echterGetJson(url);
+    };
+    await expect(
+      new ComfyClient("http://x", WORKFLOW, transport).generate({ ...REQ, signal: ctl.signal }),
+    ).rejects.toThrow(/abgebrochen|aborted/i);
+    expect(calls.filter((c) => c.url.includes("/prompt"))).toHaveLength(1);
+    expect(calls.filter((c) => c.url.includes("/history"))).toHaveLength(1);
+  });
+
+  it("signal: schickt einen VORHER abgebrochenen Auftrag gar nicht erst in die Queue", async () => {
+    const { transport, calls } = stub({ historySteps: [DONE] });
+    await expect(
+      new ComfyClient("http://x", WORKFLOW, transport).generate({ ...REQ, signal: AbortSignal.abort() }),
+    ).rejects.toThrow(/abgebrochen|aborted/i);
+    expect(calls).toHaveLength(0);
+  });
+
   it("pollt, bis outputs da sind", async () => {
     const pending = { PID: { status: { status_str: "running", completed: false, messages: [] }, outputs: {} } };
     const { transport, calls } = stub({ historySteps: [pending, pending, DONE] });

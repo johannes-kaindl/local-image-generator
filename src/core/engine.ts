@@ -59,6 +59,12 @@ export interface GenerateRequest {
   /** img2img (Spec 4a): Vorlagen-Pixel CHW [-1,1], BEREITS auf Zielgroesse (Base64→Pixel
    *  braucht DOM und sitzt in png.ts/local-engine — Pure-Core-Schnitt). undefined = txt2img. */
   initPixels?: Float32Array;
+  /** Bricht den Lauf zwischen zwei Diffusionsschritten ab (Provider-API `signal`, seit 2026-09-06).
+   *  Hier ist der Abbruch ECHT — anders als im Server-Modus, wo `requestUrl` weder Abort
+   *  noch Timeout kennt und nur die Wartezeit endet. Geprueft wird VOR jedem Schritt und
+   *  vor dem Decoder, nicht mittendrin: ein halb gerechnetes Latent ergaebe ein Bild, das
+   *  wie ein misslungener Lauf aussieht statt wie ein abgebrochener. */
+  signal?: AbortSignal;
   /** Schon GEHAERTETE Aenderungsstaerke, kontinuierlich in [0,1]. Die Engine leitet daraus
    *  ihren Einstiegspunkt selbst ab (denoiseEntry im Scheduler, interpoliert zwischen zwei
    *  Sigma-Stufen statt zu runden). */
@@ -128,6 +134,13 @@ export function firstOutput(session: Session, outputs: Record<string, OrtValue>)
 // dem UNet zusaetzlich zu `sample`/`timestep` gibt — SD-Turbo nur `encoder_hidden_states`,
 // SDXL zusaetzlich `text_embeds`/`time_ids`. Reine Latents-Rueckgabe (kein VAE-Decode) —
 // dafuer ist `decodeLatents` zustaendig.
+/** Wirft, wenn der Aufrufer abgebrochen hat. Eigene Funktion statt eines inline-`if`, weil
+ *  die Meldung an drei Stellen identisch sein muss: `plugin-api.ts` unterscheidet einen
+ *  Abbruch nicht am Text, aber ein Mensch im Log sehr wohl. */
+export function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) throw new Error("Lauf abgebrochen (aborted)");
+}
+
 export async function runDiffusion(
   unet: Session,
   schedule: Schedule,
@@ -140,6 +153,7 @@ export async function runDiffusion(
   // Zeitplan — ohne `init` bleibt das Verhalten fuer txt2img-Aufrufer EXAKT wie zuvor
   // (startAt 0, volle Schrittzahl, Fortschritt 1..total).
   init?: { latents: Float32Array; startAt: number },
+  signal?: AbortSignal,
 ): Promise<Float32Array> {
   const n = latentDims.reduce((a, b) => a * b, 1);
   const startAt = init?.startAt ?? 0;
@@ -152,6 +166,10 @@ export async function runDiffusion(
   }
 
   for (let i = startAt; i < schedule.timesteps.length; i++) {
+    // VOR dem Schritt, nicht danach: ein bereits abgebrochener Lauf soll die GPU nicht noch
+    // einmal beschaeftigen. Der erste Durchlauf prueft damit auch den Fall „abgebrochen,
+    // bevor ueberhaupt etwas lief".
+    throwIfAborted(signal);
     const sigma = schedule.sigmas[i]!;
     const scaled = scaleInput(latents, sigma);
     const unetOut = await unet.run({
@@ -294,7 +312,11 @@ export class SdTurboEngine implements BuiltinEngine {
         { encoder_hidden_states: floatFeed(this.sessions.unet, "encoder_hidden_states", hiddenF32, hidden.dims) },
         onProgress,
         init,
+        req.signal,
       );
+      // Zweiter Halt vor dem Decoder: der ist der teuerste Einzelschritt (SDXLs Decoder
+      // laeuft in fp32) und produziert das Bild, das nach dem Abbruch niemand mehr will.
+      throwIfAborted(req.signal);
       return await decodeLatents(this.sessions.vaeDecoder, latents, latentDims, VAE_SCALING, IMAGE_SIZE, req.seed);
     } finally {
       this._busy = false;

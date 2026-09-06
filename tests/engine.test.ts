@@ -357,6 +357,32 @@ describe("SdTurboEngine", () => {
     // dieselbe Form wie am Ende eines echten Laufs (letzter Ruf: total/total).
     expect(progress.at(-1)).toEqual([1, 1]);
   });
+  it("signal: bricht die Diffusionsschleife ZWISCHEN zwei Schritten ab, statt zu Ende zu rechnen", async () => {
+    // Die Zusage der Provider-API fuer den builtin-Modus: `signal` ist dort ein ECHTER
+    // Abbruch, kein blosses Wegsehen. Gemessen an der Zahl der UNet-Laeufe — der
+    // Rueckgabewert allein wuerde nicht unterscheiden, ob die GPU weitergerechnet hat.
+    const log: string[] = [];
+    const s = fakeSessions(log);
+    const ctl = new AbortController();
+    const baseUnetRun = s.unet.run;
+    s.unet = {
+      ...s.unet,
+      run: async (feeds) => {
+        // Nach dem ERSTEN Schritt abbrechen: danach darf kein weiterer folgen.
+        ctl.abort();
+        return baseUnetRun(feeds);
+      },
+    };
+    const engine = new SdTurboEngine(s, tokData);
+    await expect(
+      engine.generate({ prompt: "cat", steps: 4, seed: 9, signal: ctl.signal }),
+    ).rejects.toThrow(/abgebrochen|aborted/i);
+    expect(log.filter((l) => l === "unet")).toHaveLength(1);
+    // Und der Decoder darf gar nicht erst laufen — ein halbes Latent ergaebe ein Bild,
+    // das wie ein misslungener Lauf aussieht statt wie ein abgebrochener.
+    expect(log).not.toContain("vae");
+  });
+
   it("dispose ruft release auf allen vier Sessions auf (idempotent)", async () => {
     const released: string[] = [];
     const s = fakeSessions([]);

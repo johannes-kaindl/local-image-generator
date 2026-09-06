@@ -18,6 +18,10 @@
 //
 // Genau deshalb ist /history hier der ERGEBNISkanal und kein Nebenweg — s. `waitForImage`.
 import { normalizeEndpoint } from "../../vendor/kit/endpoint";
+// ⚠️ Eigene Abweichung gegenueber der Quelle (2026-09-06, Provider-API `signal`): `generate`
+// und `waitForImage` kennen ein `AbortSignal`. Ein Re-Sync aus `yijing-oracle` entfernt das
+// wieder — die Zusage in `ApiRequest.signal` haengt daran (s. AGENTS.md § Gotchas, Eintrag
+// zum Fork).
 import { type ImageBackend, type ImageRequest } from "../txt2img";
 import { inspectWorkflow, patchWorkflow, type ComfyGraph } from "./workflow";
 
@@ -108,8 +112,10 @@ export class ComfyClient implements ImageBackend {
       height: req.height,
     });
 
+    // Vor dem Absenden: was noch nicht in ComfyUIs Queue liegt, muss auch nicht hinein.
+    if (req.signal?.aborted === true) throw new Error("Lauf abgebrochen (aborted)");
     const promptId = await this.submit(patched);
-    const image = await this.waitForImage(promptId);
+    const image = await this.waitForImage(promptId, req.signal);
     return this.fetchImage(image);
   }
 
@@ -139,10 +145,16 @@ export class ComfyClient implements ImageBackend {
     return promptId;
   }
 
-  private async waitForImage(promptId: string): Promise<ComfyImageRef> {
+  private async waitForImage(promptId: string, signal?: AbortSignal): Promise<ComfyImageRef> {
     const deadline = this.transport.now() + this.timeoutMs;
 
     for (;;) {
+      // ⚠️ Abbruch heisst AB HIER nur noch: wir hoeren auf zu warten. Der Auftrag liegt in
+      // ComfyUIs Queue und wird zu Ende gerechnet — `/interrupt` waere ein Eingriff in eine
+      // fremde Queue, die auch Auftraege anderer Nutzer traegt, und traefe im Zweifel den
+      // falschen Job. Genau das sagt `ApiRequest.signal` zu: im Server- und comfy-Modus
+      // endet die Wartezeit, nicht die Erzeugung.
+      if (signal?.aborted === true) throw new Error("Lauf abgebrochen (aborted)");
       // Ein geworfener Poll beendet den Lauf NICHT (lokale Abweichung von der Quelle, I1 des
       // Branch-Abschlussreviews 2026-09-06). `/history` ist der ERGEBNISkanal: der Wirt faehrt
       // ihn ueber `httpGetJson` mit kurzem Zeitlimit, und ComfyUI stallt seinen Loop

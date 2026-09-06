@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **`generate()` can be cancelled: `ApiRequest.signal` takes an `AbortSignal`.** A cancelled
+  run comes back as `{ ok: false, reason: "aborted" }`. Additive — a consumer that does not
+  pass a signal never sees the new value, and `apiVersion` stays 1 (same pattern as
+  `recheck()` in 0.10.0).
+
+  **What "cancel" means depends on the mode, and the difference is a promise, not an
+  accident.** In **built-in** mode it is a real stop: the diffusion loop checks between two
+  steps and stops computing, and the VAE decoder — the single most expensive step — never
+  runs. In **server** and **ComfyUI** mode it only ends the *waiting*: the server finishes
+  the image, you just stop looking at it. Obsidian's `requestUrl` knows neither abort nor
+  timeout, so there is no way to take back an HTTP call that is already in flight, and
+  ComfyUI's `/interrupt` would reach into a queue that may hold other people's jobs.
+
+  Practical consequence for a batch (the case this came from — generating every image slot
+  in a slide deck): cancelling lets the *current* image finish on the server, but the *next*
+  one never starts. Model loading is not interruptible either way — ORT offers no abort for
+  `InferenceSession.create`.
+
 ## [0.13.0] — 2026-09-06
 
 ### Added

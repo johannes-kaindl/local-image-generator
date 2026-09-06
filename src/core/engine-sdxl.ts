@@ -12,6 +12,7 @@ import {
   idsFeed,
   noisedInitLatents,
   runDiffusion,
+  throwIfAborted,
   toF32,
   type BuiltinEngine,
   type GenerateRequest,
@@ -210,7 +211,11 @@ export class SdxlTurboEngine implements BuiltinEngine {
         },
         onProgress,
         init,
+        req.signal,
       );
+      // Zweiter Halt vor dem Decoder: der ist der teuerste Einzelschritt (SDXLs Decoder
+      // laeuft in fp32) und produziert das Bild, das nach dem Abbruch niemand mehr will.
+      throwIfAborted(req.signal);
       return await decodeLatents(this.sessions.vaeDecoder, latents, latentDims, this.opts.vaeScaling, size, req.seed);
     } finally {
       this._busy = false;

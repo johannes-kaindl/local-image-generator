@@ -118,14 +118,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       },
       isBusy: () => this.isBusy(),
       harden: (input) => hardenParams(input, this.hardenContext()),
-      run: async (params, onProgress, initImageData) => {
+      run: async (params, onProgress, initImageData, signal) => {
         // Ein Konsument haelt seine api-Referenz ueber unser Entladen hinaus. Ohne diesen
         // Guard baut ensureLocalEngine() eine neue GPU-Session fuer eine Plugin-Instanz,
         // die es nicht mehr gibt — und niemand disposed sie je.
         if (this.unloaded) return { ok: false, message: "plugin unloaded" };
         this.apiRunning = true;
         try {
-          return await this.runGeneration(params, initImageData ?? null, onProgress, { external: true });
+          return await this.runGeneration(params, initImageData ?? null, onProgress, { external: true, signal });
         } finally {
           this.apiRunning = false;
         }
@@ -728,7 +728,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
      *  das Bild — sonst laege ein Megabyte pro Eintrag in data.json (Spec §1). */
     initImageData: string | null,
     onProgress?: ApiRequest["onProgress"],
-    opts?: { external?: boolean },
+    opts?: { external?: boolean; signal?: AbortSignal },
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
     const backend: ImageBackend = builtin
@@ -809,7 +809,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       });
     }, 1000);
     try {
-      const png = await backend.generate({ ...params, initImageData });
+      const png = await backend.generate({ ...params, initImageData, signal: opts?.signal });
       phase = "done";
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
       // keine State-Mutation, kein refreshViews — nur das finally räumt den Timer ab.

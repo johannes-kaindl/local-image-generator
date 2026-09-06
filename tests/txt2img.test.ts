@@ -27,6 +27,19 @@ describe("A1111Client", () => {
     const client = new A1111Client("http://x", async () => ({ status: 200, json: { images: [] } }));
     await expect(client.generate(req)).rejects.toThrow("txt2img: empty result");
   });
+  it("signal: schickt einen abgebrochenen Auftrag GAR NICHT erst los", async () => {
+    // Was dieser Client kann und was nicht: einen laufenden Aufruf abbrechen geht nicht
+    // (`requestUrl` kennt kein Abort), einen nicht begonnenen sein lassen schon. Fuer einen
+    // Durchlauf ueber viele Bilder ist genau das der Wert — gemessen an der Zahl der POSTs,
+    // nicht am Rueckgabewert.
+    let posts = 0;
+    const client = new A1111Client("http://x", async () => {
+      posts++;
+      return { status: 200, json: { images: ["BASE64PNG"] } };
+    });
+    await expect(client.generate({ ...req, signal: AbortSignal.abort() })).rejects.toThrow(/abgebrochen|aborted/i);
+    expect(posts).toBe(0);
+  });
 });
 
 describe("A1111Client — img2img", () => {

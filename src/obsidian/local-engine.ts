@@ -115,7 +115,11 @@ export class LocalEngineBackend implements ImageBackend {
     const size = this.pickSize(req);
     const init = req.initImageData !== null ? await this.deps.decodeImage(req.initImageData, size) : undefined;
     const res = await engine.generate(
-      { prompt: req.prompt, steps, seed: req.seed, size, initPixels: init, denoising: req.denoising ?? undefined },
+      // `signal` gehoert VOR den Fortschritts-Callback in die Kette: hier ist der Abbruch
+      // echt (die Diffusionsschleife prueft ihn zwischen zwei Schritten), anders als in den
+      // HTTP-Backends. Das Modell-Laden davor bleibt unabbrechbar — ORT kennt kein Abort
+      // fuer `InferenceSession.create` (s. AGENTS.md, Session-Wachhund).
+      { prompt: req.prompt, steps, seed: req.seed, size, initPixels: init, denoising: req.denoising ?? undefined, signal: req.signal },
       (s, t) => this.onPhase?.("generating", s, t),
     );
     const dataUrl = this.deps.encodePng(res.rgba, res.width, res.height);

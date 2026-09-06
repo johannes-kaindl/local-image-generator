@@ -202,6 +202,69 @@ describe("generate()", () => {
   });
 });
 
+describe("generate() — Abbruch ueber signal", () => {
+  it("weist ein bereits abgebrochenes Signal ab, OHNE das Backend zu rufen", async () => {
+    const laeufe: number[] = [];
+    const api = createImageGenerationApi(
+      deps({
+        run: async () => {
+          laeufe.push(1);
+          return { ok: true, base64: "PNGDATA" };
+        },
+      }),
+    );
+    const r = await api.generate({ prompt: "a cat", signal: AbortSignal.abort() });
+    expect(r).toEqual({ ok: false, reason: "aborted" });
+    // Der eigentliche Punkt: nicht der Rueckgabewert, sondern dass gar nicht gerechnet wurde.
+    // Ein Abbruch, der das Backend trotzdem startet, kostet im builtin-Modus Minuten GPU-Zeit.
+    expect(laeufe).toHaveLength(0);
+  });
+
+  it("reicht das Signal an das Backend durch, statt nur vorher zu pruefen", async () => {
+    // Ohne Durchreichen waere der Abbruch ein reines Vorher-Gate: wer waehrend eines
+    // laufenden Bildes abbricht, wuerde bis zum Ende warten. Genau der Fall, fuer den die
+    // Anfrage aus markdown-presentation kam (Deck-Durchlauf ueber zwoelf Folien).
+    const gesehen: Array<AbortSignal | undefined> = [];
+    const ctl = new AbortController();
+    const api = createImageGenerationApi(
+      deps({
+        run: async (_p, _prog, _init, signal) => {
+          gesehen.push(signal);
+          return { ok: true, base64: "PNGDATA" };
+        },
+      }),
+    );
+    await api.generate({ prompt: "a cat", signal: ctl.signal });
+    expect(gesehen).toEqual([ctl.signal]);
+  });
+
+  it("meldet einen Abbruch WAEHREND des Laufs als aborted, nicht als failed", async () => {
+    // Das Backend wirft beim Abbruch (so macht es die builtin-Engine). Ohne diese
+    // Unterscheidung kaeme der Abbruch beim Konsumenten als `failed` mit roher
+    // Backend-Meldung an — also als Defekt, obwohl er selbst abgebrochen hat.
+    const ctl = new AbortController();
+    const api = createImageGenerationApi(
+      deps({
+        run: async () => {
+          ctl.abort();
+          return { ok: false, message: "Lauf abgebrochen (aborted)" };
+        },
+      }),
+    );
+    const r = await api.generate({ prompt: "a cat", signal: ctl.signal });
+    expect(r).toEqual({ ok: false, reason: "aborted" });
+  });
+
+  it("meldet einen ECHTEN Fehlschlag weiter als failed, auch wenn ein Signal mitlaeuft", async () => {
+    // Gegenprobe zur Zeile darueber: das Signal allein darf nicht jeden Fehlschlag in einen
+    // Abbruch umdeuten — sonst verschluckt ein gesetztes `signal` jede Backend-Meldung.
+    const ctl = new AbortController();
+    const api = createImageGenerationApi(deps({ run: async () => ({ ok: false, message: "CUDA out of memory" }) }));
+    const r = await api.generate({ prompt: "a cat", signal: ctl.signal });
+    expect(r).toEqual({ ok: false, reason: "failed", message: "CUDA out of memory" });
+  });
+});
+
 describe("generate() — img2img", () => {
   it("meldet die img2img-Faehigkeit in capabilities (seit 0.11 in beiden Modi)", () => {
     expect(createImageGenerationApi(deps({ getMode: () => "server" })).status().capabilities.initImage).toBe(true);

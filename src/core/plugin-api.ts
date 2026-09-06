@@ -33,6 +33,22 @@ export interface ApiRequest {
    *  txt2img. Seit 0.11 in BEIDEN Modi wirksam — `capabilities.initImage` sagt vorher, ob
    *  das aktuelle Backend es ueberhaupt anbietet. */
   initImage?: string;
+  /** Bricht den Lauf ab. Ergebnis ist dann `{ ok: false, reason: "aborted" }`.
+   *
+   *  ⚠️ **Was „abbrechen" heisst, haengt am Modus — und das ist eine Zusage, keine
+   *  Ungenauigkeit.** Im **builtin**-Modus ist es ein echter Abbruch: die Diffusionsschleife
+   *  prueft zwischen zwei Schritten und hoert auf zu rechnen. Im **server**- und
+   *  **comfy**-Modus bricht `signal` nur die WARTEZEIT ab — der Server rechnet sein Bild
+   *  fertig, wir sehen es nur nicht mehr an. `requestUrl` (Obsidian) kennt weder Abort noch
+   *  Timeout, es gibt also gar keinen Weg, einen laufenden HTTP-Aufruf zurueckzunehmen.
+   *
+   *  Das steht hier so ausdruecklich, weil die Alternative eine Attrappe waere: ein Feld,
+   *  das in einem Modus echt und im anderen kosmetisch ist, muss den Unterschied im Vertrag
+   *  tragen — sonst baut ein Konsument einen „Stop"-Knopf, der die Serverlast nicht senkt,
+   *  und wundert sich ueber die GPU-Auslastung. Praktische Folge fuer einen Deck-Durchlauf:
+   *  nach einem Abbruch im Server-Modus laeuft das begonnene Bild noch, das NAECHSTE
+   *  startet aber nicht mehr. */
+  signal?: AbortSignal;
   /** Wie stark die Vorlage geaendert werden darf, 0..1 (A1111: `denoising_strength`).
    *  Ohne `initImage` ohne Wirkung. Fehlt es, gilt 0.75.
    *
@@ -85,7 +101,13 @@ export interface ApiImage { base64: string; params: ApiParams }   // PNG ohne da
 export type ApiResult =
   | { ok: true; image: ApiImage }
   | { ok: false; reason: ApiFailure }
-  | { ok: false; reason: "failed"; message: string };  // rohe Backend-Meldung, unübersetzt
+  | { ok: false; reason: "failed"; message: string }   // rohe Backend-Meldung, unübersetzt
+  /** Der Aufrufer hat ueber `ApiRequest.signal` abgebrochen. BEWUSST kein Wert in
+   *  `ApiFailure`: den Union teilt sich `generate()` mit `status()`, und ein Status kann
+   *  nicht „abgebrochen" sein — dieselbe Trennung wie bei `failed`. Ein Konsument, der
+   *  `signal` nicht setzt, bekommt diesen Wert nie, die Erweiterung ist fuer ihn also
+   *  unsichtbar (`apiVersion` bleibt 1, additiv wie `recheck()` in 0.10.0). */
+  | { ok: false; reason: "aborted" };
 
 export interface ApiStatus {
   apiVersion: number;
@@ -183,6 +205,9 @@ export interface ApiDeps {
     /** Die BYTES der Vorlage — bewusst ein eigener Parameter statt eines Feldes in
      *  `params`: das Rezept traegt nur die Herkunft, nie das Bild (Spec §1). */
     initImageData?: string | null,
+    /** Durchgereicht aus `ApiRequest.signal`. Der Wirt gibt es an das Backend weiter; was
+     *  ein Abbruch dort bewirkt, haengt am Modus (s. `ApiRequest.signal`). */
+    signal?: AbortSignal,
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }>;
   save(image: ApiImage, createNote: boolean): Promise<ApiSaveResult>;
   /** Voreinstellung des Nutzers (settings.createMode === "note"). */
@@ -260,6 +285,17 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
     },
 
     async generate(req: ApiRequest): Promise<ApiResult> {
+      // Als FUNKTION, nicht als `if (req.signal?.aborted === true)` zweimal hingeschrieben:
+      // `aborted` ist ein veraenderliches Feld, das genau waehrend `deps.run(...)` umspringt
+      // — und TypeScript weiss das nicht. Nach einer direkten Pruefung verengt es den Typ auf
+      // `false | undefined` und meldet die zweite unten als „unintentional comparison"
+      // (TS2367). Der Compiler haette hier also die noetige Pruefung wegargumentiert; ein
+      // Aufruf ist die ehrliche Form, weil er sagt: der Wert wird NEU gelesen.
+      const abgebrochen = (): boolean => req.signal?.aborted === true;
+      // Vor allem anderen: ein bereits abgebrochener Auftrag darf nicht erst das Backend
+      // beschaeftigen. Im builtin-Modus kostet ein gestarteter Lauf Minuten GPU-Zeit, die
+      // niemand mehr abholt.
+      if (abgebrochen()) return { ok: false, reason: "aborted" };
       if (deps.isBusy()) return { ok: false, reason: "busy" };
       const r = deps.readiness();
       if (!r.ready) return { ok: false, reason: r.reason };
@@ -272,8 +308,16 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
         ...req,
         initImage: req.initImage !== undefined ? { ref: null } : undefined,
       });
-      const out = await deps.run(params, req.onProgress, req.initImage ?? null);
-      if (!out.ok) return { ok: false, reason: "failed", message: out.message };
+      const out = await deps.run(params, req.onProgress, req.initImage ?? null, req.signal);
+      if (!out.ok) {
+        // Reihenfolge ist die Aussage: ein Fehlschlag WAEHREND eines abgebrochenen Laufs ist
+        // ein Abbruch, kein Defekt — sonst kaeme beim Konsumenten die rohe Backend-Meldung
+        // an, obwohl er selbst gestoppt hat. Geprueft wird der Zustand des Signals, nicht der
+        // Meldungstext: ein Textvergleich braeche bei jeder Uebersetzung und bei jedem
+        // Backend, das anders formuliert.
+        if (abgebrochen()) return { ok: false, reason: "aborted" };
+        return { ok: false, reason: "failed", message: out.message };
+      }
       return { ok: true, image: { base64: out.base64, params: toApiParams(params) } };
     },
 

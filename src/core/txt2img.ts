@@ -37,6 +37,13 @@ export interface ImageRequest {
   initImageData: string | null;
   /** Nur bei img2img gesetzt (A1111: `denoising_strength`). */
   denoising: number | null;
+  /** Abbruch durch den Aufrufer (Provider-API `signal`, seit 2026-09-06). **Was ein Backend damit tun
+   *  KANN, ist verschieden — und der Unterschied ist zugesagt, nicht zufaellig:** die
+   *  eingebaute Engine bricht ihre Diffusionsschleife wirklich ab, die HTTP-Backends
+   *  koennen es nicht (`requestUrl` kennt weder Abort noch Timeout, s. AGENTS.md) und
+   *  beenden nur ihre Wartezeit — der Server rechnet fertig. Ein Backend, das `signal`
+   *  ignoriert, bleibt korrekt: der Abbruch greift dann erst beim naechsten Auftrag. */
+  signal?: AbortSignal;
 }
 
 export interface ImageBackend {
@@ -53,6 +60,10 @@ export class A1111Client implements ImageBackend {
   async generate(req: ImageRequest): Promise<string> {
     // Die Bytes im Auftrag entscheiden den Endpunkt. Beide sprechen denselben Body-Stil,
     // img2img ergaenzt nur `init_images` und `denoising_strength`.
+    // Was dieser Client kann: einen NICHT begonnenen Auftrag sein lassen. Was er nicht
+    // kann: einen laufenden zuruecknehmen — `requestUrl` kennt weder Abort noch Timeout
+    // (AGENTS.md). Deshalb steht die Pruefung hier vorn und nicht irgendwo im Aufruf.
+    if (req.signal?.aborted === true) throw new Error("Lauf abgebrochen (aborted)");
     const img2img = req.initImageData !== null;
     const kind = img2img ? "img2img" : "txt2img";
     const url = `${normalizeEndpoint(this.endpoint)}/sdapi/v1/${kind}`;
