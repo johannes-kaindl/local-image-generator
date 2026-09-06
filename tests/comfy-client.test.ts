@@ -15,9 +15,12 @@ const MINIMAL_GRAPH = {
 
 const WORKFLOW = JSON.stringify(sdxl);
 // Anders als in der Quelle ist `steps` hier nicht nullable — ein konkreter Wert statt
-// `null`, der Kommentar in Test 1 ist entsprechend angepasst (kein Workflow-Fallback mehr).
+// `null`. Bewusst 9 statt 6: die Fixture (tests/fixtures/comfy-sdxl.json) traegt selbst
+// "steps": 6 am Sampler — mit gleichem Wert wuerde Test 1 unten auch dann gruen bleiben,
+// wenn client.ts steps gar nicht an patchWorkflow reichte und der Fixture-Wert stehen
+// bliebe. Nur ein abweichender Wert belegt, dass wirklich der Request-Wert geschrieben wird.
 const REQ: ImageRequest = {
-  prompt: "a lake", negativePrompt: "text", width: 768, height: 768, steps: 6, seed: 42,
+  prompt: "a lake", negativePrompt: "text", width: 768, height: 768, steps: 9, seed: 42,
   cfg: 7, initImageData: null, denoising: null,
 };
 
@@ -70,7 +73,9 @@ describe("ComfyClient", () => {
     expect(body.client_id).toBe("CID");
     expect(body.prompt["6"]!.inputs.text).toBe("a lake");
     expect(body.prompt["3"]!.inputs.seed).toBe(42);
-    expect(body.prompt["3"]!.inputs.steps).toBe(6); // REQ.steps wird direkt durchgereicht
+    // 9 statt der Fixture-eigenen 6: nur so belegt die Zeile, dass REQ.steps wirklich
+    // an patchWorkflow durchgereicht wird, statt zufaellig mit dem Fixture-Wert zu matchen.
+    expect(body.prompt["3"]!.inputs.steps).toBe(9);
   });
 
   it("pollt, bis outputs da sind", async () => {
@@ -173,5 +178,6 @@ describe("ComfyClient", () => {
     const body = JSON.stringify(gesendet[0]);
     expect(body).not.toContain("SOLLTE-NICHT-ANKOMMEN");
     expect(body).not.toContain("denoising");
+    expect(body).not.toContain("cfg");
   });
 });
