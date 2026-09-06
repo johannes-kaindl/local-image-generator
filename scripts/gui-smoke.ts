@@ -998,7 +998,10 @@ async function runControlVisibilityCheck(cdp: Cdp): Promise<void> {
   if (raster.min !== dMin || raster.step !== dStep) rasterSchief.push(`min/step ${raster.min}/${raster.step} (erwartet ${dMin}/${dStep} — konstant seit Task 4)`);
   if (raster.wert !== "0.75") rasterSchief.push(`value ${raster.wert} (erwartet 0.75 — eine Steps-Aenderung darf den Denoise-Wert nicht mehr veraendern)`);
   if (raster.anzeige !== "0.75") rasterSchief.push(`Beschriftung „${raster.anzeige}" ≠ 0.75`);
-  if (rasterSchief.length > 0) teile.push(`Denoise-Regler auf Steps-Aenderung reagiert (sollte seit Task 4 nicht mehr): ${rasterSchief.join(", ")}`);
+  // Positiv formuliert, nicht als verneinter Sollzustand: „reagiert (sollte nicht mehr)"
+  // zwingt den Leser im Fehlerfall zu zwei Umkehrungen, bevor er weiss, was schieflief.
+  if (rasterSchief.length > 0)
+    teile.push(`Denoise-Regler muss eine Steps-Aenderung unveraendert ueberstehen (seit Task 4), hat sich aber veraendert: ${rasterSchief.join(", ")}`);
 
   record(
     "17. Die modusabhängigen Regler sind auch GERENDERT weg — und kommen zurück",
@@ -2120,11 +2123,14 @@ async function runBuiltinImg2ImgCheck(
     // RMSE(A,D) < RMSE(A,E) < RMSE(A,F) und ging am 2026-09-05 im ersten Lauf ROT: SD-Turbo
     // lieferte 14.48 / 23.08 / 21.42 — 0.625 liegt WEITER von der Vorlage weg als 0.75.
     // (SDXL-Turbo war im selben Lauf monoton: 19.13 / 34.89 / 36.59.) Das ist kein Defekt,
-    // sondern eine Eigenschaft des Aufbaus: bei steps=4 startet 0.5 am Anker 2 (zwei
-    // UNet-Schritte), 0.625 und 0.75 beide am Anker 1 (drei Schritte) mit unterschiedlichem,
-    // interpoliertem Sigma UND interpoliertem Timestep — und SD-Turbo ist auf genau vier
-    // Timesteps destilliert, ein Zwischenwert ist fuer sein UNet leicht ausserhalb der
-    // Verteilung. „Mehr denoising = weiter weg" gilt also grob (das prueft die
+    // sondern eine Eigenschaft des Aufbaus. Bei steps=4 rechnet `denoiseEntry` t = (1−d)·4,
+    // also: 0.5 → t=2.0 (Anker 2, frac 0) · 0.625 → t=1.5 (Anker 1, frac 0.5) · 0.75 → t=1.0
+    // (Anker 1, frac 0). **Von den dreien ist 0.625 der EINZIGE mit interpoliertem Sigma und
+    // Timestep** — 0.5 und 0.75 sind exakte Anker. Und SD-Turbo ist auf genau vier Timesteps
+    // destilliert, ein Zwischenwert ist fuer sein UNet also leicht ausserhalb der Verteilung:
+    // der eine interpolierte Punkt ist der eine, der aus der Reihe faellt.
+    // ⓘ Diese Zeile behauptete bis 2026-09-06, 0.625 UND 0.75 seien interpoliert (Nachlese-
+    // Befund N3). Das war falsch und machte das Argument zugleich schwaecher, als es ist. „Mehr denoising = weiter weg" gilt also grob (das prueft die
     // 0.25-gegen-1.0-Monotonie eine Zeile weiter unten), aber nicht zwischen benachbarten
     // Ankern. Ein Kriterium, das nur bei einem der beiden Modelle stimmt, misst das Modell,
     // nicht den Umbau.

@@ -226,6 +226,8 @@ describe("SdTurboEngine", () => {
     expect(startAt).toBe(2); // gemessen: denoiseEntry(4, 0.5) → Einstieg beim 3. von 4 Schritten
     expect(log.filter((l) => l === "unet")).toHaveLength(steps - startAt);
   });
+  // ⚠️ Paar-Test mit „img2img ersetzt den Folgen-Eintrag" weiter unten: dieser misst das
+  // SIGMA, jener den TIMESTEP. Begruendung dort.
   it("img2img: Start-Latents entsprechen dem verrauschten Vorlagen-Latent am Einstiegspunkt (f16-Toleranz)", async () => {
     const seenFirstSample: Float32Array[] = [];
     const s = fakeSessions([]);
@@ -261,6 +263,13 @@ describe("SdTurboEngine", () => {
     //
     // Gemessen wird das ueber den TIMESTEP, den das UNet als Feed bekommt: bei einem
     // Zwischenwert darf er NICHT einem der Anker entsprechen.
+    //
+    // ⚠️ **Paar-Test.** Der Einstiegspunkt hat ZWEI Haelften, und jeder der beiden Tests deckt
+    // nur eine: „Start-Latents entsprechen dem verrauschten Vorlagen-Latent" (oben) misst das
+    // SIGMA, dieser hier den TIMESTEP. Wer einen von beiden umbaut oder streicht, laesst die
+    // andere Haelfte ungeprueft — und ein falscher Timestep bei richtigem Sigma ergibt kein
+    // Fehlerbild, sondern ein leise schlechteres Ergebnis (das UNet bekaeme die
+    // Konditionierung des Ankers).
     const steps = 4;
     const denoising = 0.625; // zwischen zwei Stufen
     const sched = makeSchedule(steps);
@@ -334,8 +343,16 @@ describe("SdTurboEngine", () => {
     const lat = latentFeeds[0]!;
     expect(lat.length).toBeGreaterThan(0);
     expect(Array.from(lat).some((v) => Number.isNaN(v))).toBe(false);
-    // Das BILD, nicht nur der Typ: NaN-Latents ergaeben ueberall 0 (schwarz).
-    expect(Array.from(res.rgba.subarray(0, 3 * 64)).some((v) => v !== 0)).toBe(true);
+    // Das BILD, nicht nur der Typ: NaN-Latents ergaeben ueberall 0 (schwarz), gesunde
+    // Latents von 0 dagegen mittelgrau (128). ⚠️ Der ALPHA-Kanal muss raus: `chwToRgba`
+    // schreibt in jedes vierte Byte konstant 255, ein `some(v => v !== 0)` ueber die rohen
+    // RGBA-Bytes besteht deshalb auch ein vollstaendig schwarzes NaN-Bild — die Zusicherung
+    // haette nie rot werden koennen (Nachlese-Befund N1, 2026-09-05).
+    expect(
+      Array.from(res.rgba.subarray(0, 4 * 64))
+        .filter((_, i) => i % 4 !== 3)
+        .some((v) => v !== 0),
+    ).toBe(true);
     // Der Fortschritt darf nicht auf halbem Wege stehenbleiben — der Aufrufer sieht
     // dieselbe Form wie am Ende eines echten Laufs (letzter Ruf: total/total).
     expect(progress.at(-1)).toEqual([1, 1]);

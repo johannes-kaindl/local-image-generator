@@ -123,7 +123,8 @@ server mode are unchanged (`1` and the requested value).
 
 `capabilities().maxSteps` now reports 8. A request with `denoising: 0.65` returns 0.65
 instead of 0.75 — closer to what you asked for, never further away. `denoising: 0` returns
-the template unchanged instead of a black image. `apiVersion` stays 1.
+the template through a VAE round-trip instead of a black image — visually the template, not
+a byte-identical copy of it. `apiVersion` stays 1.
 
 ## [0.11.2] — 2026-09-03
 

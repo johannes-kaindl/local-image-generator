@@ -65,6 +65,14 @@ In every case, your prompts and images never leave your machine.
   scale it. More steps also give the slider more room: the entry point is interpolated,
   but the *meaning* of a given denoising value shifts with the step count — a recipe
   saved at 4 steps will not look the same at 8.
+  One honest caveat for the built-in **SD-Turbo** at low step counts: turning the slider up
+  does not always move you further from the reference. Measured at 4 steps, 0.625 came out
+  *further* from the original than 0.75. That is a property of the model, not a bug in the
+  slider — SD-Turbo is distilled onto exactly four noise levels, and 0.625 is the one value
+  of the three that lands between two of them, where the model is slightly out of its
+  comfort zone. The effect shrinks as you raise the step count, and SDXL-Turbo does not
+  show it. If a value looks wrong, try its neighbours rather than pushing further in the
+  same direction.
 - Switch to the **History** tab to see your past generations as full recipes
   (prompt · negative prompt · seed · steps · size · CFG · time) — group them
   by prompt, click one to load its recipe back into Generate, delete single

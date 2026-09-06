@@ -254,9 +254,18 @@ Zwei Ja-Sager derselben Bauart sind bei der Gelegenheit mit umgestellt worden �
 
 **Die Vorbedingung eines Bugs gehört in den Prüfpunkt, der ihn sucht.** Die Steps-Beschriftung
 (zweiter Bug vom 2026-08-21: Regler auf 4, Beschriftung „20") kann nur danebenliegen, wenn der
-Browser den Wert beim Sinken von `max` überhaupt klemmt. Mit dem Standardwert 4 blieb der Punkt
-in der Gegenprobe **grün, obwohl der Defekt wieder eingebaut war** — er schiebt den Regler
-seitdem selbst über das builtin-Maximum und meldet es als Befund, wenn kein Klemmen stattfand.
+Browser den Wert beim Sinken von `max` überhaupt klemmt.
+
+| Aufbau | Defekt eingebaut? | Ergebnis |
+|---|---|---|
+| Regler auf dem Standardwert 4 (erste Fassung) | ja | **grün** — kein Klemmen, also kann die Beschriftung gar nicht abweichen |
+| Regler vorher über das builtin-Maximum geschoben (heutige Fassung) | ja | rot |
+| dieselbe Fassung | nein | grün |
+
+Die erste Zeile ist der Grund für die Umstellung: der Punkt war nicht zu lasch, er kam am
+Prüfling nie an. Er schiebt den Regler seitdem selbst über das builtin-Maximum und meldet als
+eigenen Befund, **wenn kein Klemmen stattfand** — sonst wäre die Zeile drei Jahre später
+wieder still, sobald jemand den Standardwert ändert.
 
 ### § 2026-09-06 — Punkte 35–38 (ComfyUI-Backend, Task 10)
 

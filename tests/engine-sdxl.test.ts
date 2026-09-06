@@ -284,6 +284,11 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     const unetCalls = rec.feeds.filter((f) => "timestep" in f);
     const sched = makeSchedule(steps);
     const { startAt } = denoiseEntry(steps, denoising, sched.sigmas, sched.timesteps);
+    // Anker gegen die Funktion, die auch die Engine ruft: waere `denoiseEntry` kaputt, gaeben
+    // Erwartung und Prueflings-Rechnung denselben falschen Wert und der Test bliebe gruen.
+    // Die Konstante bricht diese Kette (gemessen: denoiseEntry(4, 0.5) → Einstieg beim 3. von
+    // 4 Schritten, wie beim Zwilling in engine.test.ts).
+    expect(startAt).toBe(2);
     expect(unetCalls).toHaveLength(steps - startAt);
   });
 
@@ -321,6 +326,9 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     });
     const schedule = makeSchedule(steps);
     const entry = denoiseEntry(steps, denoising, schedule.sigmas, schedule.timesteps);
+    // Dieselbe Ankerung wie oben — ohne sie liefe die ganze `expected`-Rechnung unten durch
+    // dieselbe Funktion wie der Pruefling.
+    expect(entry.startAt).toBe(2);
     const sigma = entry.sigma;
     const noise0 = gaussianArray(seed, 1)[0]!;
     const expected = scaleInput(new Float32Array([2 * vaeScaling + noise0 * sigma]), sigma)[0]!;
@@ -472,7 +480,12 @@ describe("SdxlTurboEngine (Spec 0.9 §5.2)", () => {
     const lat = latentFeeds[0]!;
     expect(lat.length).toBeGreaterThan(0);
     expect(Array.from(lat).some((v) => Number.isNaN(v))).toBe(false);
-    expect(Array.from(res.rgba.subarray(0, 3 * 64)).some((v) => v !== 0)).toBe(true);
+// Alpha ausgefiltert, s. die Begruendung am Zwilling in engine.test.ts (Befund N1).
+    expect(
+      Array.from(res.rgba.subarray(0, 4 * 64))
+        .filter((_, i) => i % 4 !== 3)
+        .some((v) => v !== 0),
+    ).toBe(true);
     expect(progress.at(-1)).toEqual([1, 1]);
   });
 });

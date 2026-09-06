@@ -389,6 +389,23 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Die Haertung (`hardenParams`) reicht `denoising` unveraendert durch und rechnet nichts.
   *Bis 0.11 war es umgekehrt: die Haertung rasterte auf `steps` Positionen. Gemessen
   2026-09-05 (84 Laeufe) uebersprang der Sprung 0.5 → 0.75 bei 4 Steps genau das Optimum.*
+- **SD-Turbo ist im Denoise-Bereich NICHT monoton, und das ist kein Defekt — wer es fuer
+  einen haelt, „repariert" die Interpolation kaputt.** Gemessen am Wirt (RMSE zur Vorlage,
+  gleicher Seed und Prompt, steps 4): SD-Turbo 14.48 / **23.08** / 21.42 bei denoising
+  0.5 / 0.625 / 0.75 — der mittlere Wert liegt WEITER weg als der hoechste. SDXL-Turbo ist
+  im selben Lauf monoton (19.13 / 34.89 / 36.59).
+  Die Ursache steht in `denoiseEntry`: t = (1−d)·steps, also 0.5 → t=2.0 · 0.625 → t=1.5 ·
+  0.75 → t=1.0. **Von den dreien ist nur 0.625 interpoliert** (`frac` 0.5), die anderen
+  beiden sind exakte Anker (`frac` 0) — und SD-Turbo ist auf genau vier Timesteps
+  destilliert, faehrt bei einem Zwischenwert also off-distribution. Der eine interpolierte
+  Punkt ist der eine, der aus der Reihe faellt.
+  ⚠️ **Das galt vor 0.12 genauso; die Rasterung machte es nur unerreichbar** — der Umbau
+  verursacht es nicht, er macht es sichtbar. Deshalb ist es auch KEIN Smoke-Punkt geworden
+  (Entscheidung 2026-09-06): ein Pruefpunkt darauf bewachte eine Eigenschaft des MODELLS,
+  die dieses Repo nicht kontrolliert, und wuerde bei einer neuen Modellstufe rot, ohne dass
+  etwas kaputt waere. Punkt 26/27 messen ohnehin die Unterscheidbarkeit der Zwischenstufe —
+  bewusst NICHT die Reihenfolge, genau deswegen. Der Erklaerungsbedarf liegt beim Nutzer und
+  steht in beiden READMEs.
 - **Der WebGPU-EP vertraegt nur EINE Session-Erzeugung zugleich.** `webgpuRegisterDevice` im
   Emscripten-Glue setzt ein Flag und wirft `another WebGPU EP inference session is being
   created`, wenn zwei `InferenceSession.create` ueberlappen. Das `Promise.all` ueber

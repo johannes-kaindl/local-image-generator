@@ -67,6 +67,14 @@ In jedem Fall verlassen Prompts und Bilder deinen Rechner nie.
   Denoise-Regler mehr Spielraum. Achtung: der eingestellte Wert *bedeutet* bei anderer
   Schrittzahl etwas anderes — ein bei 4 Schritten gespeichertes Rezept sieht bei 8
   Schritten anders aus.
+  Ein ehrlicher Vorbehalt für die eingebaute **SD-Turbo** bei wenigen Schritten: den Regler
+  höher zu stellen entfernt das Ergebnis nicht immer weiter von der Vorlage. Bei 4 Schritten
+  gemessen lag 0,625 *weiter* vom Original weg als 0,75. Das ist eine Eigenschaft des
+  Modells, kein Fehler des Reglers — SD-Turbo ist auf genau vier Rauschstufen destilliert,
+  und 0,625 ist von den dreien der einzige Wert, der zwischen zweien davon landet, wo das
+  Modell leicht außerhalb seines Erfahrungsbereichs rechnet. Mit steigender Schrittzahl wird
+  der Effekt kleiner, und SDXL-Turbo zeigt ihn nicht. Sieht ein Wert falsch aus, lohnt eher
+  der Blick auf seine Nachbarn als noch weiter in dieselbe Richtung.
 - Der Reiter **Verlauf** zeigt frühere Erzeugungen als vollständige Rezepte
   (Prompt · Negativ-Prompt · Seed · Schritte · Größe · CFG · Zeit) — nach Prompt
   gruppierbar, per Klick zurück in den Generator ladbar, einzeln löschbar oder komplett
