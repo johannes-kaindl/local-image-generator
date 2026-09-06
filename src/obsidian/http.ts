@@ -60,8 +60,12 @@ export async function httpGetBase64(url: string, timeoutMs = 1_800_000): Promise
 export function comfyTransport(): ComfyTransport {
   return {
     postJson: (url, body) => httpPostJson(url, body),
-    // Kurzer Timeout: /history wird im Sekundentakt gepollt, ein haengender Poll darf den
-    // naechsten nicht aufhalten.
+    // Kurzer Timeout (3 s Default), weil /history im Sekundentakt gepollt wird und ein
+    // haengender Poll den naechsten nicht aufhalten soll. Das ist NUR zulaessig, weil
+    // `ComfyClient.waitForImage` einen geworfenen Poll faengt und weiterpollt: /history ist
+    // der Ergebniskanal, und ohne das Fangen beendete ein einziger langsamer Poll den Lauf,
+    // waehrend das Bild auf dem Server fertig ist (I1, Branch-Abschlussreview 2026-09-06).
+    // Wer dort das try/catch entfernt, muss diesen Timeout mitentfernen.
     getJson: (url) => httpGetJson(url),
     getBase64: (url) => httpGetBase64(url),
     sleep: (ms) => new Promise((r) => window.setTimeout(r, ms)),

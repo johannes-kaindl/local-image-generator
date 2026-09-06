@@ -27,7 +27,10 @@ export interface ComfyOptions {
   /** Muss derselbe sein, mit dem der Progress-Socket verbunden ist. */
   clientId?: string;
   /** Gesamtdauer bis zum Abbruch. Default 10 min — ein Lauf dauert real Minuten
-   *  (gemessen: 57 s für 6 Steps bei 512 px auf MPS). */
+   *  (gemessen: 57 s für 6 Steps bei 512 px auf MPS). Der Wirt setzt hier 30 min
+   *  (`main.ts::makeComfyClient`), damit derselbe lange Lauf nicht davon abhaengt, ob ihn
+   *  ComfyUI oder ein A1111-Server faehrt; der Default bleibt, weil er den PUREN Client
+   *  ohne Wirt beschreibt. */
   timeoutMs?: number;
   pollMs?: number;
   onProgress?: (p: ComfyProgress) => void;
@@ -129,8 +132,20 @@ export class ComfyClient implements ImageBackend {
     const deadline = this.transport.now() + this.timeoutMs;
 
     for (;;) {
-      const { json } = await this.transport.getJson(`${this.base}/history/${promptId}`);
-      const entry = (json as Record<string, unknown>)?.[promptId] as
+      // Ein geworfener Poll beendet den Lauf NICHT (lokale Abweichung von der Quelle, I1 des
+      // Branch-Abschlussreviews 2026-09-06). `/history` ist der ERGEBNISkanal: der Wirt faehrt
+      // ihn ueber `httpGetJson` mit kurzem Zeitlimit, und ComfyUI stallt seinen Loop
+      // regelmaessig (Modell-Laden beim ersten Lauf, VAE-Decode grosser Bilder). Ein einziger
+      // langsamer Poll haette damit ein fertiges Bild weggeworfen. Dieselbe Doktrin wie beim
+      // A1111-Fortschritt: „Timeout und 5xx sind voruebergehend und pollen weiter" — die
+      // Notbremse ist die Deadline unten, nicht der einzelne Aufruf.
+      let json: unknown = undefined;
+      try {
+        ({ json } = await this.transport.getJson(`${this.base}/history/${promptId}`));
+      } catch {
+        json = undefined;
+      }
+      const entry = (json as Record<string, unknown> | undefined)?.[promptId] as
         | { status?: unknown; outputs?: Record<string, { images?: unknown[] }> }
         | undefined;
 

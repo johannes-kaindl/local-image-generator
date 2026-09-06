@@ -597,11 +597,18 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** Ein Client pro Lauf, wie beim A1111Client. Der Workflow-Zustand ist zu diesem
    *  Zeitpunkt `ok` — das Gate darueber hat es geprueft; der Nicht-ok-Fall wirft hier
-   *  bewusst, statt still einen leeren Graphen zu schicken. */
+   *  bewusst, statt still einen leeren Graphen zu schicken.
+   *
+   *  `timeoutMs` ausdruecklich gesetzt: der Client-Default sind 10 min, waehrend der
+   *  A1111-Weg ueber `httpPostJson` effektiv 30 min haelt (I1 des Branch-Abschlussreviews
+   *  2026-09-06). Ein ComfyUI-Lauf mit Upscaler-Kette ueberschreitet 10 min mit Ansage, und
+   *  der Nutzer haette die Grenze nirgends anheben koennen — sie steht in keinem Setting.
+   *  Dieselbe Groessenordnung fuer beide Server-Wege, damit ein langer Lauf nicht davon
+   *  abhaengt, welches Backend ihn faehrt. */
   private makeComfyClient(): ImageBackend {
     const w = this.state.workflow;
     if (w.kind !== "ok") throw new Error("kein brauchbarer Workflow");
-    return new ComfyClient(this.settings.endpoint, w.json, comfyTransport());
+    return new ComfyClient(this.settings.endpoint, w.json, comfyTransport(), { timeoutMs: 1_800_000 });
   }
 
   /** Modell wechseln (Settings, Task 10): dieselbe Sperre wie setEngine() — ein Wechsel darf

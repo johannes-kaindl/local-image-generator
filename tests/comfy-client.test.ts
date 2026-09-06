@@ -128,6 +128,37 @@ describe("ComfyClient", () => {
       .rejects.toThrow(/OOM on device/);
   });
 
+  // I1 (Final-Review 2026-09-06): der /history-Poll ist der ERGEBNISkanal, nicht die
+  // Fortschrittsanzeige. `comfyTransport().getJson` faehrt mit 3 s Zeitlimit und WIRFT beim
+  // Ablauf — ein einziger langsamer Poll (ComfyUI stallt seinen Loop beim Modell-Laden und
+  // beim VAE-Decode grosser Bilder) beendete damit den ganzen Lauf, waehrend das Bild auf
+  // dem Server fertig war. Dieselbe Doktrin wie beim A1111-Fortschritt: „Timeout und 5xx
+  // sind voruebergehend und pollen weiter"; die Notbremse ist die Deadline der Schleife.
+  it("pollt nach einem geworfenen /history-Aufruf weiter, statt den Lauf zu beenden", async () => {
+    const { transport } = stub({ historySteps: [DONE] });
+    let versuche = 0;
+    const original = transport.getJson;
+    transport.getJson = async (url) => {
+      versuche++;
+      if (versuche === 1) throw new Error("timeout after 3000 ms");
+      return original(url);
+    };
+    const png = await new ComfyClient("http://x", WORKFLOW, transport).generate(REQ);
+    expect(png).toBe("QkFTRTY0");
+    expect(versuche).toBeGreaterThan(1);
+  });
+
+  it("bricht trotz geworfener Polls an der Deadline ab — der Fehler wird nicht verschluckt", async () => {
+    const { transport } = stub({ historySteps: [DONE] });
+    transport.getJson = async () => { throw new Error("timeout after 3000 ms"); };
+    const client = new ComfyClient("http://x", WORKFLOW, transport, { timeoutMs: 3000 });
+    // Auf die EIGENE Meldung geprueft, nicht auf /timeout/i: die geworfene Transport-Meldung
+    // lautet ebenfalls „timeout after 3000 ms" — ein unspezifisches Muster waere von einem
+    // durchgereichten Transport-Fehler nicht zu unterscheiden und damit blind fuer genau den
+    // Defekt, gegen den der Test steht.
+    await expect(client.generate(REQ)).rejects.toThrow(/comfy: timeout after/);
+  });
+
   it("wirft nach Ablauf des Timeouts", async () => {
     const pending = { PID: { status: { status_str: "running", completed: false, messages: [] }, outputs: {} } };
     const { transport } = stub({ historySteps: [pending] });
