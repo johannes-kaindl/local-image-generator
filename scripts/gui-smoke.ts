@@ -2226,6 +2226,367 @@ async function runBuiltinImg2ImgCheck(
   }
 }
 
+// --- ComfyUI-Backend: Punkte 35–38 (Task 10) -------------------------------------------------
+
+/**
+ * Ein Workflow im ComfyUI-API-Format, der `inspectWorkflow()` (src/core/comfy/workflow.ts)
+ * besteht: ein KSampler-Node nimmt positive/negative/latent_image entgegen, hat ein literales
+ * `steps`-Feld (Startwert 20 — bewusst ANDERS als die Steps, die Punkt 37/38 anfragen, damit ein
+ * Test, der versehentlich den Workflow-DEFAULT statt der vom Mock EMPFANGENEN Zahl misst, nicht
+ * zufaellig durchrutscht), und der Latent-Node hat width/height.
+ */
+const COMFY_VALID_WORKFLOW = {
+  "4": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "mock.safetensors" } },
+  "5": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512, batch_size: 1 } },
+  "6": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["4", 1] } },
+  "7": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["4", 1] } },
+  "3": {
+    class_type: "KSampler",
+    inputs: {
+      seed: 0, steps: 20, cfg: 7, sampler_name: "euler", scheduler: "normal", denoise: 1,
+      model: ["4", 0], positive: ["6", 0], negative: ["7", 0], latent_image: ["5", 0],
+    },
+  },
+  "8": { class_type: "VAEDecode", inputs: { samples: ["3", 0], vae: ["4", 2] } },
+  "9": { class_type: "SaveImage", inputs: { filename_prefix: "smoke", images: ["8", 0] } },
+};
+
+/** Kein Node nimmt positive+negative+latent_image gemeinsam entgegen — `inspectWorkflow()`
+ *  liefert "no-sampler" (workflowProblemText -> t("workflow.err.noSampler")). */
+const COMFY_BROKEN_WORKFLOW = {
+  "6": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+  "9": { class_type: "SaveImage", inputs: {} },
+};
+
+/** Erwartete Sichtbarkeit modusabhaengiger Regler je Modus (Brief Schritt 2). Ersetzt fuer
+ *  Punkt 35 bewusst NICHT `MODUS_REGLER`/`runControlVisibilityCheck` (Punkt 17): jene Liste ist
+ *  als „im builtin versteckt, im server sichtbar" gebaut und stimmt fuer comfy nur bei CFG — der
+ *  Negativ-Prompt ist dort SICHTBAR (`.lig-negative-row`), weil `backendCapabilities` ihn im
+ *  comfy-Modus MIT gueltigem Workflow als vom Sampler garantiert fuehrt (generation.ts). Drei
+ *  Modi, drei Erwartungen statt einer Liste, die stillschweigend nur zwei kennt. */
+const MODUS_ERWARTUNG: Record<"builtin" | "server" | "comfy", { sichtbar: string[]; versteckt: string[] }> = {
+  builtin: { sichtbar: [], versteckt: [".lig-negative-row", ".lig-cfg", ".lig-cfg-label", ".lig-cfg-value"] },
+  server: { sichtbar: [".lig-negative-row", ".lig-cfg"], versteckt: [] },
+  comfy: { sichtbar: [".lig-negative-row"], versteckt: [".lig-cfg", ".lig-cfg-label", ".lig-cfg-value"] },
+};
+
+async function comfySelectorSicht(cdp: Cdp, selectors: string[]): Promise<{ sel: string; display: string; fehlt: boolean }[]> {
+  return cdp.evaluate<{ sel: string; display: string; fehlt: boolean }[]>(`
+    const sel = ${JSON.stringify(selectors)};
+    return sel.map((s) => {
+      const el = document.querySelector(s);
+      if (!el) return { sel: s, display: "", fehlt: true };
+      return { sel: s, display: getComputedStyle(el).display, fehlt: false };
+    });
+  `);
+}
+
+/**
+ * Punkt 35: Modus-Wechsel zu ComfyUI blendet Negativ-Prompt/CFG richtig um.
+ *
+ * Braucht einen bereits GUELTIGEN Workflow (`comfyWorkflowPath` zeigt auf einen Graphen, den
+ * `inspectWorkflow()` akzeptiert) — ohne ihn liefert `backendCapabilities` im comfy-Modus
+ * `negativePrompt: false` (kein Sampler gefunden, also keine Zusage moeglich), und die
+ * Erwartungstabelle unten waere fuer den falschen Zustand geschrieben. Der Aufrufer
+ * (`runComfyChecks`) stellt das VOR diesem Punkt her.
+ */
+async function runComfyVisibilityCheck(cdp: Cdp): Promise<void> {
+  const NAME = "35. Modus-Wechsel zu ComfyUI blendet Negativ-Prompt/CFG richtig um (drei Modi, eigene Erwartungstabelle)";
+  const setzeModus = async (mode: "builtin" | "server" | "comfy"): Promise<void> => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== ${JSON.stringify(mode)}) await p.setEngine(${JSON.stringify(mode)});
+      p.refreshViews();
+      return true;
+    `);
+    // Wie Punkt 17: der Wechsel stoesst einen GPU-/Server-Check an, die Regler haengen aber
+    // allein am Modus (viewmodel.ts) — nach einem Tick ist das Rendern durch.
+    await new Promise((r) => setTimeout(r, 800));
+  };
+
+  const teile: string[] = [];
+  for (const mode of ["builtin", "server", "comfy"] as const) {
+    await setzeModus(mode);
+    const erwartung = MODUS_ERWARTUNG[mode];
+    const alle = [...erwartung.sichtbar, ...erwartung.versteckt];
+    const sicht = await comfySelectorSicht(cdp, alle);
+    const fehlend = sicht.filter((s) => s.fehlt).map((s) => s.sel);
+    const sollteSichtbarSein = sicht.filter((s) => !s.fehlt && erwartung.sichtbar.includes(s.sel) && s.display === "none");
+    const sollteWegSein = sicht.filter((s) => !s.fehlt && erwartung.versteckt.includes(s.sel) && s.display !== "none");
+    if (fehlend.length > 0) teile.push(`${mode}: nicht im DOM: ${fehlend.join(", ")}`);
+    if (sollteSichtbarSein.length > 0) teile.push(`${mode}: sollte sichtbar sein, ist versteckt: ${sollteSichtbarSein.map((s) => s.sel).join(", ")}`);
+    if (sollteWegSein.length > 0) teile.push(`${mode}: sollte versteckt sein, ist sichtbar: ${sollteWegSein.map((s) => s.sel).join(", ")}`);
+  }
+
+  record(
+    NAME,
+    teile.length === 0,
+    teile.length === 0 ? "builtin/server/comfy je gegen ihre eigene Erwartung (getComputedStyle)" : teile.join(" · "),
+  );
+}
+
+/**
+ * Punkt 36: ein kaputter Workflow zeigt seinen Klartext, eine gueltige Datei bringt is-ok.
+ *
+ * Beide Richtungen in einem Punkt (wie Punkt 17): eine Pruefung, die nur die Fehlermeldung
+ * misst, ist mit einer Statuszeile zu bestehen, die IMMER denselben Fehlertext zeigt.
+ */
+async function runComfyWorkflowStatusCheck(cdp: Cdp, brokenPath: string, validPath: string): Promise<void> {
+  const NAME = "36. Ein kaputter Workflow zeigt seinen Klartext — eine gueltige Datei bringt is-ok";
+  const lesen = () =>
+    cdp.evaluate<{ text: string; isOk: boolean; isError: boolean }>(`
+      const el = document.querySelector(".lig-status-text");
+      const icon = document.querySelector(".lig-status-icon");
+      return {
+        text: el ? el.textContent.trim() : "",
+        isOk: icon ? icon.classList.contains("is-ok") : false,
+        isError: icon ? icon.classList.contains("is-error") : false,
+      };
+    `);
+
+  const setzeWorkflow = async (path: string): Promise<void> => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.settings.comfyWorkflowPath = ${JSON.stringify(path)};
+      await p.saveSettings();
+      await p.loadWorkflow();
+      p.refreshViews();
+      return true;
+    `);
+  };
+
+  await setzeWorkflow(brokenPath);
+  await new Promise((r) => setTimeout(r, 300));
+  const kaputt = await lesen();
+
+  await setzeWorkflow(validPath);
+  const erwarteterOkText = t("status.ready");
+  const gueltig =
+    (await pollUntil(lesen, (r) => r.isOk || r.text === erwarteterOkText, 10_000, "warte auf is-ok nach gueltigem Workflow", 500)) ??
+    (await lesen());
+
+  const erwarteterFehlertext = t("workflow.err.noSampler");
+  const kaputtOk = kaputt.text === erwarteterFehlertext && kaputt.isError;
+  const gueltigOk = gueltig.text === erwarteterOkText && gueltig.isOk;
+
+  record(
+    NAME,
+    kaputtOk && gueltigOk,
+    `kaputt: „${kaputt.text}" (is-error=${String(kaputt.isError)})${kaputtOk ? "" : ` — erwartet „${erwarteterFehlertext}"`} · ` +
+      `gueltig: „${gueltig.text}" (is-ok=${String(gueltig.isOk)})${gueltigOk ? "" : ` — erwartet „${erwarteterOkText}"`}`,
+  );
+}
+
+/** Zaehler + zuletzt empfangener Graph des ComfyUI-Mocks (`.mock-comfy-counts.json`). null,
+ *  wenn kein Mock laeuft. Wie `mockCounts()`, aber ueber cwd statt `import.meta.url` (derselbe
+ *  Grund: dieser Treiber wird nach `.gui-smoke.mjs` ins Repo-Root gebundelt). */
+function mockComfyState(): { counts: Record<string, number>; graph: Record<string, { inputs?: Record<string, unknown> }> | null } | null {
+  const file = join(process.cwd(), ".mock-comfy-counts.json");
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as {
+      counts: Record<string, number>;
+      graph: Record<string, { inputs?: Record<string, unknown> }> | null;
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Punkt 37: ein echter Lauf gegen den ComfyUI-Mock liefert ein Bild — gemessen an BYTES, die
+ * der TREIBER SELBST vom Mock geholt hat, nicht an dem, was der Pruefling behauptet (Form wie
+ * Punkt 2/3: der Treiber erfragt seine Erwartung selbst statt beim Pruefling).
+ *
+ * `Cdp.send` bricht nach 30 s ab (AGENTS-Gotcha) — der Aufruf legt sein Ergebnis in einer
+ * Renderer-Variable ab, das Warten passiert auf der Node-Seite (Muster: `runImg2ImgCheck`).
+ */
+async function runComfyRealRunCheck(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs: number): Promise<string | null> {
+  const NAME = "37. Ein echter Lauf gegen den ComfyUI-Mock liefert ein Bild";
+  const base = comfyEndpoint.replace(/\/+$/, "");
+  const expected = await fetch(`${base}/view?filename=smoke.png&subfolder=&type=output`, { signal: AbortSignal.timeout(5000) })
+    .then(async (r) => (r.status === 200 ? Buffer.from(await r.arrayBuffer()).toString("base64") : null))
+    .catch(() => null);
+  if (expected === null) {
+    skip(NAME, `Mock unter ${comfyEndpoint} beantwortet /view nicht — Vorbedingung nicht herstellbar`);
+    return null;
+  }
+
+  await cdp.evaluate(`
+    const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
+    window.__ligComfyRun = { fertig: false };
+    if (!api) { window.__ligComfyRun = { fertig: true, ok: false, reason: "keine API" }; return true; }
+    api.generate({ prompt: "smoke comfy 37", steps: 3, seed: 4242 })
+      .then((r) => {
+        window.__ligComfyRun = r.ok
+          ? { fertig: true, ok: true, base64: r.image.base64, steps: r.image.params.steps }
+          : { fertig: true, ok: false, reason: r.reason ?? r.message };
+      })
+      .catch((e) => { window.__ligComfyRun = { fertig: true, ok: false, reason: String(e) }; });
+    return true;
+  `);
+
+  const lauf = (await pollUntil(
+    () =>
+      cdp.evaluate<{ fertig: boolean; ok?: boolean; base64?: string; steps?: number; reason?: string }>(
+        `return window.__ligComfyRun ?? { fertig: false };`,
+      ),
+    (v) => v.fertig,
+    generateTimeoutMs,
+    "warte auf den ComfyUI-Lauf",
+    1000,
+  )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
+  await cdp.evaluate(`delete window.__ligComfyRun; return true;`).catch(() => undefined);
+
+  const bildOk = lauf.ok === true && typeof lauf.base64 === "string" && lauf.base64.length > 0 && lauf.base64 === expected;
+  record(
+    NAME,
+    bildOk,
+    bildOk
+      ? `generate() lieferte genau die ${lauf.base64!.length} Bytes, die der Treiber selbst per /view geholt hat`
+      : lauf.ok === true
+        ? `Bild weicht vom selbst geholten /view-Ergebnis ab (${String(lauf.base64?.length ?? 0)} vs. ${String(expected.length)} Zeichen) — kein echter Roundtrip?`
+        : `generate() schlug fehl: ${lauf.reason ?? "unbekannt"}`,
+  );
+  return bildOk ? (lauf.base64 ?? null) : null;
+}
+
+/**
+ * Punkt 38: die Ergebnis-Notiz traegt die Schrittzahl, die der Mock TATSAECHLICH empfangen
+ * hat — nicht den Workflow-DEFAULT (20, absichtlich anders gewaehlt) und nicht blind den
+ * Request-Rohwert, sondern das, was auf der Leitung ankam (Spec §4: nur Zahlen, die wirklich
+ * gesetzt wurden). Ein eigener, kurzer Lauf (nicht der von Punkt 37): der Mock haelt nur den
+ * ZULETZT empfangenen Graphen, ein gemeinsam genutzter Lauf waere ein Wettlauf mit Punkt 37s
+ * eigenem Bild-Vergleich.
+ */
+async function runComfyNoteStepsCheck(cdp: Cdp, vorbedingungErreicht: boolean): Promise<void> {
+  const NAME = "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl";
+  if (!vorbedingungErreicht) {
+    skip(NAME, "Vorbedingung 37 nicht erreicht (Mock/Lauf nicht messbar)");
+    return;
+  }
+
+  const notesBefore = await cdp.evaluate<number>(
+    `return app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md").length;`,
+  );
+  const gespeichert = await cdp.evaluate<{ ok: boolean; reason?: string }>(`
+    const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
+    const r = await api.generate({ prompt: "smoke comfy 38", steps: 3, seed: 777 });
+    if (!r.ok) return { ok: false, reason: r.reason ?? r.message };
+    const saved = await api.save(r.image, { createNote: true });
+    return saved.ok ? { ok: true } : { ok: false, reason: saved.reason };
+  `);
+  if (!gespeichert.ok) {
+    record(NAME, false, `generate()/save() schlugen fehl: ${gespeichert.reason ?? "unbekannt"}`);
+    return;
+  }
+
+  const body = await pollUntil(
+    () =>
+      cdp.evaluate<string | null>(`
+        const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
+        if (files.length <= ${notesBefore}) return null;
+        files.sort((a, b) => b.stat.ctime - a.stat.ctime);
+        return await app.vault.cachedRead(files[0]);
+      `),
+    (b) => b !== null,
+    30_000,
+    "warte auf die Ergebnis-Notiz",
+    1000,
+  );
+  const notizSteps = body?.match(/^steps:\s*(\d+)$/m)?.[1];
+
+  const mock = mockComfyState();
+  const empfangeneSteps = Object.values(mock?.graph ?? {})
+    .map((n) => n.inputs?.steps)
+    .find((v) => typeof v === "number");
+
+  const teile: string[] = [];
+  if (body === null) teile.push("keine Ergebnis-Notiz gefunden");
+  if (mock === null) teile.push("Mock-Zaehlerdatei fehlt — Vergleich nicht moeglich");
+  if (typeof empfangeneSteps !== "number") teile.push("Mock hat keinen Graphen mit steps-Feld gespeichert");
+  if (notizSteps === undefined) teile.push("Notiz traegt kein steps-Feld");
+  if (teile.length === 0 && Number(notizSteps) !== empfangeneSteps) {
+    teile.push(`Notiz: steps=${notizSteps ?? "?"} · vom Mock empfangen: steps=${String(empfangeneSteps)} (Workflow-Default waere 20)`);
+  }
+
+  record(
+    NAME,
+    teile.length === 0,
+    teile.length === 0
+      ? `Notiz und Mock stimmen ueberein: steps=${notizSteps ?? "?"} (Workflow-Default 20 haette abgewichen)`
+      : teile.join(" · "),
+  );
+}
+
+/**
+ * Orchestriert Punkte 35–38: EIGENER Zustand (Endpunkt, Workflow-Pfad, Modus), im `finally`
+ * vollstaendig zurueckgesetzt — Konvention „Vorbedingung herstellen, nicht erben" (wie
+ * `runRecheckCheck`). Braucht `scripts/mock-comfy.mjs` (`npm run smoke:comfy`); ohne ihn
+ * werden alle vier Punkte uebersprungen statt geraten.
+ */
+async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs: number): Promise<void> {
+  const NAMEN = [
+    "35. Modus-Wechsel zu ComfyUI blendet Negativ-Prompt/CFG richtig um (drei Modi, eigene Erwartungstabelle)",
+    "36. Ein kaputter Workflow zeigt seinen Klartext — eine gueltige Datei bringt is-ok",
+    "37. Ein echter Lauf gegen den ComfyUI-Mock liefert ein Bild",
+    "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl",
+  ];
+  const up = await fetch(`${comfyEndpoint.replace(/\/+$/, "")}/system_stats`, { signal: AbortSignal.timeout(3000) })
+    .then((r) => r.status === 200)
+    .catch(() => false);
+  if (!up) {
+    for (const n of NAMEN) skip(n, `ComfyUI-Mock unter ${comfyEndpoint} antwortet nicht (npm run smoke:comfy)`);
+    return;
+  }
+
+  const vorher = await cdp.evaluate<{ engine: string; endpoint: string; comfyWorkflowPath: string }>(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    return { engine: p.settings.engine, endpoint: p.settings.endpoint, comfyWorkflowPath: p.settings.comfyWorkflowPath };
+  `);
+
+  const validPath = `${SMOKE_FOLDER}/comfy-valid.json`;
+  const brokenPath = `${SMOKE_FOLDER}/comfy-broken.json`;
+
+  try {
+    await cdp.evaluate(`
+      await app.vault.create(${JSON.stringify(validPath)}, ${JSON.stringify(JSON.stringify(COMFY_VALID_WORKFLOW))});
+      await app.vault.create(${JSON.stringify(brokenPath)}, ${JSON.stringify(JSON.stringify(COMFY_BROKEN_WORKFLOW))});
+      return true;
+    `);
+
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.settings.endpoint = ${JSON.stringify(comfyEndpoint)};
+      p.settings.comfyWorkflowPath = ${JSON.stringify(validPath)};
+      await p.saveSettings();
+      if (p.settings.engine !== "comfy") { await p.setEngine("comfy"); }
+      else { await p.checkServer(); await p.loadWorkflow(); }
+      p.refreshViews();
+      return true;
+    `);
+
+    await runComfyVisibilityCheck(cdp);
+    await runComfyWorkflowStatusCheck(cdp, brokenPath, validPath);
+    const base64 = await runComfyRealRunCheck(cdp, comfyEndpoint, generateTimeoutMs);
+    await runComfyNoteStepsCheck(cdp, base64 !== null);
+  } finally {
+    await cdp
+      .evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        const before = ${JSON.stringify(vorher)};
+        p.settings.endpoint = before.endpoint;
+        p.settings.comfyWorkflowPath = before.comfyWorkflowPath;
+        await p.saveSettings();
+        if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
+        else await p.checkServer();
+        p.refreshViews();
+        return true;
+      `)
+      .catch(() => undefined);
+  }
+}
+
 /**
  * Version aus einer `manifest.json` auf Platte — `null`, wenn sie fehlt oder unlesbar ist.
  * Gegenstueck zu `plugin.manifest.version` aus dem Renderer, die etwas anderes meint (s. u.).
@@ -2252,6 +2613,7 @@ async function main(): Promise<void> {
   const quick = argv.includes("--quick");
   const builtin = argv.includes("--builtin");
   const assetsBase = flag("assets") ?? "http://127.0.0.1:7862";
+  const comfyEndpoint = flag("comfy") ?? "http://127.0.0.1:8189";
   const vault = flag("vault");
   // Wenige Steps und die kleinste Größe: der Smoke prüft die Kette, nicht die Bildqualität.
   // Bei FLUX.2 dev kostet der Default (20) rund vier Minuten pro Bild — zweimal im Lauf.
@@ -3077,6 +3439,11 @@ async function main(): Promise<void> {
     // --- 19. img2img am laufenden Wirt ---------------------------------------
     // Braucht den Server-Modus (die eingebaute Engine kann kein img2img) und den Mock.
     await runImg2ImgCheck(cdp, generateTimeoutMs);
+
+    // --- 35–38. ComfyUI-Backend (Task 10) ------------------------------------
+    // Eigener Mock (scripts/mock-comfy.mjs, `npm run smoke:comfy`), eigener Zustand — die
+    // Funktion stellt Endpunkt/Workflow/Modus selbst her und setzt sie im finally zurueck.
+    await runComfyChecks(cdp, comfyEndpoint, generateTimeoutMs);
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.
