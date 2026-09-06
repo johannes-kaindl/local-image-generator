@@ -22,7 +22,7 @@
 import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } from "obsidian";
 import { STEPS } from "../core/generation";
 import { BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, filesFor, isBuiltinModelId, modelById, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
-import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type LigSettings } from "../core/settings";
+import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "../core/settings";
 import { formatBytes, type EngineState } from "../core/viewmodel";
 import { t } from "../vendor/kit/i18n";
 import { validateSettings } from "../vendor/kit/settings_schema";
@@ -30,6 +30,7 @@ import { applyDestructive, confirmAction } from "../vendor/kit-obsidian/confirm"
 import { renderSettingDefinitions, settingBodyHost, refreshSettingsTab } from "../vendor/kit-obsidian/settings_walker";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { renderPresetEditor } from "./preset-editor";
+import { WorkflowPickerModal } from "./workflow-picker";
 import type LocalImageGeneratorPlugin from "../main";
 
 export class LigSettingTab extends PluginSettingTab {
@@ -63,8 +64,9 @@ export class LigSettingTab extends PluginSettingTab {
   // bricht den Build, statt zur Laufzeit stumm ins Leere zu greifen (der Host liest den
   // Wert ausschließlich über getControlValue).
   getSettingDefinitions(): SettingDefinitionItem<keyof LigSettings>[] {
-    const builtin = this.plugin.settings.engine === "builtin";
-    this.renderedMode = this.plugin.settings.engine;
+    const mode = this.plugin.settings.engine;
+    const builtin = mode === "builtin";
+    this.renderedMode = mode;
     // Bedingte Zeilen WEGLASSEN statt `visible: false`: Obsidian 1.13 cacht die Definitionen und
     // wertet Prädikate nicht neu aus — nach einem Moduswechsel zeichnet refreshUi() (update())
     // den Tab mit den dann passenden Zeilen neu.
@@ -95,10 +97,22 @@ export class LigSettingTab extends PluginSettingTab {
       desc: t("settings.showModelPicker.desc"),
       control: { type: "toggle", key: "showModelPicker" },
     };
+    // Name und Beschreibung nach Modus: es ist DASSELBE Feld (`settings.endpoint`), aber im
+    // comfy-Modus eine andere Software mit einem anderen Standard-Port. Die A1111-Fassung
+    // dort stehen zu lassen, schickte den ComfyUI-Nutzer zu Draw Things — und verschwieg,
+    // dass ein aus dem Server-Modus uebernommener Endpunkt hier stehenbleibt und antwortet,
+    // ohne ComfyUIs API zu bedienen.
     const serverRow: SettingDefinitionItem<keyof LigSettings> = {
-      name: t("settings.server.name"),
-      desc: t("settings.server.desc"),
+      name: mode === "comfy" ? t("settings.comfyServer.name") : t("settings.server.name"),
+      desc: mode === "comfy" ? t("settings.comfyServer.desc") : t("settings.server.desc"),
       render: (setting) => this.renderServer(setting),
+    };
+    // Picker-Knopf + Textfeld teilen sich eine Zeile — als Control nicht abbildbar, deshalb
+    // ein render-Hatch wie serverRow.
+    const workflowRow: SettingDefinitionItem<keyof LigSettings> = {
+      name: t("settings.workflow.name"),
+      desc: t("settings.workflow.desc"),
+      render: (setting) => this.renderWorkflow(setting),
     };
     return [
       {
@@ -116,10 +130,18 @@ export class LigSettingTab extends PluginSettingTab {
             control: {
               type: "dropdown",
               key: "engine",
-              options: { builtin: t("settings.engine.builtin"), server: t("settings.engine.server") },
+              options: {
+                builtin: t("settings.engine.builtin"),
+                server: t("settings.engine.server"),
+                comfy: t("settings.engine.comfy"),
+              },
             },
           },
-          ...(builtin ? [builtinModelRow, showModelPickerRow, modelRow] : [serverRow]),
+          ...(builtin
+            ? [builtinModelRow, showModelPickerRow, modelRow]
+            : mode === "comfy"
+              ? [serverRow, workflowRow]
+              : [serverRow]),
         ],
       },
       {
@@ -208,7 +230,12 @@ export class LigSettingTab extends PluginSettingTab {
     if (key === "engine") {
       // Moduswechsel hat Seiteneffekte (GPU-Sessions frei, Server prüfen) — über das Plugin.
       // Während einer Generierung lehnt es ab (Notice); refreshUi stellt den Dropdown zurück.
-      await this.plugin.setEngine(clean === "server" ? "server" : "builtin");
+      // DREI moegliche Werte seit dem comfy-Backend (AGENTS.md § "Der dritte Modus-Wert
+      // faellt an rund einem Dutzend Stellen in den else-Zweig"): eine Ternaerkette, die
+      // nur "server" kennt, schaltete "comfy" hier still auf "builtin" zurueck — kein
+      // Fehler, keine Notice, das Dropdown sprang einfach um.
+      const next: EngineChoice = clean === "server" ? "server" : clean === "comfy" ? "comfy" : "builtin";
+      await this.plugin.setEngine(next);
       this.refreshUi();
       return;
     }
@@ -283,7 +310,10 @@ export class LigSettingTab extends PluginSettingTab {
 
     setting
       .addText((tf) => {
-        tf.setPlaceholder("http://127.0.0.1:7860");
+        // Der Platzhalter nennt den Port des GEWAEHLTEN Modus — ComfyUI hoert standardmaessig
+        // auf 8188, A1111/Draw Things auf 7860. Dasselbe Feld, zwei Erwartungen: ein
+        // 7860-Platzhalter im comfy-Modus ist die erste falsche Fährte.
+        tf.setPlaceholder(this.plugin.settings.engine === "comfy" ? "http://127.0.0.1:8188" : "http://127.0.0.1:7860");
         tf.setValue(this.plugin.settings.endpoint).onChange(async (v) => {
           await this.setControlValue("endpoint", v);
           void this.plugin.checkServer();
@@ -294,6 +324,32 @@ export class LigSettingTab extends PluginSettingTab {
           const result = await this.plugin.checkServer();
           if (result.kind === "ok") new Notice(t("notice.serverOk", result.modelName ?? "–"));
           else new Notice(t("notice.serverFail"));
+        }),
+      );
+  }
+
+  /** Workflow-Pfad-Textfeld und Auswahl-Knopf teilen sich eine Zeile — wie renderServer.
+   *  Nach dem Speichern liest `loadWorkflow()` die Datei neu und beurteilt sie; der Tab
+   *  wird danach neu gezeichnet, damit das Textfeld den (evtl. per Picker gesetzten) Pfad
+   *  zeigt und eine bedingte Nachbarzeile den frischen Zustand sieht. */
+  private renderWorkflow(setting: Setting): void {
+    setting
+      .addText((tf) => {
+        tf.setPlaceholder(t("settings.workflow.pick"));
+        tf.setValue(this.plugin.settings.comfyWorkflowPath).onChange(async (v) => {
+          await this.setControlValue("comfyWorkflowPath", v);
+          void this.plugin.loadWorkflow();
+        });
+      })
+      .addButton((b) =>
+        b.setButtonText(t("settings.workflow.pick")).onClick(() => {
+          new WorkflowPickerModal(this.app, (file) => {
+            void (async () => {
+              await this.setControlValue("comfyWorkflowPath", file.path);
+              void this.plugin.loadWorkflow();
+              this.refreshUi();
+            })();
+          }).open();
         }),
       );
   }

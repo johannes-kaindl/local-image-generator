@@ -52,12 +52,37 @@ export const EN: Record<string, string> = {
   "status.externalRun": "Another plugin is generating an image…",
   "status.externalRunPct": "Another plugin is generating an image… {0}%",
 
+  "status.noWorkflow": "No workflow selected",
+  "status.workflowMissing": "Workflow file not found: {0}",
+  // Eigene Texte statt der Server-Fassung: der Endpunkt ist zwischen beiden Modi GETEILT, wer
+  // aus dem Server-Modus umstellt, behaelt also seinen A1111-Endpunkt. „Is the API enabled?"
+  // fuehrt dann in die Irre — der Server ist erreichbar, er ist nur der falsche.
+  "status.noComfyEndpoint": "No ComfyUI server configured",
+  "status.comfyUnreachable": "No ComfyUI at this address (default port 8188) — is it running?",
+  "workflow.err.json": "The file is not valid JSON.",
+  "workflow.err.notAnObject":
+    "Not a workflow: expected an object of nodes. Export from ComfyUI with 'Save (API format)', not the normal save.",
+  "workflow.err.noSampler": "No sampler found — no node takes positive, negative and latent_image together.",
+  "workflow.err.ambiguous":
+    "Several samplers found ({0}). Refiner chains aren't supported — the plugin can't tell which one to fill in.",
+  "workflow.err.dangling": "The sampler's {0} input points to node {1}, which doesn't exist.",
+  "workflow.err.noSteps":
+    "This sampler has no steps field (SamplerCustom and similar take their step count from a sigmas node). Not supported yet.",
+  "workflow.err.noSize":
+    "The latent node carries no width/height, so the plugin can't set the size. Use EmptyLatentImage as the sampler's latent_image.",
+
   "empty.noImage": "Enter a prompt and press Generate.",
   "empty.noServer":
     "Connect a local image server such as Draw Things (enable its API server) or AUTOMATIC1111 (--api), then enter the endpoint in the settings.",
   "empty.noServerCta": "Open settings",
   "empty.unreachable": "The server did not respond. Is it running and the API enabled?",
   "empty.unreachableCta": "Retry",
+  "empty.noWorkflow": "Pick a ComfyUI workflow to get started",
+  "empty.noWorkflowCta": "Open settings",
+  "empty.noComfyServer":
+    "Start ComfyUI on this machine and enter its address in the settings — by default that is http://127.0.0.1:8188.",
+  "empty.comfyUnreachable":
+    "Nothing that looks like ComfyUI answered at that address. ComfyUI listens on port 8188 by default — and an endpoint left over from Draw Things or AUTOMATIC1111 will answer, but not to ComfyUI's API.",
 
   "generate.modelBuiltin": "Model: {0} (built-in)",
   "status.gpuChecking": "Checking GPU…",
@@ -104,9 +129,10 @@ export const EN: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Built-in: an image model runs on your GPU inside Obsidian (downloaded once on request — see the model row below for which one and its size). Server: a local Draw Things / A1111-compatible server with its own models and full controls.",
+  "settings.engine.desc": "Built-in: an image model runs on your GPU inside Obsidian (downloaded once on request — see the model row below for which one and its size). Server: a local Draw Things / A1111-compatible server with its own models and full controls. ComfyUI: your own workflow file on a running ComfyUI server (default port 8188) — the plugin fills in prompt, seed, steps and size and leaves the rest of the graph alone.",
   "settings.engine.builtin": "Built-in (on your GPU)",
   "settings.engine.server": "Server (Draw Things / A1111)",
+  "settings.engine.comfy": "ComfyUI (your workflow)",
   "settings.model.name": "{0} model ({1})",
   "settings.model.desc": "{0} · {1}. Downloaded only when you click, verified by checksum, stored outside your vault.",
   "settings.model.download": "Download",
@@ -129,7 +155,17 @@ export const EN: Record<string, string> = {
   "settings.server.name": "Server endpoint",
   "settings.server.desc":
     "A1111-compatible local image server — Draw Things (enable API server), AUTOMATIC1111 (--api), Forge, SD.Next.",
+  // Dasselbe Feld, andere Software: der Endpunkt ist zwischen Server- und comfy-Modus
+  // geteilt, und ein uebernommener A1111-Endpunkt ist hier der wahrscheinlichste Fehler.
+  "settings.comfyServer.name": "ComfyUI endpoint",
+  "settings.comfyServer.desc":
+    "Address of your running ComfyUI server — by default http://127.0.0.1:8188. This is the same field as the server endpoint above: an address left over from Draw Things or AUTOMATIC1111 stays here when you switch, and it will not serve ComfyUI's API.",
   "settings.server.test": "Test connection",
+  "settings.workflow.name": "Workflow file",
+  "settings.workflow.desc":
+    "A workflow exported from ComfyUI in API format. The plugin fills in prompt, negative prompt, seed, steps and size — sampler, scheduler, CFG, LoRAs and upscalers stay as you built them.",
+  "settings.workflow.pick": "Choose…",
+  "workflow.pickerTitle": "Pick a ComfyUI workflow (.json)",
 
   "notice.serverOk": "Server OK — model: {0}",
   "notice.serverFail": "Server not reachable. Check that it is running and the API is enabled.",
@@ -201,7 +237,29 @@ export const DE: Record<string, string> = {
   "status.externalRun": "Ein anderes Plugin erzeugt gerade ein Bild…",
   "status.externalRunPct": "Ein anderes Plugin erzeugt gerade ein Bild… {0}%",
 
+  "status.noWorkflow": "Kein Workflow gewählt",
+  "status.workflowMissing": "Workflow-Datei nicht gefunden: {0}",
+  "status.noComfyEndpoint": "Kein ComfyUI-Server konfiguriert",
+  "status.comfyUnreachable": "Kein ComfyUI unter dieser Adresse (Standard-Port 8188) — läuft es?",
+  "workflow.err.json": "Die Datei ist kein gültiges JSON.",
+  "workflow.err.notAnObject":
+    "Kein Workflow: erwartet wird ein Objekt aus Knoten. In ComfyUI mit „Save (API format)“ exportieren, nicht normal speichern.",
+  "workflow.err.noSampler": "Kein Sampler gefunden — kein Knoten nimmt positive, negative und latent_image zusammen entgegen.",
+  "workflow.err.ambiguous":
+    "Mehrere Sampler gefunden ({0}). Refiner-Ketten werden nicht unterstützt — das Plugin kann nicht entscheiden, welchen es füllt.",
+  "workflow.err.dangling": "Der {0}-Eingang des Samplers zeigt auf Knoten {1}, den es nicht gibt.",
+  "workflow.err.noSteps":
+    "Dieser Sampler hat kein Steps-Feld (SamplerCustom und ähnliche beziehen ihre Schrittzahl aus einem sigmas-Knoten). Noch nicht unterstützt.",
+  "workflow.err.noSize":
+    "Der Latent-Knoten trägt kein width/height, das Plugin kann die Größe nicht setzen. Nimm EmptyLatentImage als latent_image des Samplers.",
+
   "empty.noImage": "Prompt eingeben und auf Generieren klicken.",
+  "empty.noWorkflow": "Wähle einen ComfyUI-Workflow, um loszulegen",
+  "empty.noWorkflowCta": "Einstellungen öffnen",
+  "empty.noComfyServer":
+    "Starte ComfyUI auf diesem Rechner und trage seine Adresse in den Einstellungen ein — standardmäßig ist das http://127.0.0.1:8188.",
+  "empty.comfyUnreachable":
+    "Unter dieser Adresse hat nichts geantwortet, das nach ComfyUI aussieht. ComfyUI hört standardmäßig auf Port 8188 — und ein Endpunkt, der noch von Draw Things oder AUTOMATIC1111 stammt, antwortet zwar, aber nicht auf ComfyUIs API.",
   "empty.noServer":
     "Verbinde einen lokalen Bildserver wie Draw Things (API-Server aktivieren) oder AUTOMATIC1111 (--api) und trage den Endpunkt in den Einstellungen ein.",
   "empty.noServerCta": "Einstellungen öffnen",
@@ -253,9 +311,10 @@ export const DE: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Eingebaut: ein Bildmodell rechnet auf deiner GPU in Obsidian (einmal auf Wunsch geladen — welches und wie groß steht in der Modell-Zeile darunter). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern.",
+  "settings.engine.desc": "Eingebaut: ein Bildmodell rechnet auf deiner GPU in Obsidian (einmal auf Wunsch geladen — welches und wie groß steht in der Modell-Zeile darunter). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern. ComfyUI: dein eigener Workflow auf einem laufenden ComfyUI-Server (Standard-Port 8188) — das Plugin setzt Prompt, Seed, Steps und Größe ein und lässt den Rest des Graphen in Ruhe.",
   "settings.engine.builtin": "Eingebaut (auf deiner GPU)",
   "settings.engine.server": "Server (Draw Things / A1111)",
+  "settings.engine.comfy": "ComfyUI (dein Workflow)",
   "settings.model.name": "{0}-Modell ({1})",
   "settings.model.desc": "{0} · {1}. Wird nur nach Klick geladen, per Prüfsumme geprüft, außerhalb des Vaults abgelegt.",
   "settings.model.download": "Herunterladen",
@@ -278,7 +337,15 @@ export const DE: Record<string, string> = {
   "settings.server.name": "Server-Endpoint",
   "settings.server.desc":
     "A1111-kompatibler lokaler Bild-Server — Draw Things (API-Server aktivieren), AUTOMATIC1111 (--api), Forge, SD.Next.",
+  "settings.comfyServer.name": "ComfyUI-Endpoint",
+  "settings.comfyServer.desc":
+    "Adresse deines laufenden ComfyUI-Servers — standardmäßig http://127.0.0.1:8188. Es ist dasselbe Feld wie der Server-Endpoint darüber: eine Adresse, die noch von Draw Things oder AUTOMATIC1111 stammt, bleibt beim Umschalten stehen und bedient ComfyUIs API nicht.",
   "settings.server.test": "Verbindung testen",
+  "settings.workflow.name": "Workflow-Datei",
+  "settings.workflow.desc":
+    "Ein aus ComfyUI im API-Format exportierter Workflow. Das Plugin setzt Prompt, Negativ-Prompt, Seed, Steps und Größe ein — Sampler, Scheduler, CFG, LoRAs und Upscaler bleiben, wie du sie gebaut hast.",
+  "settings.workflow.pick": "Wählen…",
+  "workflow.pickerTitle": "ComfyUI-Workflow wählen (.json)",
 
   "notice.serverOk": "Server OK — Modell: {0}",
   "notice.serverFail": "Server nicht erreichbar. Prüfe, ob er läuft und die API aktiviert ist.",

@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 
+// KEIN it()-Block: diese Funktion wird nie aufgerufen. Sie prueft den TYPECHECK, nicht das
+// Laufzeitverhalten — ausgefuehrt liefe sie in modelById(undefined) und faerbte den Test aus
+// dem falschen Grund rot. Geprueft wird sie von `npm run typecheck`: verschwindet einer der
+// erwarteten Fehler, meldet tsc "Unused '@ts-expect-error' directive" und bricht das Gate.
+function _nur_typcheck(): void {
+  // @ts-expect-error builtin ohne model
+  backendCapabilities({ mode: "builtin" });
+  // @ts-expect-error comfy ohne slots
+  backendCapabilities({ mode: "comfy" });
+}
+
 describe("generation constants (Spec §4)", () => {
   it("SIZES enthält 10 Einträge", () => {
     expect(SIZES).toHaveLength(10);
@@ -63,7 +74,7 @@ describe("generation constants (Spec §4)", () => {
 
 describe("backendCapabilities", () => {
   it("builtin ist guidance-frei, auf 512² und auf wenige Steps begrenzt — kann seit 0.11 aber img2img", () => {
-    expect(backendCapabilities("builtin", "sd-turbo")).toEqual({
+    expect(backendCapabilities({ mode: "builtin", model: "sd-turbo" })).toEqual({
       negativePrompt: false,
       cfg: false,
       initImage: true,
@@ -74,7 +85,7 @@ describe("backendCapabilities", () => {
     });
   });
   it("server kann alles, was das Panel anbietet (Modellargument ist Pflicht, aber im Server-Zweig unbeachtet)", () => {
-    expect(backendCapabilities("server", "sd-turbo")).toEqual({
+    expect(backendCapabilities({ mode: "server" })).toEqual({
       negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max,
       fixedSize: null, sizes: null,
     });
@@ -83,21 +94,21 @@ describe("backendCapabilities", () => {
 
 describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
   it("sd-turbo: eine feste Groesse, sizes hat einen Eintrag", () => {
-    const c = backendCapabilities("builtin", "sd-turbo");
+    const c = backendCapabilities({ mode: "builtin", model: "sd-turbo" });
     expect(c.fixedSize).toEqual({ width: 512, height: 512 });
     expect(c.sizes).toEqual([{ width: 512, height: 512 }]);
     expect(c.maxSteps).toBe(8);
   });
 
   it("sdxl-turbo: fixedSize null, aber zwei erlaubte Groessen", () => {
-    const c = backendCapabilities("builtin", "sdxl-turbo");
+    const c = backendCapabilities({ mode: "builtin", model: "sdxl-turbo" });
     expect(c.fixedSize).toBeNull();
     expect(c.sizes).toEqual([{ width: 512, height: 512 }, { width: 1024, height: 1024 }]);
   });
 
   it("beide builtin-Modelle bleiben ohne Negativ-Prompt und CFG, koennen aber img2img", () => {
     for (const id of ["sd-turbo", "sdxl-turbo"] as const) {
-      const c = backendCapabilities("builtin", id);
+      const c = backendCapabilities({ mode: "builtin", model: id });
       expect(c.negativePrompt).toBe(false);
       expect(c.cfg).toBe(false);
       expect(c.initImage).toBe(true);
@@ -105,7 +116,7 @@ describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
   });
 
   it("Server bleibt unveraendert: freie Wahl, sizes null", () => {
-    const c = backendCapabilities("server", "sd-turbo");
+    const c = backendCapabilities({ mode: "server" });
     expect(c.fixedSize).toBeNull();
     expect(c.sizes).toBeNull();
     expect(c.maxSteps).toBe(50);
@@ -114,7 +125,38 @@ describe("backendCapabilities pro Modell (Spec 0.9 §6.3)", () => {
 
 describe("img2img-Faehigkeit", () => {
   it("seit 0.11 koennen beide Modi ein Ausgangsbild — die eingebaute Engine hat den VAE-Encoder als Pflicht-Asset", () => {
-    expect(backendCapabilities("server", "sd-turbo").initImage).toBe(true);
-    expect(backendCapabilities("builtin", "sd-turbo").initImage).toBe(true);
+    expect(backendCapabilities({ mode: "server" }).initImage).toBe(true);
+    expect(backendCapabilities({ mode: "builtin", model: "sd-turbo" }).initImage).toBe(true);
+  });
+});
+
+describe("backendCapabilities im comfy-Modus", () => {
+  const slots = { sampler: "1", positive: "2", negative: "3", latent: "4", seedField: "seed", stepsField: "steps", workflowSteps: 6 } as const;
+
+  it("kann Negativ-Prompt, aber kein CFG und kein img2img", () => {
+    const c = backendCapabilities({ mode: "comfy", slots });
+    expect(c.negativePrompt).toBe(true);
+    expect(c.cfg).toBe(false);
+    expect(c.initImage).toBe(false);
+  });
+
+  it("laesst die Groesse frei und setzt die Server-Step-Grenzen", () => {
+    const c = backendCapabilities({ mode: "comfy", slots });
+    expect(c.sizes).toBeNull();
+    expect(c.fixedSize).toBeNull();
+    expect(c.minSteps).toBe(STEPS.min);
+    expect(c.maxSteps).toBe(STEPS.max);
+  });
+
+  it("sperrt alles, solange kein brauchbarer Workflow da ist", () => {
+    const c = backendCapabilities({ mode: "comfy", slots: null });
+    expect(c.negativePrompt).toBe(false);
+    expect(c.cfg).toBe(false);
+    expect(c.initImage).toBe(false);
+    // Auch die restlichen vier Felder gehoeren zur Sperre — halb gesperrt waere keine Sperre.
+    expect(c.minSteps).toBe(STEPS.min);
+    expect(c.maxSteps).toBe(STEPS.max);
+    expect(c.sizes).toBeNull();
+    expect(c.fixedSize).toBeNull();
   });
 });

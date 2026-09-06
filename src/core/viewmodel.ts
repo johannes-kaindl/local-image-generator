@@ -1,8 +1,10 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
 import { t } from "../vendor/kit/i18n";
-import { backendCapabilities, type SizeOption } from "./generation";
+import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
+import { slotsOf, type WorkflowProblem, type WorkflowState } from "./comfy/state";
+import type { EngineChoice } from "./settings";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -46,8 +48,14 @@ export interface GenParams {
   negativePrompt: string;
   seed: number;
   steps: number;
-  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). */
-  cfg: number;
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). **`null` heisst: vom Backend
+   *  bestimmt, nicht vom Plugin** — im comfy-Modus fasst `patchWorkflow` das CFG-Feld des
+   *  Samplers bewusst nicht an, der Lauf rechnet also mit dem Wert des Nutzer-Workflows.
+   *  Eine Zahl hier waere eine Angabe ueber etwas, das dieses Plugin nicht entschieden hat —
+   *  dieselbe Erfindung, gegen die die Steps-Abweisung steht. Die Notiz laesst das Feld dann
+   *  weg (note.ts), wie bei `denoising` und `negative_prompt`. builtin traegt dagegen eine
+   *  ECHTE 1: SD-Turbo ist destilliert und kennt keine Guidance. */
+  cfg: number | null;
   model: string;
   width: number;
   height: number;
@@ -64,8 +72,20 @@ export interface GenParams {
 }
 
 export interface PanelState {
-  /** Welches Backend gerade gilt (settings.engine). */
-  mode: "builtin" | "server";
+  /** Welches Backend gerade gilt (settings.engine). Als EngineChoice (nicht nur
+   *  "builtin" | "server"), seit es den comfy-Modus gibt. `buildViewModel` verzweigt fuer
+   *  comfy inzwischen ausdruecklich (`comfyStatus`/`comfyEmpty`); **offen ist nur noch
+   *  `recipeUnchanged`**, das den comfy-Fall weiter in den Server-Vergleich faltet — folgenlos
+   *  fuer die Richtigkeit der Notiz, aber `generateEnabled` sperrt dort ein unveraendertes
+   *  Rezept nie. Vollstaendige Liste + Schadensbild je Stelle: AGENTS.md
+   *  § "Architecture notes / Gotchas" — "Der dritte Modus-Wert faellt an rund einem Dutzend
+   *  Stellen in den else-Zweig". */
+  mode: EngineChoice;
+  /** Der Zustand des hinterlegten ComfyUI-Workflows — der GANZE Zustand, nicht nur die
+   *  Slots: das ViewModel braucht ihn spaeter (Statuszeile), und zwei Quellen fuer dieselbe
+   *  Sache waeren genau der Drift, gegen den die eine Haertungsquelle steht. Die Slots
+   *  leitet dieses Modul selbst per `slotsOf()` ab. */
+  workflow: WorkflowState;
   /** Aenderungsstaerke des Denoise-Reglers, null wenn keine Vorlage gesetzt ist. Liegt im
    *  State (nicht nur im DOM), weil `recipeUnchanged` sie vergleichen muss: derselbe Seed
    *  mit anderer Staerke ergibt ein anderes Bild. */
@@ -214,6 +234,60 @@ function serverStatus(s: PanelState): PanelViewModel["status"] {
   return runStatus(s);
 }
 
+/** Im comfy-Modus gibt es ZWEI Bedingungen. Der Workflow wird zuerst gemeldet, weil er der
+ *  naeher liegende Fehler ist: einen Server startet man einmal, einen Workflow legt man
+ *  fuer diese Aufgabe hin. Der Server kommt danach, mit denselben Meldungen wie im
+ *  A1111-Modus — er ist derselbe Zustand. */
+function comfyStatus(s: PanelState): PanelViewModel["status"] {
+  const w = s.workflow;
+  if (w.kind === "unconfigured") return { icon: "circle-x", text: t("status.noWorkflow"), cls: "is-error" };
+  if (w.kind === "missing") return { icon: "circle-x", text: t("status.workflowMissing", w.path), cls: "is-error" };
+  if (w.kind === "invalid") return { icon: "circle-x", text: workflowProblemText(w.reason), cls: "is-error" };
+  // Der SERVER-Teil bekommt eigene Saetze, obwohl der Zustand derselbe ist: der Endpunkt ist
+  // zwischen Server- und comfy-Modus GETEILT. Wer umstellt, behaelt seinen A1111-Endpunkt —
+  // der Statuscheck ist dann zu Recht streng, aber „ist die API aktiviert?" schickt den
+  // Nutzer auf die falsche Fehlersuche: der Server antwortet, er ist nur der falsche.
+  // Ein Laufzeitfehler bleibt vorn (wie in serverStatus), sonst verdeckte die
+  // Endpunkt-Meldung die konkrete Fehlermeldung des letzten Laufs.
+  if (s.run.kind !== "error") {
+    if (s.server.kind === "unconfigured") return { icon: "circle-x", text: t("status.noComfyEndpoint"), cls: "is-error" };
+    if (s.server.kind === "unreachable") return { icon: "circle-x", text: t("status.comfyUnreachable"), cls: "is-error" };
+  }
+  return serverStatus(s);
+}
+
+/** Ein Satz je Ausgang, kein generisches "Workflow ungueltig": der Nutzer soll wissen,
+ *  WAS er an seinem Graphen aendern muss. */
+export function workflowProblemText(p: WorkflowProblem): string {
+  switch (p.kind) {
+    case "json": return t("workflow.err.json");
+    case "not-an-object": return t("workflow.err.notAnObject");
+    case "no-sampler": return t("workflow.err.noSampler");
+    case "ambiguous-sampler": return t("workflow.err.ambiguous", p.ids.join(", "));
+    case "dangling-ref": return t("workflow.err.dangling", p.field, p.id);
+    case "no-steps-field": return t("workflow.err.noSteps");
+    case "no-size-fields": return t("workflow.err.noSize");
+  }
+}
+
+/** Wie bei der Statuszeile: fehlt/ist ungueltig der Workflow, ist das der naeher liegende
+ *  Fehler und bekommt den Settings-CTA — ein erreichbarer, aber falsch konfigurierter
+ *  Server waere hier die falsche Anlaufstelle. Steht der Workflow, gilt derselbe
+ *  Leerzustand wie im Server-Modus. */
+function comfyEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
+  if (s.workflow.kind !== "ok") {
+    return { text: t("empty.noWorkflow"), ctaLabel: t("empty.noWorkflowCta"), ctaAction: "settings" };
+  }
+  // Eigene Texte aus demselben Grund wie in comfyStatus: der Server-Leerzustand schickte den
+  // ComfyUI-Nutzer an genau der Stelle, an der er Hilfe braucht, zu Draw Things — und nannte
+  // ComfyUIs Standard-Port nirgends. CTA und Aktion bleiben dieselben.
+  if (s.server.kind === "unconfigured")
+    return { text: t("empty.noComfyServer"), ctaLabel: t("empty.noServerCta"), ctaAction: "settings" };
+  if (s.server.kind === "unreachable")
+    return { text: t("empty.comfyUnreachable"), ctaLabel: t("empty.unreachableCta"), ctaAction: "recheck" };
+  return serverEmpty(s, busy);
+}
+
 function engineStatus(s: PanelState): PanelViewModel["status"] {
   if (s.run.kind === "error") return { icon: "circle-x", text: t("status.error", s.run.message), cls: "is-error" };
   const e = s.engine;
@@ -286,11 +360,14 @@ export function buildViewModel(s: PanelState): PanelViewModel {
   const busy = s.run.kind === "contacting" || s.run.kind === "generating"
     || s.run.kind === "loading-model" || s.run.kind === "external";
   const builtin = s.mode === "builtin";
-  const backendReady = builtin ? s.engine.kind === "ready" : s.server.kind === "ok";
-  const caps = backendCapabilities(s.mode, s.builtinModel);
+  const comfy = s.mode === "comfy";
+  const backendReady = builtin
+    ? s.engine.kind === "ready"
+    : s.server.kind === "ok" && (!comfy || s.workflow.kind === "ok");
+  const caps = backendCapabilities(toBackendContext(s.mode, s.builtinModel, slotsOf(s.workflow)));
 
-  const status = builtin ? engineStatus(s) : serverStatus(s);
-  const empty = builtin ? engineEmpty(s, busy) : serverEmpty(s, busy);
+  const status = builtin ? engineStatus(s) : comfy ? comfyStatus(s) : serverStatus(s);
+  const empty = builtin ? engineEmpty(s, busy) : comfy ? comfyEmpty(s, busy) : serverEmpty(s, busy);
 
   const modelLabel = builtin
     ? t("generate.modelBuiltin", modelById(s.builtinModel).label)

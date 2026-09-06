@@ -23,6 +23,8 @@ import {
   type BuiltinModelId,
 } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
+import { slotsOf, workflowStateFrom, type WorkflowState } from "./core/comfy/state";
+import { ComfyClient } from "./core/comfy/client";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
   createImageGenerationApi,
@@ -32,10 +34,10 @@ import {
   type ApiSaveResult,
   type ImageGenerationApi,
 } from "./core/plugin-api";
-import { parseOptionsModel, ProgressPoller, A1111Client, type ImageBackend } from "./core/txt2img";
+import { parseOptionsModel, ProgressPoller, A1111Client, statusUrlFor, type ImageBackend } from "./core/txt2img";
 import { formatBytes, partialDownloadLabel, type EngineState, type GenParams, type PanelState, type ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
-import { httpGetJson, httpPostJson } from "./obsidian/http";
+import { comfyTransport, httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
 import { LocalEngineBackend, SessionBuildTimeout } from "./obsidian/local-engine";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
@@ -44,7 +46,6 @@ import { base64OfDataUrl, dataUrlToBytes, decodeInitImage, rgbaToDataUrl } from 
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { ImagePickerModal } from "./obsidian/image-picker";
 import { GeneratorView, VIEW_TYPE, type PanelRecipe, type ViewHost } from "./obsidian/view";
-import { normalizeEndpoint } from "./vendor/kit/endpoint";
 import { mergeSettings } from "./vendor/kit/settings";
 import { validateSettings } from "./vendor/kit/settings_schema";
 import { pickLang, setLang, t } from "./vendor/kit/i18n";
@@ -74,6 +75,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
+  // `workflow` ist seit Task 5 Teil von PanelState (der ganze Zustand, nicht nur die Slots) —
+  // die fruehere Intersection ist damit aufgeloest.
   private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> = {
     initImage: null,
     denoising: null,
@@ -81,6 +84,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     downloadedModels: [],
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
+    workflow: { kind: "unconfigured" },
     run: { kind: "idle" },
     image: null,
     editorActive: false,
@@ -104,6 +108,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.api = createImageGenerationApi({
       getMode: () => this.settings.engine,
       builtinModel: () => this.settings.builtinModel,
+      workflowSlots: () => slotsOf(this.state.workflow),
       readiness: () => this.apiReadiness(),
       // Der EINE Netzaufruf hinter `api.recheck()`. `checkServer()` schreibt `state.server`
       // und wirft nicht — ein unerreichbarer Server ist dort ein Ergebnis; die Fassade liest
@@ -248,6 +253,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     await this.modelStore.migrateLegacyKeys(assetsFor("sd-turbo"));
     if (this.settings.engine === "builtin") void this.refreshEngineState();
     else void this.checkServer();
+    if (this.settings.engine === "comfy") void this.loadWorkflow();
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
     // Settings-Tab-Öffnung): Bestandsinstallationen können noch ~2,5 GB alte SD-Turbo-
     // Gewichte im Cache-API-Speicher haben (0.x, In-Process-Engine). Hinweis statt
@@ -293,6 +299,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       if (e.kind === "gpu-missing") return { ready: false, reason: "no-gpu" };
       return { ready: false, reason: "model-not-downloaded" };
     }
+    if (this.settings.engine === "comfy") {
+      const w = this.state.workflow;
+      if (w.kind !== "ok") return { ready: false, reason: "not-configured" };
+      // Danach gilt dieselbe Server-Bedingung wie fuer A1111 — Fall-through nach unten.
+    }
     const s = this.state.server;
     if (s.kind === "ok") return { ready: true };
     if (s.kind === "unconfigured") return { ready: false, reason: "not-configured" };
@@ -333,6 +344,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       defaultSteps: this.settings.defaultSteps,
       model: this.currentModelName(),
       builtinModel: this.settings.builtinModel,
+      workflowSlots: slotsOf(this.state.workflow),
       now: new Date(),
       randomSeed: () => Math.floor(Math.random() * 2 ** 31),
     };
@@ -423,9 +435,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
     this.settings.engine = mode;
     await this.saveSettings();
-    if (mode === "server") {
+    if (mode !== "builtin") {
       // Ein laufender Download gehört zum verlassenen Modus — abbrechen, nicht im Verborgenen
-      // weiterlaufen lassen (fertige Dateien bleiben im Cache).
+      // weiterlaufen lassen (fertige Dateien bleiben im Cache). Gilt fuer JEDEN Zielmodus
+      // ausserhalb von builtin, nicht nur "server" — sonst laedt ein Wechsel builtin->comfy
+      // mehrere GB fuer einen verlassenen Modus weiter, und die GPU-Sessions bleiben belegt.
       this.cancelDownload();
       const e = this.localEngine;
       this.localEngine = null;
@@ -436,6 +450,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // Session neben einer noch nicht freigegebenen auf.
       await e?.dispose();
       await this.checkServer();
+      if (mode === "comfy") await this.loadWorkflow();
     } else {
       await this.refreshEngineState();
     }
@@ -580,6 +595,22 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return be;
   }
 
+  /** Ein Client pro Lauf, wie beim A1111Client. Der Workflow-Zustand ist zu diesem
+   *  Zeitpunkt `ok` — das Gate darueber hat es geprueft; der Nicht-ok-Fall wirft hier
+   *  bewusst, statt still einen leeren Graphen zu schicken.
+   *
+   *  `timeoutMs` ausdruecklich gesetzt: der Client-Default sind 10 min, waehrend der
+   *  A1111-Weg ueber `httpPostJson` effektiv 30 min haelt (I1 des Branch-Abschlussreviews
+   *  2026-09-06). Ein ComfyUI-Lauf mit Upscaler-Kette ueberschreitet 10 min mit Ansage, und
+   *  der Nutzer haette die Grenze nirgends anheben koennen — sie steht in keinem Setting.
+   *  Dieselbe Groessenordnung fuer beide Server-Wege, damit ein langer Lauf nicht davon
+   *  abhaengt, welches Backend ihn faehrt. */
+  private makeComfyClient(): ImageBackend {
+    const w = this.state.workflow;
+    if (w.kind !== "ok") throw new Error("kein brauchbarer Workflow");
+    return new ComfyClient(this.settings.endpoint, w.json, comfyTransport(), { timeoutMs: 1_800_000 });
+  }
+
   /** Modell wechseln (Settings, Task 10): dieselbe Sperre wie setEngine() — ein Wechsel darf
    *  die GPU-Sessions nicht unter einem laufenden Panel- ODER API-Lauf wegziehen (isBusy()
    *  deckt beide). Schaltet NICHT automatisch zurueck, wenn das neue Modell fehlt: das
@@ -620,15 +651,44 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.state.server = { kind: "checking" };
     this.refreshViews();
     try {
-      const r = await httpGetJson(`${normalizeEndpoint(ep)}/sdapi/v1/options`);
+      const r = await httpGetJson(statusUrlFor(this.settings.engine, ep));
       if (this.unloaded) return this.state.server; // Plugin entladen → keine späten State-Mutationen mehr
-      this.state.server = r.status === 200 ? { kind: "ok", modelName: parseOptionsModel(r.json) } : { kind: "unreachable" };
+      // ComfyUI liefert in /system_stats keinen Modellnamen — das Modell steht im
+      // Workflow. `modelName: null` ist die richtige Aussage; die UI zeigt dann
+      // "(im Server gewählt)", was hier woertlich stimmt.
+      this.state.server = r.status === 200
+        ? { kind: "ok", modelName: this.settings.engine === "comfy" ? null : parseOptionsModel(r.json) }
+        : { kind: "unreachable" };
     } catch {
       if (this.unloaded) return this.state.server;
       this.state.server = { kind: "unreachable" };
     }
     this.refreshViews();
     return this.state.server;
+  }
+
+  /** Workflow-Datei lesen und beurteilen. Laeuft beim Start (nur im comfy-Modus), nach dem
+   *  Setzen des Pfades und beim Moduswechsel — nicht vor jedem Lauf: ein Workflow aendert
+   *  sich nicht zwischen zwei Klicks, und ein Vault-Read pro Klick waere Rauschen. */
+  async loadWorkflow(): Promise<WorkflowState> {
+    const path = this.settings.comfyWorkflowPath.trim();
+    let raw: string | null = null;
+    if (path !== "") {
+      // Form wie ueberall sonst in main.ts: getAbstractFileByPath + instanceof TFile.
+      // Ein Ordner unter dem Pfad ist hier dasselbe wie "nicht da".
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) {
+        try {
+          raw = await this.app.vault.cachedRead(file);
+        } catch {
+          raw = null;
+        }
+      }
+    }
+    if (this.unloaded) return this.state.workflow; // keine spaeten State-Mutationen
+    this.state.workflow = workflowStateFrom(path, raw);
+    this.refreshViews();
+    return this.state.workflow;
   }
 
   refreshViews(): void {
@@ -671,7 +731,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     opts?: { external?: boolean },
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
-    const backend: ImageBackend = builtin ? this.ensureLocalEngine() : new A1111Client(this.settings.endpoint, httpPostJson);
+    const backend: ImageBackend = builtin
+      ? this.ensureLocalEngine()
+      : this.settings.engine === "comfy"
+        ? this.makeComfyClient()
+        : new A1111Client(this.settings.endpoint, httpPostJson);
     const external = opts?.external === true;
     // `phase` ist die WAHRE Phase und steuert den Kontrollfluss unten (Poller/Timer); im
     // Fremdlauf faellt state.run (die ANGEZEIGTE Phase) fuer die gesamte Laufzeit auf
@@ -696,7 +760,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Eingebaut: die Engine meldet Phasen selbst (loading-model einmal je Sitzung, dann Schritte);
     // der Timer trägt nur den Sekundenzähler der Ladephase.
     let elapsed = 0;
-    const poller = builtin ? null : new ProgressPoller(this.settings.endpoint, (u) => httpGetJson(u, 1000));
+    // Kein Poller im comfy-Modus: ComfyUIs Fortschritt laeuft ueber den WebSocket, und der
+    // wird bewusst nicht uebernommen (Spec §0 — ComfyUI 0.30.0 weist Verbindungen aus dem
+    // Renderer mit 403 ab, weil Origin app://obsidian.md nicht zum Host passt). Die
+    // Statuszeile zaehlt Sekunden, derselbe Pfad wie bei Draw Things.
+    const poller = this.settings.engine === "server"
+      ? new ProgressPoller(this.settings.endpoint, (u) => httpGetJson(u, 1000))
+      : null;
     if (builtin) {
       this.ensureLocalEngine().onPhase = (ph, step, total) => {
         if (this.unloaded) return;
@@ -793,8 +863,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // gleichzeitig lostreten.
     if (this.isBusy()) return;
     const builtin = this.settings.engine === "builtin";
-    // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit.
-    if (builtin ? this.state.engine.kind !== "ready" : this.state.server.kind !== "ok") return;
+    // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit. Im comfy-Modus
+    // reicht ein erreichbarer Server nicht: ohne brauchbaren Workflow gibt es nichts zu senden.
+    const bereit = builtin
+      ? this.state.engine.kind === "ready"
+      : this.state.server.kind === "ok" && (this.settings.engine !== "comfy" || this.state.workflow.kind === "ok");
+    if (!bereit) return;
     // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
     // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams
     // neutralisiert das still statt es abzulehnen (Keine-Attrappen-Linie).

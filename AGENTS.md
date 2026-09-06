@@ -9,8 +9,9 @@ Conventions for AI assistants working in this repo.
 ## What this is
 
 Obsidian community plugin: eine **Oberflaeche** fuer Bilderzeugung (Prompt, Stil-Chips,
-Verlauf, Ablage im Vault) vor **zwei austauschbaren Backends** (seit 0.6, Spec im Cockpit
-`_SDD/2026-08-19-eingebaute-engine-zwei-backends-design.md`):
+Verlauf, Ablage im Vault) vor **drei austauschbaren Backends** (Eingebaut/Server seit 0.6,
+Spec im Cockpit `_SDD/2026-08-19-eingebaute-engine-zwei-backends-design.md`; ComfyUI seit
+0.13, Spec `2026-09-06-comfyui-backend-design.md`):
 
 - **Eingebaut (Default):** SD-Turbo im Renderer ueber `onnxruntime-web/webgpu`. Modell
   (eigene fp16-ONNX-Konversion, ~2,6 GB) + ORT-WASM werden **nur nach Klick** aus dem
@@ -22,8 +23,16 @@ Verlauf, Ablage im Vault) vor **zwei austauschbaren Backends** (seit 0.6, Spec i
   BEIDEN Backends: der Server kontinuierlich (denoising 0–1 in 0,05er-Schritten), die
   eingebaute Engine ueber ihren eigenen VAE-Encoder ebenso kontinuierlich (0–1 in 0,05er-
   Schritten; der Einstiegspunkt im Zeitplan wird interpoliert statt gerastert, s. Gotchas).
+- **ComfyUI (seit 0.13):** ein vom Nutzer bereitgestellter API-Workflow (Vault-Datei, JSON im
+  ComfyUI-API-Format) wird vor jedem Lauf **gepatcht**, nicht neu gebaut — Prompt, Negativ,
+  Seed, Steps und Groesse wandern in die vom Workflow selbst benannten Nodes, alles andere
+  (Sampler, Scheduler, CFG, LoRAs, Upscaler) bleibt in der Hand des Nutzers. Ein Workflow ohne
+  setzbare Steps oder Bildmasse wird abgewiesen, nicht stillschweigend mit Luecken uebernommen
+  (Begruendung unter Gotchas). Kein img2img, kein Fortschrittsbalken, kein CFG-Regler — Details
+  im CHANGELOG-Eintrag 0.13.0. Herkunft: Client und Workflow-Inspektion sind aus `yijing-oracle`
+  uebernommen (Vendoring-Header in `src/core/comfy/client.ts`/`workflow.ts`), nicht neu gebaut.
 
-Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History). Beide Backends
+Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History). Alle drei Backends
 implementieren `ImageBackend` (`src/core/txt2img.ts`); `main.ts` routet nach
 `settings.engine`. **Bis 0.4 lief eine aeltere Fassung der Engine im Prozess (plus mflux als
 Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; die Reste
@@ -321,6 +330,12 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   still, weil er hier nicht mitlaeuft. Dasselbe gilt fuer die Vertragszusagen, die der Lauf
   misst: `apiVersion` am Plugin-Objekt, `recheck()` heilt `unreachable`, `capabilities.sizes`
   meldet im builtin-Modus GENAU eine Groesse, ein Backend-Fehlschlag kommt als Wert.
+- **`scripts/mock-comfy.mjs` ist deshalb eine EIGENE Datei, kein drittes `if` in
+  `mock-a1111.mjs`.** ComfyUIs API-Form (Queue-POST auf `/prompt`, Polling auf
+  `/history/<id>`, Bildabruf auf `/view`) hat nichts mit A1111s drei Endpunkten gemein, und
+  `mock-a1111.mjs` traegt bereits einen fremden Konsumenten (s. o.) — eine Aenderung dort fuer
+  ComfyUI haette dessen Vertrag mitverschoben, ohne dass der Naht-Lauf in `epub-exporter` das
+  hier sehen wuerde. Zwei getrennte Mocks halten die beiden Vertraege getrennt aenderbar.
 - **Der Server bestimmt das Modell.** Das Plugin schickt generische Parameter und zeigt
   den gemeldeten Modellnamen als Statushinweis; es waehlt nie ein Modell aus.
 - **Engine-Interface** (`ImageBackend`-kompatibel zu yijing-oracle) nicht brechen — die
@@ -394,11 +409,90 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   (`mode`), die `MODUS_REGLER` prueft. Dort gefuehrt, meldete der Modus-Umschalt-Punkt einen
   Defekt in jedem Setup, in dem der Picker aus einem der beiden anderen Gruende zu Recht
   verborgen ist.
+- **Ein ComfyUI-Workflow ohne setzbare Steps oder Bildmasse wird ABGEWIESEN, nicht mit
+  Luecken uebernommen — und der Grund ist die Ergebnis-Notiz, nicht Vorsicht um ihrer
+  selbst willen.** `inspectWorkflow()` (`src/core/comfy/workflow.ts`) prueft, bevor sie
+  `ok: true` liefert, ob der gefundene Sampler ein `steps`-Feld hat und der aufgeloeste
+  Latent-Node `width`/`height` traegt; fehlt eines, kommt `no-steps-field` bzw.
+  `no-size-fields` statt eines Slot-Objekts mit `null`-Luecken zurueck. Grund: `GenParams`
+  hat keinen Null-Fall fuer Steps oder Groesse — es gibt keinen ehrlichen Eintrag fuer „das
+  Plugin hat den Wert nicht bestimmt", nur einen erfundenen. Ein Fallback (z. B. „dann
+  nimm einen Default-Wert und schreib ihn in die Notiz") waere die Keine-Attrappen-Linie an
+  genau der Stelle gebrochen, die sie am staerksten schuetzt: die Notiz behauptete einen
+  Wert, den der Workflow gar nicht kennt. Wer hier bei einem kuenftigen Umbau eine
+  Kulanzregel einbauen will ("wenn kein Steps-Feld da ist, nimm halt 20"), baut den Fehler
+  bewusst wieder ein — die Abweisung ist die Spec-Entscheidung (Spec §4), keine
+  uebertriebene Strenge, die man sich sparen koennte.
+- **`MODUS_REGLER` im GUI-Smoke-Treiber traegt fuer DREI Modi nicht mehr — deshalb Punkt 35
+  gegen eine eigene Erwartungstabelle statt gegen dieselbe Liste.** Die Liste ist als „im
+  builtin-Modus versteckt, im server-Modus sichtbar" gebaut (eine Bedingung, ein Vergleich).
+  Im comfy-Modus stimmt das nur fuer die CFG-Zeilen — `.lig-negative-row` ist dort
+  SICHTBAR (der Negativ-Slot ist Teil der Sampler-Erkennung und existiert per Definition),
+  waehrend CFG weiterhin verborgen bleibt (`patchWorkflow` fasst CFG bewusst nicht an).
+  Ein dritter Durchlauf gegen `MODUS_REGLER` haette die Negativ-Zeile als falsch-roten
+  Befund gemeldet. `MODUS_ERWARTUNG` (`scripts/gui-smoke.ts`, Punkt 35) fuehrt stattdessen
+  je Modus eine eigene `{ sichtbar, versteckt }`-Zeile — drei Modi, drei Zeilen, keine
+  gemeinsame Bedingung, die stillschweigend annimmt, es gaebe nur „kann alles" und „kann
+  wenig". `MODUS_REGLER` selbst bleibt daneben bestehen (Punkt 17 prueft weiterhin nur
+  builtin/server) — die beiden Listen sind nicht dieselbe Datenquelle mit zwei Namen.
+- **`src/core/comfy/workflow.ts` ist KEIN Vendoring mehr, sondern ein FORK von
+  `yijing-oracle` mit einer benannten inhaltlichen Abweichung — `client.ts` dagegen liegt
+  nahe am Original.** Der Herkunftsstempel in Zeile 1 deklariert beide Male die Uebernahme,
+  nicht die Abweichung; wer die Dateien neu zieht und nur den Stempel liest, ueberschreibt
+  in `workflow.ts` eine Zusage, die dieses Repo gegeben hat. Der Unterschied zwischen den
+  beiden Dateien ist der Punkt dieses Eintrags:
+  - **`client.ts`:** technische Anpassungen an diesen Baum, keine Verhaltensaenderung.
+    Non-null-Assertions traegt die Datei ⚠️ **keine** — eine frueher hier stehende Fassung
+    behauptete das fuer beide Module und war fuer `client.ts` gemessen falsch. Eigene
+    Abweichung ist dagegen der gefangene `/history`-Poll in `waitForImage` (I1,
+    Branch-Abschlussreview 2026-09-06): ein geworfener Poll beendet den Lauf hier nicht.
+  - **`workflow.ts`:** vier zusammenhaengende inhaltliche Aenderungen, die zusammen die
+    Keine-Attrappen-Zusage fuer Steps und Groesse TRAGEN — (1) `WorkflowSlots.stepsField` ist
+    nicht mehr nullable, (2) das Feld `workflowSteps` ist neu (Startwert des Reglers), (3)
+    die Fehlerausgaenge `no-steps-field` und `no-size-fields` samt ihrer Pruefungen in
+    `inspectWorkflow` sind neu, (4) `patchWorkflow` schreibt Steps deshalb unbedingt statt
+    bedingt. Wer diese Datei neu zieht und nur „die `!` wieder einsetzen" abarbeitet, hat
+    die ganze Abweisungsregel entfernt — und das Plugin schriebe wieder erfundene Werte in
+    die Ergebnis-Notiz (Begruendung im Eintrag „Ein ComfyUI-Workflow ohne setzbare Steps
+    oder Bildmasse wird ABGEWIESEN" weiter oben).
+  Non-null-Assertions in `workflow.ts` (`noUncheckedIndexedAccess` ist hier `true`, im
+  Original nicht) sind daneben die kleinere Sorte Abweichung: an jeder Stelle entweder INTERN
+  bewiesen (ein Guard schliesst `undefined` vorher aus, z. B. `candidates[0]!` nach
+  ausgeschlossenem `length > 1`) oder EXTERN bedingt und mit Doc-Kommentar versehen (z. B.
+  `out[slots.positive]!` in `patchWorkflow`, sicher nur wenn `slots` aus `inspectWorkflow()`
+  desselben Graphen stammt). **Ein Re-Sync ist damit keine Kopie, sondern ein Merge** — die
+  vier Punkte oben gehoeren danach wieder drin, nicht nur die Assertionen.
 - **„Speichern & als Vorlage" speichert wirklich — das ist der Punkt.** Der Knopf legt das
   Ergebnis erst im Vault ab und macht dann dessen Pfad zur Vorlage. Ohne das entstuende eine
   Vorlage ohne benennbare Herkunft, und die Ergebnis-Notiz muesste „Vorlage: das vorige
   Ergebnis" behaupten. Legt nur das Bild an, nie eine Notiz — `createMode` gilt fuer
   Ergebnisse, nicht fuer Zwischenschritte.
+- **`cfg: null` heisst „vom Backend bestimmt", `cfg: 1` heisst „keine Guidance" — die zwei
+  nicht zusammenlegen.** Die Haertung verzweigt fuer `cfg` ueber `ctx.mode`, nicht ueber
+  `caps.cfg`: builtin traegt eine echte 1 (SD-Turbo ist destilliert), comfy traegt `null`
+  (`patchWorkflow` fasst das CFG-Feld des Samplers nicht an, der Nutzer-Workflow entscheidet),
+  server traegt den gesetzten Wert. `note.ts` laesst das Feld bei `null` weg — wie `denoising`
+  und `negative_prompt`. Vorher stand in JEDER ComfyUI-Notiz `cfg: 1`, ein Wert, der nie galt
+  (C1, Branch-Abschlussreview 2026-09-06). Das ist dieselbe Erfindung, gegen die die
+  Steps-Abweisung steht, nur in die andere Richtung entschieden — wer `caps.cfg === false`
+  wieder als „also 1" liest, baut sie zurueck. Zwei Folgestellen haengen daran: die
+  Historien-Migration muss FEHLEND (Alt-Eintrag → 7) von ausdruecklich `null` unterscheiden
+  (`typeof null` ist "object"), und `applyRecipe` laesst den Regler bei `null` stehen, statt
+  ihn ueber die Klemme auf `CFG.min` zu reissen. `apiVersion` bleibt trotzdem 1: `ApiParams`
+  ist per Vertrag „was die Haertung still ueberschrieben hat", und im comfy-Modus hat sie
+  nichts ueberschrieben.
+- **`/history` ist ComfyUIs ERGEBNISkanal, nicht sein Fortschritt — ein geworfener Poll darf
+  den Lauf nicht beenden.** `comfyTransport().getJson` faehrt bewusst mit kurzem Zeitlimit
+  (3 s, im Sekundentakt gepollt) und `httpGetJson` WIRFT beim Ablauf; `waitForImage` faengt
+  das und pollt weiter, die Deadline der Schleife ist die Notbremse. Ohne das Fangen beendete
+  ein einziger langsamer Poll `generate()`, waehrend das Bild auf dem Server fertig war —
+  ComfyUI stallt seinen Loop regelmaessig (Modell-Laden beim ersten Lauf, VAE-Decode grosser
+  Bilder). Dieselbe Doktrin wie beim A1111-Fortschritt („Timeout und 5xx sind voruebergehend
+  und pollen weiter"), und derselbe Grund, warum der kurze Timeout hier bleiben DARF: er ist
+  nur zulaessig, solange das try/catch daneben steht. Die Gesamtfrist setzt der Wirt
+  (`makeComfyClient`, 30 min) auf dieselbe Groessenordnung wie den A1111-Weg — der
+  Client-Default von 10 min laesst einen Lauf mit Upscaler-Kette an einer Grenze scheitern,
+  die in keinem Setting steht (I1, Branch-Abschlussreview 2026-09-06).
 - **Die Haertung hat genau eine Quelle** (`src/core/params.ts`, `hardenParams`). Zwei
   Haertungen bedeuten, dass die API andere Werte meldet, als das Panel in die Notiz schreibt.
 - **Ein Fremdlauf hinterlaesst im Panel KEINE Spur — auch nicht als Fehler.** `runGeneration`
@@ -435,6 +529,63 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   fuer Panel und API, und eine Doppel-Zeitstempel-Setzung wuerde die zwei berichten
   unterschiedliche Zeiten, im Server-Modus Sekunden, im builtin-Modus Minuten. Folge: eine
   Notiz traegt die Anfrage-Zeit statt der Fertig-Zeit; die Datei traegt diese Zeit im Namen.
+- **Der dritte Modus-Wert faellt an rund einem Dutzend Stellen in den else-Zweig — und `tsc`
+  warnt dort weiterhin NICHT.** `PanelState.mode` wurde von `"builtin" | "server"` auf
+  `EngineChoice` geweitet (noetig, weil `getPanelState()` `settings.engine` hineinschreibt,
+  das seit dem comfy-Backend `"comfy"` fuehrt). Vorher haette ein dritter Wert an jeder
+  `=== "builtin"`-Verzweigung einen Typfehler erzwungen; seit der Weitung kompiliert `else`
+  klaglos durch, egal ob die Behandlung als Server dort richtig ist oder nicht. Der Wächter
+  ist damit von `tsc` auf DIESE LISTE gewechselt — genau der Fehlermodus, vor dem der Absatz
+  zum verlorenen Session-Wachhund weiter oben warnt (nur in einer Datei festgehalten, die
+  beim naechsten Umbau nicht mitgelesen wird) — und bleibt es, denn der Typfehler kommt
+  durch keine der folgenden Behebungen zurueck. **Stand nach Abschluss des comfy-Backends
+  (Tasks 8–10): die vier ZUERST hier gefuehrten Stellen sind erledigt oder waren nie
+  betroffen — wer ihnen noch nachjagt, jagt einem behobenen Befund nach:**
+  - **`main.ts::currentModelName`** — war **nie** so kaputt, wie eine frühere Fassung dieses
+    Eintrags behauptete: `checkServer()` setzt `state.server.modelName` fuer den comfy-Modus
+    auf `null` (ComfyUI hat keinen A1111-Modellnamen-Endpunkt), und die Funktion faellt bei
+    `null` seit jeher auf `"unknown"` zurueck statt einen fremden Modellnamen zu erben. Die
+    Ergebnis-Notiz traegt in diesem Fall ehrlich „unknown", nie den Namen des A1111-Servers.
+  - **`main.ts::apiReadiness`** — behoben in Task 8 (Routing und Bereitschafts-Gate): ein
+    eigener `comfy`-Zweig prueft zuerst `state.workflow.kind !== "ok"` (→
+    `not-configured`) und faellt erst danach in dieselbe Server-Bedingung. Ein Fremdplugin
+    ueber die Provider-API bekommt `ready: true` also nicht mehr allein dafuer, dass
+    irgendein Server antwortet — es braucht zusaetzlich einen brauchbaren Workflow.
+  - **`main.ts::setEngine`** — ebenfalls Task 8: der Aufraeumzweig haengt jetzt an
+    `mode !== "builtin"` statt an `mode === "server"` und greift damit fuer JEDEN
+    Nicht-builtin-Zielmodus. Ein Wechsel builtin → comfy bricht einen laufenden
+    Modell-Download ab und gibt die GPU-Sessions frei, genau wie builtin → server.
+  - **`settings-tab.ts` (Engine-Dropdown-Handler)** — behoben in Task 9 (Bedienung): die
+    Ableitung ist jetzt dreiwertig
+    (`clean === "server" ? "server" : clean === "comfy" ? "comfy" : "builtin"`), die Auswahl
+    „ComfyUI" springt beim Speichern nicht mehr still auf `builtin` zurueck.
+  **Ebenfalls inzwischen comfy-bewusst, obwohl nicht Teil der vier oben:** `plugin-api.ts
+  ::recheck()` prueft seit Task 8 `deps.getMode() === "server" || deps.getMode() === "comfy"`
+  (kein builtin-No-op mehr fuer comfy) und `core/viewmodel.ts::buildViewModel` verzweigt seit
+  Task 8/9 explizit fuer comfy (`comfyStatus`/`comfyEmpty`) statt es als Server zu behandeln.
+  ⚠️ **Drei weitere Verzweigungen fehlten in dieser Liste (Final-Review 2026-09-06) — und eine
+  Liste, die den Compiler ersetzen soll, ist nur so viel wert wie ihre Vollstaendigkeit:**
+  - **`main.ts::generate()`s Bereitschafts-Waechter** — korrekt behandelt: die Defensive
+    hinter dem ViewModel prueft im Nicht-builtin-Zweig zusaetzlich
+    `settings.engine !== "comfy" || state.workflow.kind === "ok"`. Ohne das startete ein Klick
+    im comfy-Modus einen Lauf ohne brauchbaren Workflow.
+  - **`main.ts::makeComfyClient()`** — korrekt behandelt: sie IST der comfy-Zweig der
+    Backend-Wahl in `runGeneration()` und wirft bei nicht-`ok`-Workflow, statt einen leeren
+    Graphen zu senden.
+  - **die initiale `state.engine`-Zuweisung im `onload`**
+    (`settings.engine === "builtin" ? "gpu-checking" : "not-downloaded"`) — folgenlos, aber
+    nicht „richtig": der comfy-Modus landet dort im Server-Zweig und traegt einen
+    Engine-Zustand, den in diesem Modus niemand liest (`engineStatus`/`engineEmpty` laufen nur
+    im builtin-Zweig). Wer den Engine-Zustand je modusuebergreifend liest, muss hier zuerst
+    hinsehen.
+  **Einzige noch offene Stelle:** `core/viewmodel.ts::recipeUnchanged` faltet den comfy-Fall
+  weiterhin in den Server-Vergleich (`s.server.kind === "ok" && s.server.modelName === p?.model`).
+  Da `modelName` im comfy-Modus laut obigem Fix immer `null` ist, schlaegt dieser Vergleich
+  im comfy-Modus immer fehl — kein Datenfehler (die Notiz bleibt ehrlich), aber
+  `generateEnabled` sperrt ein unveraendertes Rezept im comfy-Modus nie, anders als im
+  Server- oder builtin-Modus. Ein reiner UI-Komfortverlust, keine Falschaussage — deshalb
+  bewusst nicht Teil dieser Task, aber hier vermerkt, damit eine spaetere Aenderung an
+  `recipeUnchanged` weiss, dass der comfy-Fall dort noch nie eigens behandelt wurde.
 
 ## Vertrieb: Sideloader statt Community-Store (seit 2026-09-02)
 

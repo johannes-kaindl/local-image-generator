@@ -15,6 +15,7 @@
     "shots": "esbuild scripts/shots.ts --bundle --platform=node --format=esm --outfile=.shots.mjs --log-level=warning && node .shots.mjs",
     "shots:check": "if test -f ../../_docs/readme/readme_lint.py; then python3 ../../_docs/readme/readme_lint.py .; else echo 'shots:check uebersprungen: ../../_docs fehlt (maintainer-lokaler Bild-Standard)'; fi",
     "smoke:assets": "node scripts/mock-assets.mjs",
+    "smoke:comfy": "node scripts/mock-comfy.mjs",
     "smoke:gui": "esbuild scripts/gui-smoke.ts --bundle --platform=node --format=esm --outfile=.gui-smoke.mjs --log-level=warning && node .gui-smoke.mjs",
     "gate": "npm run typecheck && npm run typecheck:scripts && npm run check:manifest && npm test && npm run lint && npm run check:pure && npm run build && npm run check:clean",
     "assets": "node scripts/build-assets.mjs",

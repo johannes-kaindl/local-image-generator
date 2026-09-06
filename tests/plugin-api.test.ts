@@ -14,6 +14,7 @@ function deps(over: Partial<ApiDeps> = {}): ApiDeps {
   return {
     getMode: () => "builtin",
     builtinModel: () => "sd-turbo",
+    workflowSlots: () => null,
     readiness: () => ({ ready: true }),
     recheckServer: async () => {},
     isBusy: () => false,
@@ -68,6 +69,25 @@ describe("recheck()", () => {
     const api = createImageGenerationApi(
       deps({
         getMode: () => "server",
+        readiness: () => (erreichbar ? { ready: true } : { ready: false, reason: "unreachable" }),
+        recheckServer: async () => {
+          erreichbar = true;
+        },
+      }),
+    );
+    expect(api.status().reason).toBe("unreachable");
+
+    const s = await api.recheck();
+
+    expect(s.ready).toBe(true);
+    expect(s.reason).toBeNull();
+  });
+
+  it("heilt auch im comfy-Modus ein veraltetes unreachable — ComfyUI ist derselbe entfernte Zustand wie der A1111-Server", async () => {
+    let erreichbar = false;
+    const api = createImageGenerationApi(
+      deps({
+        getMode: () => "comfy",
         readiness: () => (erreichbar ? { ready: true } : { ready: false, reason: "unreachable" }),
         recheckServer: async () => {
           erreichbar = true;
@@ -238,6 +258,7 @@ describe("generate() — img2img", () => {
             defaultSteps: 4,
             model: BUILTIN_MODELS["sd-turbo"].id,
             builtinModel: "sd-turbo",
+            workflowSlots: null,
             now: new Date("2026-08-31T12:00:00"),
             randomSeed: () => 7,
           }),

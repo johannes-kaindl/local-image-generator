@@ -3,6 +3,17 @@
 // Spricht ZWEI Endpunkte: txt2img und (seit 0.8) img2img. Der Auftrag entscheidet, nicht
 // der Aufrufer — deshalb heisst die Klasse nicht mehr Txt2ImgClient.
 import { normalizeEndpoint } from "../vendor/kit/endpoint";
+import type { EngineChoice } from "./settings";
+
+/** Der Status-Endpunkt je Server-Sorte. Die REGISTRY fuehrt diese Probe nebenan als
+ *  Kit-Kandidaten mit dem Vermerk, die zwei Exemplare unterschieden sich NUR in der URL —
+ *  genau das ist hier die ganze Verzweigung. `builtin` hat keinen Server und kommt hier
+ *  nie an; die Signatur nimmt den Modus trotzdem, damit der Aufrufer nicht selbst
+ *  entscheiden muss, ob er fragen darf. */
+export function statusUrlFor(mode: EngineChoice, endpoint: string): string {
+  const base = normalizeEndpoint(endpoint);
+  return mode === "comfy" ? `${base}/system_stats` : `${base}/sdapi/v1/options`;
+}
 
 export type HttpPostJson = (url: string, body: unknown) => Promise<{ status: number; json: unknown }>;
 
@@ -13,7 +24,11 @@ export interface ImageRequest {
   height: number;
   steps: number;
   seed: number;
-  cfg: number;
+  /** `null` heisst „das Plugin hat den Wert nicht bestimmt" (comfy-Modus, s. GenParams.cfg).
+   *  Der A1111-Client laesst `cfg_scale` dann weg, statt eine Zahl zu erfinden — im
+   *  Server-Modus kommt hier per Haertung immer eine Zahl an, der Weglass-Zweig ist also die
+   *  ehrliche Antwort auf einen Fall, den dieser Client gar nicht sieht. */
+  cfg: number | null;
   /** Die BYTES der Vorlage (Base64-PNG ohne `data:`-Praefix), null bei txt2img. Heisst
    *  bewusst anders als `GenParams.initImage` (dort: der Vault-PFAD) — der Auftrag traegt
    *  das Bild, das Rezept nur seine Herkunft. Bei gleichem Namen haette der Spread
@@ -48,7 +63,7 @@ export class A1111Client implements ImageBackend {
       height: req.height,
       steps: req.steps,
       seed: req.seed,
-      cfg_scale: req.cfg,
+      ...(req.cfg !== null ? { cfg_scale: req.cfg } : {}),
       ...(img2img ? { init_images: [req.initImageData], denoising_strength: req.denoising } : {}),
     });
     // Der Endpunktname steht in der Meldung: ein Server, der txt2img kann und img2img nicht

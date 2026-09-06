@@ -77,6 +77,7 @@ describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
       sectionsCollapsed: { model: true },
       builtinModel: "sdxl-turbo",
       showModelPicker: true,
+      comfyWorkflowPath: "",
     };
     expect(validate(healthy)).toEqual(healthy);
   });
@@ -291,6 +292,21 @@ describe("Historie-Migration 0.5 (negativePrompt/cfg)", () => {
     });
     expect(s.history[0]).toMatchObject({ negativePrompt: "ugly", cfg: 9 });
   });
+
+  // C1 (Final-Review 2026-09-06): seit dem comfy-Modus ist `cfg: null` ein GUELTIGER Wert
+  // ("vom Backend bestimmt, nicht vom Plugin") und darf nicht wie ein fehlendes Feld auf 7
+  // zurueckgebogen werden — sonst behauptete ein neu geladener Eintrag genau die Zahl, die
+  // die Notiz bewusst weglaesst. Das fehlende Feld (Alt-Eintrag) bleibt daneben bei 7.
+  it("history-Migration erhaelt cfg: null, backfillt aber ein FEHLENDES cfg auf 7", () => {
+    const s = validate({
+      history: [
+        { prompt: "a", seed: 1, steps: 2, model: "m", width: 512, height: 512, created: "x", negativePrompt: "", cfg: null },
+        { prompt: "b", seed: 1, steps: 2, model: "m", width: 512, height: 512, created: "x", negativePrompt: "" },
+      ],
+    });
+    expect(s.history[0]?.cfg).toBeNull();
+    expect(s.history[1]?.cfg).toBe(7);
+  });
 });
 
 describe("engine-Migration (0.6)", () => {
@@ -332,5 +348,27 @@ describe("Modellwahl-Settings (Spec 0.9 §6.1)", () => {
     const s = validate(alt);
     expect(s.builtinModel).toBe("sd-turbo");
     expect(s.showModelPicker).toBe(false);
+  });
+});
+
+describe("ComfyUI-Backend (Spec 1 §2)", () => {
+  it("akzeptiert comfy als Engine-Wert", () => {
+    const s = validate({ ...DEFAULT_SETTINGS, engine: "comfy" });
+    expect(s.engine).toBe("comfy");
+  });
+
+  it("faellt bei unbekanntem Engine-Wert auf den Default zurueck", () => {
+    const s = validate({ ...DEFAULT_SETTINGS, engine: "quatsch" });
+    expect(s.engine).toBe("builtin");
+  });
+
+  it("comfyWorkflowPath ist per Default leer", () => {
+    expect(DEFAULT_SETTINGS.comfyWorkflowPath).toBe("");
+  });
+
+  // migrateSettings bleibt unangetastet: `engine` existiert bei jedem Bestandsnutzer.
+  it("Migration ruehrt einen vorhandenen engine-Wert nicht an", () => {
+    const raw = { engine: "comfy", endpoint: "" };
+    expect(migrateSettings(raw)).toBe(raw);
   });
 });

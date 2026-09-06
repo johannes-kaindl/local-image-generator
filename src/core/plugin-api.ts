@@ -2,11 +2,12 @@
 // Plugin anderen Obsidian-Plugins als `app.plugins.plugins["local-image-generator"].api`
 // anbietet. Pure Fassade ueber injizierte Abhaengigkeiten (Muster: vault-rag/src/plugin_api.ts,
 // LocalEngineDeps) — testbar ohne Obsidian, keine eigene Entscheidung ausser Uebersetzung.
-import { backendCapabilities, type SizeOption } from "./generation";
+import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
 import type { BuiltinModelId } from "./model-manifest";
 import type { HardenInput } from "./params";
 import type { GenParams } from "./viewmodel";
 import type { EngineChoice } from "./settings";
+import type { WorkflowSlots } from "./comfy/workflow";
 
 export const IMAGE_GENERATION_API_VERSION = 1;
 
@@ -59,7 +60,18 @@ export interface ApiRequest {
 export interface ApiParams {
   prompt: string; negativePrompt: string;
   width: number; height: number;
-  steps: number; seed: number; cfg: number;
+  steps: number; seed: number;
+  /** `null` heisst: **das Plugin hat den Wert nicht bestimmt** — im comfy-Modus rechnet der
+   *  Workflow des Nutzers mit seinem eigenen CFG, und `patchWorkflow` fasst das Feld nicht
+   *  an. Eine Zahl waere dort eine Falschaussage: ein Konsument schriebe sie in seine eigene
+   *  Notiz, und der Wert galt nie.
+   *
+   *  **`apiVersion` bleibt trotzdem 1.** Zwei Gruende: gemessen liest kein Konsument im
+   *  Workspace dieses Feld (vier Repos geprueft), und der Vertrag beschreibt `ApiParams`
+   *  ausdruecklich als „was die Haertung still ueberschrieben hat" — im comfy-Modus hat sie
+   *  nichts ueberschrieben, `null` ist also die vertragstreue Antwort und keine neue Semantik.
+   *  Dieselbe additive Logik wie bei `engine: "comfy"` und `recheck()` in 0.10.0. */
+  cfg: number | null;
   model: string;      // im Server-Modus wählt ihn der Server, wir melden ihn nur
   created: string;    // lokale Zeit ohne Offset, wie in den Ergebnis-Notizen
   /** Nicht-null ⇔ es wurde von einer Vorlage aus weitergerechnet (img2img). Der Konsument
@@ -77,7 +89,13 @@ export type ApiResult =
 
 export interface ApiStatus {
   apiVersion: number;
-  engine: "builtin" | "server";
+  /** Deskriptiv, keine Steuerung — ein Konsument liest `capabilities` und `ready`/`reason`,
+   *  nicht dieses Feld (gemessen: derzeit kein Konsument im Workspace liest es ueberhaupt).
+   *  Deshalb bleibt `apiVersion` bei der Erweiterung um "comfy" auf 1: "server" fuer ComfyUI
+   *  zu melden waere eine Falschaussage ueber das laufende Backend (Keine-Attrappen-Linie),
+   *  und ein Versions-Sprung zwaenge Konsumenten zu einer Pruefung, fuer die sich nichts
+   *  aendert — dieselbe additive Logik wie bei `recheck()` in 0.10.0. */
+  engine: "builtin" | "server" | "comfy";
   /** Synchron und netzfrei. Sagt NICHTS über die aktuelle Erreichbarkeit eines Servers —
    *  das ginge nur mit einem Netzaufruf, und `status()` macht keinen. Im Server-Modus
    *  spiegelt es den zuletzt ermittelten Zustand. */
@@ -141,6 +159,10 @@ export interface ApiDeps {
    *  braucht es, um zwischen SD-Turbos einer Größe und SDXL-Turbos zweien zu unterscheiden.
    *  Im Server-Modus ungenutzt (der Server waehlt selbst). */
   builtinModel(): BuiltinModelId;
+  /** Die Slots des hinterlegten ComfyUI-Workflows, oder null ohne brauchbaren Workflow —
+   *  `backendCapabilities` braucht sie im comfy-Modus. Pflicht, nicht optional (wie
+   *  `builtinModel` oben): ein optionales Feld waere wieder ein stiller Default. */
+  workflowSlots(): WorkflowSlots | null;
   /** Netzfreie Bereitschaft. `main.ts` leitet sie aus state.engine/state.server ab —
    *  status() macht selbst KEINEN Netzaufruf.
    *  Als Union, nicht als flaches Objekt: `{ ready: false }` OHNE Grund waere ein Zustand,
@@ -200,7 +222,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   // Als benannte Funktion statt als Methode, damit `recheck()` sie ohne `this` aufrufen kann:
   // ein Konsument darf `const { recheck } = api` schreiben, und dann gaebe es kein `this`.
   const readStatus = (): ApiStatus => {
-      const caps = backendCapabilities(deps.getMode(), deps.builtinModel());
+      const caps = backendCapabilities(toBackendContext(deps.getMode(), deps.builtinModel(), deps.workflowSlots()));
       const r = deps.readiness();
       // busy schlaegt jede andere Bereitschaft: das Backend mag geladen sein, aber es
       // rechnet gerade — ein Konsument, der jetzt anfragt, bekaeme eine Absage.
@@ -227,11 +249,13 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
     status: readStatus,
 
     async recheck(): Promise<ApiStatus> {
-      // Nur der Server-Modus hat einen entfernten Zustand, der sich hinter unserem Ruecken
-      // aendern kann. GPU und Assets kennt das Plugin selbst, und `status()` liest sie
-      // ohnehin bei jedem Aufruf frisch — ein „Neupruefen", das dort nichts pruefte, waere
-      // genau die Attrappe, die dieses Plugin sonst weglaesst (Keine-Attrappen-Linie).
-      if (deps.getMode() === "server") await deps.recheckServer();
+      // Server UND comfy haben einen entfernten Zustand, der sich hinter unserem Ruecken
+      // aendern kann (der A1111-Endpunkt bzw. der ComfyUI-Server) — beide fragt derselbe
+      // `deps.recheckServer()`-Weg ab (main.ts::checkServer() ist modusneutral). GPU und
+      // Assets kennt das Plugin selbst, und `status()` liest sie ohnehin bei jedem Aufruf
+      // frisch — ein „Neupruefen", das dort nichts pruefte, waere genau die Attrappe, die
+      // dieses Plugin sonst weglaesst (Keine-Attrappen-Linie).
+      if (deps.getMode() === "server" || deps.getMode() === "comfy") await deps.recheckServer();
       return readStatus();
     },
 

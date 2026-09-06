@@ -13,7 +13,7 @@ import {
   type SettingsSchema,
 } from "../vendor/kit/settings_schema";
 
-export type EngineChoice = "builtin" | "server";
+export type EngineChoice = "builtin" | "server" | "comfy";
 
 /** Ein Stil-Baustein, der per Chip an den Prompt gehängt wird. */
 export interface StylePreset {
@@ -32,8 +32,11 @@ export interface HistoryEntry {
   negativePrompt: string;
   seed: number;
   steps: number;
-  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). */
-  cfg: number;
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). `null` heisst „vom Backend
+   *  bestimmt, nicht vom Plugin" (comfy-Modus) — dieselbe Bedeutung wie in `GenParams.cfg`,
+   *  und der Grund, warum `migrateHistory` unten zwischen FEHLEND (Alt-Eintrag → 7) und
+   *  ausdruecklich `null` unterscheiden muss. */
+  cfg: number | null;
   model: string;
   width: number;
   height: number;
@@ -94,6 +97,10 @@ export interface LigSettings {
   /** Ob die Settings ueberhaupt eine Modellwahl anzeigen (Spec 0.9 §6.1). Default aus:
    *  bis zur zweiten Stufe gab es keine Wahl zu treffen. */
   showModelPicker: boolean;
+  /** Vault-Pfad der ComfyUI-Workflow-Datei (API-Format). Leer = keiner gesetzt; das ist
+   *  eine Aussage, kein Fehler — wie bei `endpoint`. Nur der Pfad, nie das JSON: ein
+   *  Workflow ist 3–15 KB und data.json wird bei jedem saveSettings() ganz geschrieben. */
+  comfyWorkflowPath: string;
 }
 
 export const DEFAULT_PRESETS: StylePreset[] = [
@@ -122,6 +129,7 @@ export const DEFAULT_SETTINGS: LigSettings = {
   // denselben Wert laufen beim naechsten Modellwechsel auseinander (Nachlese 0.9.0).
   builtinModel: DEFAULT_BUILTIN_MODEL_ID,
   showModelPicker: false,
+  comfyWorkflowPath: "",
 };
 
 /** Filter + Backfill der Historie — Migration 0.3→0.4 (width/height) und 0.4→0.5
@@ -155,7 +163,13 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
       height: typeof h.height === "number" ? h.height : 512,
       // Migration 0.4→0.5: Alt-Einträge kannten weder negativePrompt noch cfg (Spec §5/§8).
       negativePrompt: typeof h.negativePrompt === "string" ? h.negativePrompt : "",
-      cfg: typeof h.cfg === "number" ? h.cfg : 7,
+      // Seit 0.13 ist `null` ein GUELTIGER cfg-Wert (comfy: „vom Backend bestimmt") und muss
+      // vom FEHLENDEN Feld eines Alt-Eintrags unterschieden werden — `typeof null` ist
+      // "object", ein einfaches `typeof === "number"` haette den comfy-Eintrag beim naechsten
+      // Laden still auf 7 zurueckgebogen und damit genau die Zahl behauptet, die die
+      // Ergebnis-Notiz bewusst weglaesst. JSON schreibt `null` als null und laesst ein
+      // fehlendes Feld weg — die beiden Faelle sind also wirklich unterscheidbar.
+      cfg: typeof h.cfg === "number" ? h.cfg : h.cfg === null ? null : 7,
       // Migration 0.7→0.8: img2img ist neu. null heisst „war keins" — ein Vorgabewert waere
       // eine Angabe ueber einen Lauf, der nie stattgefunden hat (Spec §1).
       denoising: typeof h.denoising === "number" ? h.denoising : null,
@@ -191,7 +205,7 @@ export function migrateSettings(raw: unknown): unknown {
  *  früheren Feld-Sanitizer. Ein leerer String ist hier kein Fehler, sondern eine Aussage
  *  (leerer outputFolder = Obsidians Attachment-Logik). */
 export const SETTINGS_SCHEMA: SettingsSchema<LigSettings> = {
-  engine: oneOf<EngineChoice>(["builtin", "server"]),
+  engine: oneOf<EngineChoice>(["builtin", "server", "comfy"]),
   assetBaseUrl: nonEmptyString({ trim: true }),
   // check(...), NICHT clampIntField(1, 50): der Kombinator ist String-tolerant und trunct
   // Floats ("3" → 3, 2.5 → 2). Hier gilt ein Wert, der kein ganzzahliger Schritt im Bereich

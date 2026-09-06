@@ -1,7 +1,7 @@
 # Local Image Generator
 
 Generate images inside Obsidian — on your own machine, with no cloud and no
-account. Two ways to do it, chosen in the settings:
+account. Three ways to do it, chosen in the settings:
 
 - **Built-in (default):** a model runs **on your GPU inside Obsidian** via
   WebGPU — pick one in the settings. **SD-Turbo** (≈ 2.6 GB, 512×512) is the
@@ -16,8 +16,16 @@ account. Two ways to do it, chosen in the settings:
   [SD.Next](https://github.com/vladmandic/sdnext) over their shared
   A1111-compatible HTTP API — with whatever models it has loaded, and the
   full set of controls (negative prompt, guidance, sizes).
+- **ComfyUI:** point it at your own running ComfyUI server and hand it a
+  workflow you exported in the API format — the plugin patches your prompt,
+  seed, steps and size into that workflow before every run and leaves
+  everything else (sampler, scheduler, LoRAs, upscalers) exactly as you built
+  it. No img2img, no progress bar (ComfyUI's own server refuses a
+  WebSocket connection from inside Obsidian, so the status line counts
+  seconds instead), no CFG slider — see the changelog for the full list of
+  what this mode does not do.
 
-Either way, your prompts and images never leave your machine.
+In every case, your prompts and images never leave your machine.
 
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/gitea/v/release/jkaindl/local-image-generator?gitea_url=https%3A%2F%2Fgit.jkaindl.de&label=release)](https://git.jkaindl.de/jkaindl/local-image-generator/releases)
@@ -107,8 +115,12 @@ if (api?.apiVersion === 1) {
 
 `status().capabilities` tells you what the active backend can honour. The built-in engine
 is guidance-free and fixed at 512×512, so a CFG or size control in your UI would be a prop.
-`capabilities.initImage` is `true` in both modes — both backends can start from an existing
-image.
+`capabilities.initImage` is `true` for the built-in engine and for a server, and `false` in
+ComfyUI mode — ask the field rather than the mode.
+
+`r.image.params.cfg` can be `null`: it means the plugin did not determine the value, which
+happens in ComfyUI mode, where the user's workflow carries its own CFG. If you write the
+params into a note, leave the field out in that case instead of substituting a number.
 
 To generate from a reference image, pass it as base64 (no `data:` prefix) plus an optional
 `denoising` between 0 and 1 (default `0.75` — higher means further from the original):

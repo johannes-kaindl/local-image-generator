@@ -3,6 +3,7 @@ import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
 import { buildViewModel, formatBytes, formatElapsed, partialDownloadLabel, type GenParams, type PanelState } from "../src/core/viewmodel";
 import { assetsFor, RUNTIME_WASM, totalBytes } from "../src/core/model-manifest";
+import type { WorkflowState } from "../src/core/comfy/state";
 
 beforeEach(() => {
   registerI18n();
@@ -31,6 +32,7 @@ const base: PanelState = {
   builtinModel: "sd-turbo",
   showModelPicker: false,
   mode: "server",
+  workflow: { kind: "unconfigured" },
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
   run: { kind: "idle" },
@@ -47,6 +49,27 @@ const base: PanelState = {
 
 /** Basis + Overrides — spart das Ausschreiben aller PanelState-Felder in jedem Test. */
 const stateOf = (overrides: Partial<PanelState>): PanelState => ({ ...base, ...overrides });
+
+/** Alias fuer die comfy-Tests unten — dieselbe Basis wie `base`, nur unter dem Namen, den
+ *  der Task-9-Brief benutzt. */
+const PANEL_DEFAULT = base;
+
+/** Ein gueltig eingelesener Workflow (inspectWorkflow-Ausgabe), fuer Tests, die nur
+ *  brauchen, dass der Workflow-Zustand "ok" ist — die konkreten Node-IDs sind beliebig. */
+const OK_WORKFLOW: WorkflowState = {
+  kind: "ok",
+  path: "w.json",
+  json: "{}",
+  slots: {
+    sampler: "3",
+    positive: "6",
+    negative: "7",
+    latent: "5",
+    seedField: "seed",
+    stepsField: "steps",
+    workflowSteps: 20,
+  },
+};
 
 describe("buildViewModel — server state", () => {
   it("unconfigured: Fehler-Status, Empty mit Settings-CTA, Generate disabled", () => {
@@ -394,7 +417,10 @@ describe("generateEnabled kennt img2img", () => {
     negativePrompt: baseParams.negativePrompt,
     seed: baseParams.seed,
     steps: baseParams.steps,
-    cfg: baseParams.cfg,
+    // `PanelState.cfg` ist der REGLERWERT (immer eine Zahl), `GenParams.cfg` das Ergebnis
+    // der Haertung (seit 0.13 auch `null` = vom Backend bestimmt) — der Fallback haelt die
+    // beiden Typen auseinander, ohne die Gleichheit dieses Falls (7) anzutasten.
+    cfg: baseParams.cfg ?? base.cfg,
     width: baseParams.width,
     height: baseParams.height,
     image: { dataUrl: "data:,", params: baseParams },
@@ -467,5 +493,60 @@ describe("Groessen-Zeile (Spec 0.9 §6.3)", () => {
   it("die Sichtbarkeit haengt an sizes.length, nicht am Modellnamen", () => {
     const vm = buildViewModel({ ...stateOf({ mode: "builtin" }), builtinModel: "sdxl-turbo" });
     expect(vm.controls.sizes).toHaveLength(2);
+  });
+});
+
+describe("Status im comfy-Modus", () => {
+  const basis = { ...PANEL_DEFAULT, mode: "comfy" as const, server: { kind: "ok", modelName: null } as const };
+
+  it("meldet den Workflow-Fehler, nicht den Server", () => {
+    const vm = buildViewModel({ ...basis, workflow: { kind: "invalid", path: "w.json", reason: { kind: "no-sampler" } } });
+    expect(vm.status.cls).toBe("is-error");
+    // Brief-Text ist "No sampler found..." (kleines s) — die grossgeschriebene Fassung im
+    // Brief-Test war ein Tippfehler, der Text selbst ist woertlich aus Step 6 uebernommen.
+    expect(vm.status.text).toContain("sampler");
+  });
+
+  it("meldet einen unerreichbaren Server auch bei gutem Workflow", () => {
+    const vm = buildViewModel({ ...basis, server: { kind: "unreachable" }, workflow: OK_WORKFLOW });
+    expect(vm.status.cls).toBe("is-error");
+  });
+
+  it("ist erst bereit, wenn Server UND Workflow stimmen", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, prompt: "x" });
+    expect(vm.generateEnabled).toBe(true);
+    // I4 (Final-Review 2026-09-06): der Name behauptet eine Konjunktion, der Rumpf prueft
+    // ohne diese Zeile nur den EINEN Punkt, an dem beide Konjunkte wahr sind. Streicht
+    // jemand die Workflow-Bedingung aus `buildViewModel`, bliebe die Suite gruen — und der
+    // Generate-Knopf waere im comfy-Modus ohne brauchbaren Workflow klickbar, ohne dass
+    // etwas passiert. Der Server ist hier unveraendert `ok`; nur der Workflow fehlt.
+    const ohneWorkflow = buildViewModel({ ...basis, workflow: { kind: "missing", path: "w.json" }, prompt: "x" });
+    expect(ohneWorkflow.generateEnabled).toBe(false);
+  });
+
+  // I3 (Final-Review 2026-09-06): im comfy-Modus fiel der Leerzustand auf den Server-Text
+  // zurueck und schickte den Nutzer zu Draw Things — an genau der Stelle, an der er Hilfe
+  // braucht. Beide Zeilen gehoeren zusammen: der Port belegt den comfy-Text, die
+  // Draw-Things-Zeile belegt, dass es nicht mehr der Server-Text ist (nur zusammen sind sie
+  // von einem beliebig geaenderten Server-Text unterscheidbar).
+  it("nennt bei fehlendem Endpunkt ComfyUIs Port statt Draw Things", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, server: { kind: "unconfigured" } });
+    expect(vm.empty?.text).toContain("8188");
+    expect(vm.empty?.text).not.toContain("Draw Things");
+    expect(vm.status.text).toContain("ComfyUI");
+  });
+
+  it("erklaert bei unerreichbarem Endpunkt den uebernommenen A1111-Endpunkt", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, server: { kind: "unreachable" } });
+    expect(vm.empty?.ctaAction).toBe("recheck");
+    expect(vm.empty?.text).toContain("8188");
+    expect(vm.status.text).toContain("8188");
+  });
+
+  it("zeigt Negativ-Prompt, aber keinen CFG-Regler", () => {
+    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW });
+    expect(vm.controls.negative).toBe(true);
+    expect(vm.controls.cfg).toBe(false);
+    expect(vm.controls.initImage).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { A1111Client, parseOptionsModel, parseProgressPct, ProgressPoller } from "../src/core/txt2img";
+import { A1111Client, parseOptionsModel, parseProgressPct, ProgressPoller, statusUrlFor } from "../src/core/txt2img";
 
 const req = { prompt: "a cat", negativePrompt: "blurry", width: 768, height: 512, steps: 20, seed: 42, cfg: 7,
   initImageData: null, denoising: null };
@@ -132,5 +132,12 @@ describe("ProgressPoller", () => {
     expect(await p.poll()).toBeNull();
     expect(await p.poll()).toBeNull();
     expect(calls).toHaveLength(2);
+  });
+});
+
+describe("statusUrlFor", () => {
+  it("waehlt den Status-Endpunkt nach Modus", () => {
+    expect(statusUrlFor("server", "http://127.0.0.1:7860/")).toBe("http://127.0.0.1:7860/sdapi/v1/options");
+    expect(statusUrlFor("comfy", "http://127.0.0.1:8188")).toBe("http://127.0.0.1:8188/system_stats");
   });
 });

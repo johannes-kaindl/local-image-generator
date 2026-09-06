@@ -86,12 +86,20 @@ Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt
    HF-Repo, sondern nur gegen diesen Server. Der Server-Teil (1–11) läuft ohne Bild-Server
    gegen `node scripts/mock-a1111.mjs` (Port 7861, Plugin-Endpunkt darauf stellen).
 
+5. **Für das ComfyUI-Backend (Punkte 35–38, seit 0.13-dev) ein eigener Mock** — in einem
+   weiteren Terminal `npm run smoke:comfy` (`scripts/mock-comfy.mjs`, Port 8189, überschreibbar
+   mit `MOCK_COMFY_PORT` bzw. `--comfy <url>` am Treiber). **Bewusst NICHT
+   `scripts/mock-a1111.mjs`** — der hat seit 2026-09-02 einen fremden Konsumenten
+   (`epub-exporter`s Naht-Lauf), s. AGENTS.md. Ohne den Mock werden alle vier Punkte
+   übersprungen, nicht geraten.
+
 Dann:
 
 ```bash
 npm run smoke:gui -- --vault <vault-name>
 npm run smoke:gui -- --vault <name> --steps 8 --timeout 1200 --keep
 npm run smoke:gui -- --vault <name> --builtin          # + 13–16, braucht npm run smoke:assets
+npm run smoke:gui -- --vault <name> --comfy http://127.0.0.1:8199   # abweichender Mock-Port
 ```
 
 `--steps` (Default 4) und die fest kleinste Größe halten den Lauf kurz: geprüft wird die
@@ -131,6 +139,10 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 25 | SDXL-Turbo liefert ein Bild mit echtem **Inhalt**, nicht Schwarz/uniform | der eigentliche Regressionswächter aus Phase 4 des SDXL-Turbo-Debuggings — s. u. |
 | 26 | builtin-img2img (SD-Turbo): str 0.25 bleibt **nah** an der Vorlage (RMSE ≤ 35), str 1.0 entfernt sich (≥ 40) | die inhaltliche Prüfung des ganzen Weges Base64 → `decodeInitImage` → VAE-Encoder → Teil-Denoising; der C-Lauf (str 1.0) ist die **eingebaute Gegenprobe**: wäre die Vorlage wirkungslos, lägen beide Läufe gleich weit weg |
 | 27 | builtin-img2img (SDXL-Turbo): dasselbe mit Grenzen 28/30 | der **Live-Beweis** für den fp32-VAE-Encoder unter WebGPU — torch-Hooks maßen 300k–500k Aktivierungs-Peak, ein Node/CPU-Test kann diesen Fehlermodus prinzipiell nicht sehen |
+| 35 | Modus-Wechsel zu ComfyUI blendet Negativ-Prompt/CFG richtig um (drei Modi, **eigene** Erwartungstabelle) | `MODUS_REGLER`/Punkt 17 ist als „builtin versteckt, server sichtbar" gebaut und stimmt für comfy nur bei CFG — der Negativ-Prompt ist dort **sichtbar** (der Sampler garantiert ihn). Eine dritte Zeile in derselben Liste hätte den Negativ-Prompt falsch-rot gemeldet |
+| 36 | Ein kaputter Workflow (kein Sampler-Node) zeigt seinen **Klartext** — eine gültige Datei bringt `is-ok` | beide Richtungen wie Punkt 17: eine Prüfung, die nur die Fehlermeldung liest, besteht mit einer Statuszeile, die immer denselben Text zeigt |
+| 37 | Ein echter Lauf gegen den ComfyUI-Mock (`scripts/mock-comfy.mjs`) liefert ein Bild | am **Zähler/den Bytes des Mocks** gemessen, den der Treiber selbst per `fetch` abfragt — dieselbe Form wie Punkt 2/3, nicht „der Prüfling behauptet Erfolg" |
+| 38 | Die Ergebnis-Notiz trägt die vom Mock **empfangene** Schrittzahl, nicht den Workflow-Default | misst Spec §4 direkt: der Workflow-Default (20) und die angefragte Zahl (3) sind absichtlich verschieden, damit ein Test, der den falschen Wert liest, nicht zufällig grün bleibt |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -203,6 +215,49 @@ Zwei Ja-Sager derselben Bauart sind bei der Gelegenheit mit umgestellt worden �
 Browser den Wert beim Sinken von `max` überhaupt klemmt. Mit dem Standardwert 4 blieb der Punkt
 in der Gegenprobe **grün, obwohl der Defekt wieder eingebaut war** — er schiebt den Regler
 seitdem selbst über das builtin-Maximum und meldet es als Befund, wenn kein Klemmen stattfand.
+
+### § 2026-09-06 — Punkte 35–38 (ComfyUI-Backend, Task 10)
+
+**Warum Punkt 35 `MODUS_REGLER`/Punkt 17 nicht einfach um „comfy" erweitert.** Jene Liste ist
+als „im builtin versteckt, im server sichtbar" gebaut — ein zweiwertiges Modell. Im comfy-Modus
+stimmt das nur für die CFG-Selektoren: `.lig-negative-row` ist dort **sichtbar**, weil
+`backendCapabilities` (`src/core/generation.ts`) den Negativ-Prompt als vom Sampler garantiert
+führt, sobald ein gültiger Workflow geladen ist. Eine dritte Zeile in derselben Liste hätte den
+Negativ-Prompt in jedem comfy-Lauf falsch-rot gemeldet. Punkt 35 trägt deshalb eine eigene
+`MODUS_ERWARTUNG` mit drei vollständigen Zeilen (`sichtbar`/`versteckt` je Modus) statt einer
+Erweiterung der zweiwertigen Liste — und läuft **vor** builtin und server ebenfalls durch, nicht
+nur für comfy: eine Erwartungstabelle, die nur den neuen Fall prüft, könnte eine Verschiebung in
+den beiden alten Fällen nicht sehen.
+
+**Warum Punkt 35 einen bereits gültigen Workflow braucht, bevor er misst.** Ohne brauchbaren
+Workflow (`slots === null`) liefert `backendCapabilities` im comfy-Modus `negativePrompt: false`
+— dieselbe Antwort wie im builtin-Modus, aus einem anderen Grund (kein Sampler gefunden, also
+keine Zusage möglich). Der Aufrufer (`runComfyChecks`) hinterlegt deshalb VOR Punkt 35 einen
+gültigen Workflow; Punkt 36 wechselt danach absichtlich auf einen kaputten und wieder zurück.
+
+**Warum Punkt 37 seine Erwartung selbst beim Mock holt statt beim Plugin.** Dieselbe Lehre wie
+bei Punkt 2/3 (s.o.): ein Prüfwerkzeug, das seine Erwartung aus dem Prüfling bezieht, bestätigt
+nur dessen Meinung. Der Treiber ruft `/view` deshalb selbst per `fetch` auf und vergleicht die
+zurückgegebenen Bytes 1:1 mit dem, was `generate()` geliefert hat — stimmen sie nicht überein,
+ist es kein echter Roundtrip gewesen, ganz gleich, was der Rückgabewert behauptet.
+
+**Warum der Workflow-Default (20 Steps) bewusst von den angefragten Steps (3) abweicht.** Punkt
+38 vergleicht die `steps` im Frontmatter der Notiz mit den `steps`, die der Mock im Graphen
+EMPFANGEN hat (`.mock-comfy-counts.json`, Feld `graph`) — nicht mit dem Workflow-Default und
+nicht mit einem angenommenen Wert. Wären Default und Anfrage identisch, würde ein Test, der aus
+Versehen den Default statt des empfangenen Werts liest, trotzdem grün bleiben — die Differenz
+macht genau diesen Fehlgriff sichtbar.
+
+**Eigener Mock, eigene Datei.** `scripts/mock-comfy.mjs` ist bewusst NICHT Teil von
+`scripts/mock-a1111.mjs` — letzterer hat seit 2026-09-02 einen fremden Konsumenten
+(`epub-exporter`s Naht-Lauf), eine Änderung an dessen Form bricht einen Treiber in einem anderen
+Repo, still, weil er hier nicht mitläuft (s. AGENTS.md). Start: `npm run smoke:comfy` (Port
+8189, überschreibbar mit `MOCK_COMFY_PORT`).
+
+**Gegenprobe:** noch **nicht gefahren** — diese Punkte sind gebaut und lokal gegen den Mock
+(`curl`) formtreu verifiziert, aber noch nie gegen ein laufendes Obsidian gemessen (Aufgaben-
+Zuschnitt: das Schreiben und das Fahren sind zwei getrennte Aufgaben, s. Task-10-Report). Bis zum
+ersten Lauf gilt für alle vier: **unbewiesen, nicht grün geführt.**
 
 ### § 2026-08-24 (Phase 4) — Punkte 24/25: Bild-INHALT, nicht nur Bild-Form
 
@@ -396,6 +451,11 @@ Alles davon wird vorher gemerkt und im `finally` zurückgeschrieben — auch nac
   Beides wird wie oben gemerkt und im `finally` zurückgeschrieben; **der SDXL-Turbo-Cache-
   Eintrag bleibt NACH dem Lauf bestehen**, aus demselben Grund wie beim SD-Turbo-Cache oben —
   ein Wiederholungslauf von Punkt 21 soll den 6,4-GB-Download nicht jedes Mal neu erzwingen.
+- `endpoint` / `comfyWorkflowPath` / `engine` → für Punkte 35–38 (`runComfyChecks`): eigener
+  `finally`, unabhängig vom Rest (Muster wie Punkt 18e/`runRecheckCheck`) — beide Werte werden
+  vor dem ersten Zugriff gemerkt und exakt zurückgeschrieben, nicht auf einen Default gesetzt.
+  Zwei zusätzliche Dateien `_lig-gui-smoke/comfy-valid.json` und `comfy-broken.json` entstehen
+  dabei und werden mit dem Ordner selbst entfernt (kein eigenes Aufräumen nötig).
 
 Der Ordner `_lig-gui-smoke` wird angelegt und gelöscht. **Existiert er bereits, bricht der
 Treiber ab** statt zu löschen: ein vorgefundener Ordner könnte fremde Dateien tragen.

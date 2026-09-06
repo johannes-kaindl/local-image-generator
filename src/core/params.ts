@@ -1,8 +1,9 @@
-import { backendCapabilities, CFG, DEFAULT_SIZE, DENOISING, type SizeOption } from "./generation";
+import { backendCapabilities, toBackendContext, CFG, DEFAULT_SIZE, DENOISING, type SizeOption } from "./generation";
 import type { BuiltinModelId } from "./model-manifest";
 import { isoStamp } from "./filename";
 import type { EngineChoice } from "./settings";
 import type { GenParams } from "./viewmodel";
+import type { WorkflowSlots } from "./comfy/workflow";
 import { clampInt } from "../vendor/kit/num";
 
 /** Was ein Aufrufer wuenschen darf. Nur `prompt` ist Pflicht. */
@@ -38,6 +39,11 @@ export interface HardenContext {
    *  ungenutzt (backendCapabilities ignoriert `model`, wenn mode !== "builtin"), aber trotzdem
    *  Pflicht: ein optionales Feld waere wieder ein stiller Default gewesen. */
   builtinModel: BuiltinModelId;
+  /** Die Slots des hinterlegten ComfyUI-Workflows, oder null ohne brauchbaren Workflow —
+   *  `backendCapabilities` braucht sie, um im comfy-Modus zu urteilen. Pflichtfeld aus
+   *  demselben Grund wie `builtinModel`: ein optionales Feld waere wieder ein stiller
+   *  Default gewesen. */
+  workflowSlots: WorkflowSlots | null;
   /** Wird eingefroren — die Notiz beschreibt das Bild, das man sieht. */
   now: Date;
   /** Injiziert statt Math.random(), damit die Haertung testbar bleibt. */
@@ -87,7 +93,7 @@ function nearestSize(width: number, height: number, sizes: readonly SizeOption[]
 }
 
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
-  const caps = backendCapabilities(ctx.mode, ctx.builtinModel);
+  const caps = backendCapabilities(toBackendContext(ctx.mode, ctx.builtinModel, ctx.workflowSlots));
   // clampInt gibt seinen Fallback UNGEPRUEFT zurueck — ein defaultSteps von 20 landete im
   // builtin-Modus (dessen Katalog-Maximum liegt seit 0.12 bei 8, davor 4) sonst unveraendert
   // im Ergebnis. Deshalb wird auch er geklemmt;
@@ -116,7 +122,18 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
     // Ein Regler, den das Backend nicht kann, wird nicht abgelehnt, sondern neutralisiert —
     // der Aufrufer sieht am Rueckgabewert, was daraus wurde (Keine-Attrappen-Linie).
     negativePrompt: caps.negativePrompt ? (input.negativePrompt ?? "") : "",
-    cfg: caps.cfg ? finite(input.cfg, CFG.default) : 1,
+    // Drei Ausgaenge, einer je Modus — und der Unterschied zwischen den beiden unteren ist
+    // der ganze Punkt (C1, Final-Review 2026-09-06):
+    //   builtin → 1     "keine Guidance" ist hier WAHR: SD-Turbo ist destilliert.
+    //   comfy   → null  Das Plugin hat den Wert nicht bestimmt — `patchWorkflow` fasst das
+    //                   CFG-Feld des Samplers nicht an, der Lauf rechnet mit dem Wert des
+    //                   Nutzer-Workflows. Eine 1 hier stuende als Tatsache in jeder
+    //                   Ergebnis-Notiz, und wer das Bild reproduzieren will, stellte seinen
+    //                   Workflow auf 1 und bekaeme ein anderes Bild.
+    //   server  → Wert  unveraendert, wie bisher.
+    // Verzweigt ueber `ctx.mode`, nicht ueber `caps.cfg`: `caps.cfg === false` sagt nur „kein
+    // Regler", nicht, WARUM — und genau diese zwei Warum unterscheiden sich hier.
+    cfg: ctx.mode === "comfy" ? null : caps.cfg ? finite(input.cfg, CFG.default) : 1,
     width: size.width,
     height: size.height,
     steps,

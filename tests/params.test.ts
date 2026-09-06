@@ -8,6 +8,7 @@ const ctx = (mode: "builtin" | "server", builtinModel: keyof typeof BUILTIN_MODE
   defaultSteps: 20,
   model: mode === "builtin" ? BUILTIN_MODELS[builtinModel].id : "someModel.safetensors",
   builtinModel: BUILTIN_MODELS[builtinModel].id,
+  workflowSlots: null,
   now: new Date("2026-08-22T22:15:00"),
   randomSeed: () => 4242,
 });
@@ -245,7 +246,7 @@ describe("eine Haertung, zwei Aufrufer", () => {
   // durch dieselbe Haertung — dieser Test haelt fest, dass der schmale Auftrag dieselben
   // Backend-Wahrheiten bekommt wie der volle, statt eigener Defaults.
   const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODELS["sd-turbo"].id,
-              builtinModel: BUILTIN_MODELS["sd-turbo"].id,
+              builtinModel: BUILTIN_MODELS["sd-turbo"].id, workflowSlots: null,
               now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
 
   it("der schmale Auftrag erbt dieselben Backend-Wahrheiten wie der volle", () => {
@@ -265,5 +266,57 @@ describe("eine Haertung, zwei Aufrufer", () => {
     expect(voll).toMatchObject({ cfg: 1, negativePrompt: "", width: 512, height: 512, steps: 8 });
     // nur was der Aufrufer wirklich sagen darf, unterscheidet sich
     expect(schmal.steps).toBe(8);
+  });
+});
+
+// Fix-Runde 1 (Review-Befund 1): die drei bisherigen comfy-Tests in generation.test.ts bauen
+// das BackendContext-Objekt von Hand — sie pruefen backendCapabilities(), nie die Verdrahtung
+// ueber toBackendContext(). Ohne DIESEN Test bliebe eine geloeschte comfy-Zeile in
+// toBackendContext() (Fallback auf "server") unbemerkt: hardenParams liesse dann einen CFG-Wert
+// durch, den patchWorkflow gar nicht anfasst — genau die Attrappe, gegen die diese Task steht.
+describe("hardenParams — comfy ueber die Produktionsroute (toBackendContext)", () => {
+  const slots = { sampler: "1", positive: "2", negative: "3", latent: "4", seedField: "seed" as const, stepsField: "steps" as const, workflowSteps: 6 };
+  const c = {
+    mode: "comfy" as const,
+    defaultSteps: 20,
+    model: "irgendein-checkpoint.safetensors",
+    builtinModel: BUILTIN_MODELS["sd-turbo"].id,
+    workflowSlots: slots,
+    now: new Date("2026-08-22T22:15:00"),
+    randomSeed: () => 4242,
+  };
+
+  it("meldet CFG als unbestimmt und laesst die Vorlage fallen — die Haertung geht wirklich ueber toBackendContext", () => {
+    const p = hardenParams({ prompt: "x", cfg: 9, initImage: { ref: "a.png" } }, c);
+    // Seit C1 (Final-Review 2026-09-06) `null` statt 1: das Plugin hat den Wert nicht
+    // bestimmt, es hat ihn nicht auf „keine Guidance" gesetzt.
+    expect(p.cfg).toBeNull();
+    expect(p.initImage).toBeNull();
+  });
+
+  it("laesst den Negativ-Prompt durch — comfy kann ihn, anders als builtin", () => {
+    const p = hardenParams({ prompt: "x", negativePrompt: "blurry" }, c);
+    expect(p.negativePrompt).toBe("blurry");
+  });
+});
+
+// C1 (Final-Review 2026-09-06): `cfg` hat drei Ausgaenge, einen je Modus — und der
+// comfy-Ausgang ist der Grund fuer den Null-Fall. Zusammen in EINEM describe, weil die drei
+// nur nebeneinander zeigen, dass `null` kein "keine Guidance" ist (das waere builtins 1),
+// sondern "das Plugin hat den Wert nicht bestimmt".
+describe("hardenParams — cfg je Modus", () => {
+  const comfySlots = { sampler: "1", positive: "2", negative: "3", latent: "4", seedField: "seed" as const, stepsField: "steps" as const, workflowSteps: 6 };
+
+  it("builtin: 1 — SD-Turbo ist destilliert und kennt keine Guidance", () => {
+    expect(hardenParams({ prompt: "x", cfg: 9 }, ctx("builtin")).cfg).toBe(1);
+  });
+
+  it("comfy: null — patchWorkflow fasst das CFG-Feld des Samplers nicht an", () => {
+    const p = hardenParams({ prompt: "x", cfg: 9 }, { ...ctx("server"), mode: "comfy" as const, workflowSlots: comfySlots });
+    expect(p.cfg).toBeNull();
+  });
+
+  it("server: der gesetzte Wert, unveraendert", () => {
+    expect(hardenParams({ prompt: "x", cfg: 9 }, ctx("server")).cfg).toBe(9);
   });
 });
