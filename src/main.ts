@@ -75,9 +75,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
-  // `workflow` ist NICHT Teil von PanelState (das bekommt sein Feld erst in Task 5) — hier
-  // per Intersection angehaengt, damit dieser State-Slot schon existiert, ohne der noch
-  // nicht angepassten PanelState-Form vorzugreifen.
+  // `workflow` ist noch nicht Teil von PanelState — das Feld wandert dorthin, sobald ein
+  // Konsument (Panel-UI, Haertung) es braucht; bis dahin haengt es per Intersection an,
+  // um der bestehenden PanelState-Form nicht vorzugreifen.
   private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> & { workflow: WorkflowState } = {
     initImage: null,
     denoising: null,

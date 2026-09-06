@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { workflowStateFrom } from "../src/core/comfy/state";
 
-const GUELTIG = JSON.stringify({
-  "1": { class_type: "KSampler", inputs: { positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0], seed: 1, steps: 6 } },
-  "2": { class_type: "CLIPTextEncode", inputs: { text: "" } },
-  "3": { class_type: "CLIPTextEncode", inputs: { text: "" } },
-  "4": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512 } },
-});
+// Bewusst mit Einrueckung UND einem unbekannten Feld (`_meta`) serialisiert: eine
+// Implementierung, die den geparsten Graphen erneut kompakt serialisiert
+// (`JSON.stringify(graph)` statt des rohen Strings), erzeugte einen ANDEREN String — die
+// Einrueckung waere weg. Eine kompakte Konstante haette diesen Unterschied nicht zeigen
+// koennen (siehe Review-Befund 2026-09-06).
+const GUELTIG = JSON.stringify(
+  {
+    "1": { class_type: "KSampler", inputs: { positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0], seed: 1, steps: 6 } },
+    "2": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+    "3": { class_type: "CLIPTextEncode", inputs: { text: "" } },
+    "4": { class_type: "EmptyLatentImage", inputs: { width: 512, height: 512 } },
+    _meta: { title: "vom Nutzer hinterlegter Graph" },
+  },
+  null,
+  2,
+);
 
 describe("workflowStateFrom", () => {
   it("leerer Pfad heisst unconfigured", () => {
