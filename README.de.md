@@ -210,7 +210,7 @@ Forge, und es gibt zwei Wege dorthin.
 der Plugins von jeder git-Forge installiert und aktuell hält. Diesen Katalog einmal abonnieren:
 
 ```
-https://git.jkaindl.de/jkaindl/obsidian-plugin-catalog/raw/branch/main/catalog.json
+https://git.jkaindl.de/jkaindl/obsidian-catalog/raw/branch/main/catalog.json
 ```
 
 Local Image Generator taucht danach in der Plugin-Liste des Sideloaders auf und aktualisiert

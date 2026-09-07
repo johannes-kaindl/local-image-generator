@@ -222,7 +222,7 @@ and there are two ways to get it.
 which installs and updates plugins from any git forge. Subscribe to this catalog once:
 
 ```
-https://git.jkaindl.de/jkaindl/obsidian-plugin-catalog/raw/branch/main/catalog.json
+https://git.jkaindl.de/jkaindl/obsidian-catalog/raw/branch/main/catalog.json
 ```
 
 Local Image Generator then appears in the sideloader's plugin list and updates like any other
