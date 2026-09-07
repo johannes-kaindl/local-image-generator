@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-09-07
+
 ### Added
 
 - **`generate()` can be cancelled: `ApiRequest.signal` takes an `AbortSignal`.** A cancelled
