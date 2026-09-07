@@ -26,6 +26,17 @@ All notable changes to this project are documented here. The format follows
   one never starts. Model loading is not interruptible either way — ORT offers no abort for
   `InferenceSession.create`.
 
+### Changed
+
+- **Documented, not changed: the built-in SD-Turbo is not monotonic at low step counts.**
+  Turning the strength slider up does not always move you further from the reference image —
+  measured at 4 steps, 0.625 came out *further* from the original than 0.75. That is a
+  property of the model: SD-Turbo is distilled onto exactly four noise levels, and of those
+  three values only 0.625 lands between two of them, where the model runs slightly out of
+  distribution. It behaved this way before 0.12 as well; the old per-step rounding merely
+  made the value unreachable. SDXL-Turbo does not show it, and the effect shrinks as you
+  raise the step count. Both READMEs now say so instead of leaving you to wonder.
+
 ## [0.13.0] — 2026-09-06
 
 ### Added
