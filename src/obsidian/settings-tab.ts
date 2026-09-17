@@ -332,13 +332,14 @@ export class LigSettingTab extends PluginSettingTab {
       refreshModels: t("settings.endpointSource.refreshModels"),
       saveFailed: t("settings.endpointSource.saveFailed"),
     };
+    // settingBodyHost, NICHT setting.settingEl: die Kit-Sektion haengt mehrere eigene
+    // `.setting-item`-Zeilen ein — in setting.settingEl (selbst ein `.setting-item`, per
+    // CSS ein Flex-Container fuer Name/Control) liefen sie nebeneinander statt
+    // untereinander (Regel 12: am Screenshot gefunden, nicht am DOM-Smoke).
+    const host = settingBodyHost(setting);
     buildEndpointSourceSection({
       app: this.app,
-      // settingBodyHost, NICHT setting.settingEl: die Kit-Sektion haengt mehrere eigene
-      // `.setting-item`-Zeilen ein — in setting.settingEl (selbst ein `.setting-item`, per
-      // CSS ein Flex-Container fuer Name/Control) liefen sie nebeneinander statt
-      // untereinander (Regel 12: am Screenshot gefunden, nicht am DOM-Smoke).
-      containerEl: settingBodyHost(setting),
+      containerEl: host,
       capability: "image",
       caller: `local-image-generator/${role}`,
       choice: () => (role === "comfy" ? this.plugin.settings.comfyEndpointChoice : this.plugin.settings.serverEndpointChoice),
@@ -353,6 +354,15 @@ export class LigSettingTab extends PluginSettingTab {
       renderLocalList: () => this.renderServerFallback(setting),
       rerender: () => this.refreshUi(),
     });
+    // Keine Modell-Zeile: "Der Server bestimmt das Modell ... es waehlt nie ein Modell aus"
+    // (AGENTS.md, Keine-Attrappen-Linie) — resolveEndpointFor() in main.ts verwirft
+    // EndpointSourceResult.model vollstaendig, eine gewaehlte Zeile haette also KEINE
+    // Wirkung. Der Kit-Baustein hat keine Option, die Modell-Zeile wegzulassen (er zeichnet
+    // sie unbedingt, sobald ein Endpunkt existiert); ausgeblendet statt eine wirkungslose
+    // Auswahl zu zeigen. Fund aus dem Master-Review der ersten Fassung (Screenshot).
+    for (const nameEl of Array.from(host.querySelectorAll<HTMLElement>(".setting-item-name"))) {
+      if (nameEl.textContent === t("settings.endpointSource.model")) nameEl.closest(".setting-item")?.remove();
+    }
   }
 
   /** Bestandsverhalten ohne Manager: Endpunkt-Textfeld und Test-Knopf teilen sich eine Zeile

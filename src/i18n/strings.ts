@@ -166,14 +166,14 @@ export const EN: Record<string, string> = {
   // 2026-09-17) — je eine Zeile in Server- und Comfy-Modus, mit rollen-eigenem Hinweistext.
   "settings.endpointSource.managed": "Endpoints come from the LLM Endpoint Manager",
   "settings.endpointSource.managedDescServer":
-    "This plugin uses an endpoint configured in the LLM Endpoint Manager plugin (A1111-compatible: Draw Things, AUTOMATIC1111, Forge, SD.Next). The field below stays as a fallback if you disable the manager.",
+    "This plugin uses an endpoint configured in the LLM Endpoint Manager plugin (A1111-compatible: Draw Things, AUTOMATIC1111, Forge, SD.Next). Your previously entered endpoint stays saved and is used again if you disable the manager.",
   "settings.endpointSource.managedDescComfy":
-    "This plugin uses an endpoint configured in the LLM Endpoint Manager plugin (a running ComfyUI server). The field below stays as a fallback if you disable the manager.",
+    "This plugin uses an endpoint configured in the LLM Endpoint Manager plugin (a running ComfyUI server). Your previously entered endpoint stays saved and is used again if you disable the manager.",
   "settings.endpointSource.openManager": "Open manager settings",
   "settings.endpointSource.pickEndpoint": "Endpoint",
   "settings.endpointSource.automatic": "automatic (first reachable)",
   "settings.endpointSource.model": "Model",
-  "settings.endpointSource.importLocal": "Copy the endpoint below into the manager",
+  "settings.endpointSource.importLocal": "Copy your previously entered endpoint into the manager",
   "settings.endpointSource.imported": "Copied: {0} new, {1} merged.",
   "settings.endpointSource.importFailed": "Copying failed.",
   "settings.endpointSource.savedSuffix": "(saved)",
@@ -364,14 +364,14 @@ export const DE: Record<string, string> = {
   "settings.server.test": "Verbindung testen",
   "settings.endpointSource.managed": "Endpunkte kommen vom LLM Endpoint Manager",
   "settings.endpointSource.managedDescServer":
-    "Dieses Plugin nutzt einen im Plugin LLM Endpoint Manager konfigurierten Endpunkt (A1111-kompatibel: Draw Things, AUTOMATIC1111, Forge, SD.Next). Das Feld darunter bleibt als Rückfall, falls du den Manager deaktivierst.",
+    "Dieses Plugin nutzt einen im Plugin LLM Endpoint Manager konfigurierten Endpunkt (A1111-kompatibel: Draw Things, AUTOMATIC1111, Forge, SD.Next). Dein bisher eingetragener Endpunkt bleibt gespeichert und gilt wieder, falls du den Manager deaktivierst.",
   "settings.endpointSource.managedDescComfy":
-    "Dieses Plugin nutzt einen im Plugin LLM Endpoint Manager konfigurierten Endpunkt (ein laufender ComfyUI-Server). Das Feld darunter bleibt als Rückfall, falls du den Manager deaktivierst.",
+    "Dieses Plugin nutzt einen im Plugin LLM Endpoint Manager konfigurierten Endpunkt (ein laufender ComfyUI-Server). Dein bisher eingetragener Endpunkt bleibt gespeichert und gilt wieder, falls du den Manager deaktivierst.",
   "settings.endpointSource.openManager": "Manager-Einstellungen öffnen",
   "settings.endpointSource.pickEndpoint": "Endpunkt",
   "settings.endpointSource.automatic": "automatisch (erster erreichbarer)",
   "settings.endpointSource.model": "Modell",
-  "settings.endpointSource.importLocal": "Den Endpunkt unten in den Manager übernehmen",
+  "settings.endpointSource.importLocal": "Deinen bisher eingetragenen Endpunkt in den Manager übernehmen",
   "settings.endpointSource.imported": "Übernommen: {0} neu, {1} zusammengeführt.",
   "settings.endpointSource.importFailed": "Übernahme fehlgeschlagen.",
   "settings.endpointSource.savedSuffix": "(gespeichert)",
