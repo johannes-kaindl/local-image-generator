@@ -94,6 +94,27 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **Deploy (lokal):** `OBSIDIAN_PLUGIN_DIR=<vault>/.obsidian/plugins/local-image-generator npm run deploy`
 - **Dach-Regeln gelten:** Kit-first (`../AGENTS.md`, `../REGISTRY.md`), UI-STANDARD (`../UI-STANDARD.md`).
 
+## UI-Abweichungen
+
+Deklaration nach `UI-STANDARD.md` §1a — von einem verbindlichen §8-Baustein abzuweichen ist
+erlaubt, stillschweigend abzuweichen nicht.
+
+- **endpoint-list** — Grund: Dieses Plugin hat gar keine Endpunkt-LISTE, sondern EIN
+  Textfeld (`settings.endpoint`, geteilt zwischen Server- und Comfy-Modus) — schlanker als
+  selbst yijing-oracles/lingotuners eigener `string[]`-Editor, der bereits als
+  `endpoint-list`-Abweichung geführt wird. Seit der Endpunkt-Manager-Anbindung (Welle 7,
+  2026-09-17, `203a074`) zeigt `tools/ui_adoption_check.py` das Repo trotzdem als
+  `[rueckstand]` — gemessen: der Treffer kommt über die UND-Indikatoren
+  (`endpoint_config` aus dem neu vendorten `../vendor/kit/endpoint_config`-Importpfad in
+  `src/core/resolve-endpoint.ts` **plus** zufällig `trash-2` aus dem Löschen-Icon der
+  History-Zeile in `src/obsidian/history-panel.ts`, unabhängig vom Endpunkt-Feld) — keine
+  echte Adoption-Lücke. Bei installiertem LLM Endpoint Manager zeigt die Endpunkt-Zeile
+  dessen Kit-Baustein `buildEndpointSourceSection` (`src/obsidian/settings-tab.ts::renderServer`)
+  statt `endpoint-list.ts`; ohne Manager bleibt das einzelne Textfeld
+  (`renderServerFallback`) der Fallback. Eine Migration auf eine echte Liste (mehrere
+  Server-Presets) ist kein offener Bruch, sondern schlicht nie Teil der Spec gewesen.
+  — gilt-solange: `src/obsidian/settings-tab.ts` enthaelt-nicht `EndpointConfig[]`
+
 ## Memory + logs
 
 - **Cockpit (SSOT):** `$VAULT/25_Coding/local-image-generator/` (Hub, _Tasks, _Log, Handover; maintainer-lokal).
