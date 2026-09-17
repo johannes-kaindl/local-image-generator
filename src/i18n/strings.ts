@@ -161,6 +161,27 @@ export const EN: Record<string, string> = {
   "settings.comfyServer.desc":
     "Address of your running ComfyUI server — by default http://127.0.0.1:8188. This is the same field as the server endpoint above: an address left over from Draw Things or AUTOMATIC1111 stays here when you switch, and it will not serve ComfyUI's API.",
   "settings.server.test": "Test connection",
+  // Kit-Baustein buildEndpointSourceSection() (Endpoint Manager, seit 0.15.0): zwei
+  // UNABHAENGIGE Rollen am selben Manager statt zwei Settings-Felder (Entscheidung Johannes
+  // 2026-09-17) — je eine Zeile in Server- und Comfy-Modus, mit rollen-eigenem Hinweistext.
+  "settings.endpointSource.managed": "Endpoints come from the LLM Endpoint Manager",
+  "settings.endpointSource.managedDescServer":
+    "This plugin uses an endpoint configured in the LLM Endpoint Manager plugin (A1111-compatible: Draw Things, AUTOMATIC1111, Forge, SD.Next). The field below stays as a fallback if you disable the manager.",
+  "settings.endpointSource.managedDescComfy":
+    "This plugin uses an endpoint configured in the LLM Endpoint Manager plugin (a running ComfyUI server). The field below stays as a fallback if you disable the manager.",
+  "settings.endpointSource.openManager": "Open manager settings",
+  "settings.endpointSource.pickEndpoint": "Endpoint",
+  "settings.endpointSource.automatic": "automatic (first reachable)",
+  "settings.endpointSource.model": "Model",
+  "settings.endpointSource.importLocal": "Copy the endpoint below into the manager",
+  "settings.endpointSource.imported": "Copied: {0} new, {1} merged.",
+  "settings.endpointSource.importFailed": "Copying failed.",
+  "settings.endpointSource.savedSuffix": "(saved)",
+  "settings.endpointSource.refreshModels": "Refresh models",
+  "settings.endpointSource.saveFailed": "Could not save the choice.",
+  "settings.endpointSource.modelHint.": "",
+  "settings.endpointSource.modelHint.unreachable": "Endpoint unreachable — type the model name.",
+  "settings.endpointSource.modelHint.no-list": "The endpoint returns no model list — type the name.",
   "settings.workflow.name": "Workflow file",
   "settings.workflow.desc":
     "A workflow exported from ComfyUI in API format. The plugin fills in prompt, negative prompt, seed, steps and size — sampler, scheduler, CFG, LoRAs and upscalers stay as you built them.",
@@ -341,6 +362,24 @@ export const DE: Record<string, string> = {
   "settings.comfyServer.desc":
     "Adresse deines laufenden ComfyUI-Servers — standardmäßig http://127.0.0.1:8188. Es ist dasselbe Feld wie der Server-Endpoint darüber: eine Adresse, die noch von Draw Things oder AUTOMATIC1111 stammt, bleibt beim Umschalten stehen und bedient ComfyUIs API nicht.",
   "settings.server.test": "Verbindung testen",
+  "settings.endpointSource.managed": "Endpunkte kommen vom LLM Endpoint Manager",
+  "settings.endpointSource.managedDescServer":
+    "Dieses Plugin nutzt einen im Plugin LLM Endpoint Manager konfigurierten Endpunkt (A1111-kompatibel: Draw Things, AUTOMATIC1111, Forge, SD.Next). Das Feld darunter bleibt als Rückfall, falls du den Manager deaktivierst.",
+  "settings.endpointSource.managedDescComfy":
+    "Dieses Plugin nutzt einen im Plugin LLM Endpoint Manager konfigurierten Endpunkt (ein laufender ComfyUI-Server). Das Feld darunter bleibt als Rückfall, falls du den Manager deaktivierst.",
+  "settings.endpointSource.openManager": "Manager-Einstellungen öffnen",
+  "settings.endpointSource.pickEndpoint": "Endpunkt",
+  "settings.endpointSource.automatic": "automatisch (erster erreichbarer)",
+  "settings.endpointSource.model": "Modell",
+  "settings.endpointSource.importLocal": "Den Endpunkt unten in den Manager übernehmen",
+  "settings.endpointSource.imported": "Übernommen: {0} neu, {1} zusammengeführt.",
+  "settings.endpointSource.importFailed": "Übernahme fehlgeschlagen.",
+  "settings.endpointSource.savedSuffix": "(gespeichert)",
+  "settings.endpointSource.refreshModels": "Modelle neu laden",
+  "settings.endpointSource.saveFailed": "Die Wahl konnte nicht gespeichert werden.",
+  "settings.endpointSource.modelHint.": "",
+  "settings.endpointSource.modelHint.unreachable": "Endpunkt nicht erreichbar — Modellnamen eintippen.",
+  "settings.endpointSource.modelHint.no-list": "Der Endpunkt gibt keine Modell-Liste heraus — Namen eintippen.",
   "settings.workflow.name": "Workflow-Datei",
   "settings.workflow.desc":
     "Ein aus ComfyUI im API-Format exportierter Workflow. Das Plugin setzt Prompt, Negativ-Prompt, Seed, Steps und Größe ein — Sampler, Scheduler, CFG, LoRAs und Upscaler bleiben, wie du sie gebaut hast.",

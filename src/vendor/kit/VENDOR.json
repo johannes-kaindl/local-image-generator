@@ -3,5 +3,28 @@
   "version": "0.27.0",
   "sha": "548041b",
   "vendored": "cache-download.ts, endpoint.ts, frontmatter.ts, i18n.ts, num.ts, settings.ts, settings_schema.ts, sha256.ts, timeout.ts",
-  "note": "Verbatim snapshot. Never hand-edit. Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien. num.ts kommt nur als Abhaengigkeit mit: settings_schema.ts importiert clampInt daraus. kit-obsidian/ siehe dortige VENDOR.json."
+  "vendored_mixed_version": [
+    {
+      "file": "endpoint-source.ts",
+      "source": "obsidian-kit",
+      "version": "0.39.0",
+      "sha": "044b565",
+      "note": "Einzeln vendoriert (git show 0.39.0:src/pure/endpoint-source.ts), NICHT ueber tools/sync-kit.sh — das Skript berechnet eine gemeinsame VER fuer die oben gelisteten Module und haette beim Aufnehmen dieser Datei alle neun auf 0.39.0 gehoben (kit-first-Regel 2 der Welle-7-Auftragsnote). Importiert ../vendor/code-kit/pure/endpoint_config, im Vendor-Layout auf ./endpoint_config umgeschrieben (Dateikopf traegt den Vermerk). Re-vendor manuell mit demselben git-show-Befehl gegen einen neuen Tag; Kopf-Stempel und dieser Eintrag von Hand nachziehen."
+    },
+    {
+      "file": "endpoint_config.ts",
+      "source": "code-kit",
+      "version": "0.6.0",
+      "sha": "918ed85",
+      "note": "Einzeln vendoriert (git show 0.6.0:src/ts/pure/endpoint_config.ts) als Abhaengigkeit von endpoint-source.ts. Verbatim, keine Importe."
+    },
+    {
+      "file": "model-choice.ts",
+      "source": "code-kit",
+      "version": "0.6.0",
+      "sha": "918ed85",
+      "note": "Einzeln vendoriert (git show 0.6.0:src/ts/pure/model-choice.ts) als Abhaengigkeit von src/vendor/kit-obsidian/model-picker.ts. Verbatim, keine Importe."
+    }
+  ],
+  "note": "Verbatim snapshot aus ZWEI Quellen (obsidian-kit + code-kit); welche Datei woher stammt, sagt ihr eigener Kopf. Never hand-edit (Ausnahme: \"vendored_mixed_version\"-Eintraege, die per Definition ausserhalb von tools/sync-kit.sh liegen). Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; \"vendored_mixed_version\" traegt seine Version/SHA je Eintrag selbst. num.ts kommt nur als Abhaengigkeit mit: settings_schema.ts importiert clampInt daraus. kit-obsidian/ siehe dortige VENDOR.json."
 }

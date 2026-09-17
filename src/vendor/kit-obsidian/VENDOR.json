@@ -3,5 +3,21 @@
   "version": "0.27.0",
   "sha": "548041b",
   "vendored": "confirm.ts, folder-suggest.ts, hub.ts, settings_walker.ts",
-  "note": "Verbatim snapshot. Never hand-edit. Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien. Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
+  "vendored_mixed_version": [
+    {
+      "file": "endpoint-source.ts",
+      "source": "obsidian-kit",
+      "version": "0.39.0",
+      "sha": "044b565",
+      "note": "Einzeln vendoriert (git show 0.39.0:src/obsidian/endpoint-source.ts). Importe ../vendor/code-kit/pure/ und ../pure/ im Vendor-Layout auf ../kit/ umgeschrieben (Dateikopf traegt den Vermerk). Re-vendor manuell gegen einen neuen Tag; Kopf-Stempel und dieser Eintrag von Hand nachziehen."
+    },
+    {
+      "file": "model-picker.ts",
+      "source": "obsidian-kit",
+      "version": "0.39.0",
+      "sha": "044b565",
+      "note": "Einzeln vendoriert (git show 0.39.0:src/obsidian/model-picker.ts) als Abhaengigkeit von endpoint-source.ts. Import ../vendor/code-kit/pure/model-choice im Vendor-Layout auf ../kit/model-choice umgeschrieben."
+    }
+  ],
+  "note": "Verbatim snapshot. Never hand-edit (Ausnahme: \"vendored_mixed_version\"-Eintraege, die per Definition ausserhalb von tools/sync-kit.sh liegen). Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; \"vendored_mixed_version\" traegt seine Version/SHA je Eintrag selbst. Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
 }

@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Server and ComfyUI endpoints can now come from the LLM Endpoint Manager plugin, if
+  installed — two independent roles at the same manager, not two settings fields.** Without
+  the manager, nothing changes: the single `endpoint` field remains the one source for both
+  modes, exactly as before (no migration, existing values stay valid). With the manager
+  installed, the settings row for the server field shows the Kit's endpoint-source picker
+  instead (capability `image`); the server mode and the ComfyUI mode each keep their own
+  choice against the manager (`serverEndpointChoice` / `comfyEndpointChoice`), so picking a
+  Draw Things endpoint for one mode does not affect the other. The plain text field remains
+  as the fallback shown when the manager is absent or later disabled.
+
 ## [0.14.0] — 2026-09-07
 
 ### Added

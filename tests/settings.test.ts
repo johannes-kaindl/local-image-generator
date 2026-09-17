@@ -78,6 +78,8 @@ describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
       builtinModel: "sdxl-turbo",
       showModelPicker: true,
       comfyWorkflowPath: "",
+      serverEndpointChoice: { endpointId: "e1", model: "m1" },
+      comfyEndpointChoice: { endpointId: "e2" },
     };
     expect(validate(healthy)).toEqual(healthy);
   });

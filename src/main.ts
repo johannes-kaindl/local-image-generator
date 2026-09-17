@@ -35,6 +35,8 @@ import {
   type ImageGenerationApi,
 } from "./core/plugin-api";
 import { parseOptionsModel, ProgressPoller, A1111Client, statusUrlFor, type ImageBackend } from "./core/txt2img";
+import { resolveImageEndpoint, type EndpointRole } from "./core/resolve-endpoint";
+import { findEndpointManager } from "./vendor/kit-obsidian/endpoint-source";
 import { formatBytes, partialDownloadLabel, type EngineState, type GenParams, type PanelState, type ServerState } from "./core/viewmodel";
 import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { comfyTransport, httpGetJson, httpPostJson } from "./obsidian/http";
@@ -604,11 +606,44 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *  2026-09-06). Ein ComfyUI-Lauf mit Upscaler-Kette ueberschreitet 10 min mit Ansage, und
    *  der Nutzer haette die Grenze nirgends anheben koennen — sie steht in keinem Setting.
    *  Dieselbe Groessenordnung fuer beide Server-Wege, damit ein langer Lauf nicht davon
-   *  abhaengt, welches Backend ihn faehrt. */
-  private makeComfyClient(): ImageBackend {
+   *  abhaengt, welches Backend ihn faehrt.
+   *
+   *  `url` kommt vom Aufrufer (resolveEndpointFor("comfy")) statt hier erneut aufgeloest
+   *  zu werden — ein Lauf braucht GENAU EINE Aufloesung, nicht eine je Backend-Baustein. */
+  private makeComfyClient(url: string): ImageBackend {
     const w = this.state.workflow;
     if (w.kind !== "ok") throw new Error("kein brauchbarer Workflow");
-    return new ComfyClient(this.settings.endpoint, w.json, comfyTransport(), { timeoutMs: 1_800_000 });
+    return new ComfyClient(url, w.json, comfyTransport(), { timeoutMs: 1_800_000 });
+  }
+
+  /** Aktuelle Rolle beim Endpoint Manager — Server- und Comfy-Modus fragen UNABHAENGIG
+   *  voneinander (Entscheidung Johannes 2026-09-17: zwei Rollen statt zwei Settings-Felder).
+   *  Nur fuer Nicht-builtin-Modi sinnvoll; der Aufrufer prueft das selbst. */
+  private endpointRole(): EndpointRole {
+    return this.settings.engine === "comfy" ? "comfy" : "server";
+  }
+
+  /** Endpunkt fuer die aktuelle Rolle aufloesen. OHNE Manager exakt das Bestandsverhalten:
+   *  `settings.endpoint`, ungeprueft — ein Ping hier wuerde eine Generierung verhindern,
+   *  die heute (ohne "Verbindung testen" geklickt) trotzdem funktioniert. MIT Manager
+   *  entscheidet der Kit-Vertrag `resolveEndpointSource` allein, OHNE stillen Ruckfall auf
+   *  das geteilte lokale Feld — dieselbe Regel wie bei yijing-oracle/lingotuner: eine
+   *  Fehlermeldung soll auf die Manager-Einstellungen zeigen, nicht auf die dann
+   *  irrelevante lokale Liste. */
+  private async resolveEndpointFor(role: EndpointRole): Promise<{ url: string | null }> {
+    const manager = findEndpointManager(this.app);
+    if (!manager) return { url: this.settings.endpoint.trim() || null };
+    const choice = role === "comfy" ? this.settings.comfyEndpointChoice : this.settings.serverEndpointChoice;
+    const ping = async (cfg: { url: string }): Promise<boolean> => {
+      try {
+        const r = await httpGetJson(statusUrlFor(this.settings.engine, cfg.url));
+        return r.status === 200;
+      } catch {
+        return false;
+      }
+    };
+    const r = await resolveImageEndpoint(role, choice, this.settings.endpoint, manager, ping);
+    return { url: r.config?.url ?? null };
   }
 
   /** Modell wechseln (Settings, Task 10): dieselbe Sperre wie setEngine() — ein Wechsel darf
@@ -642,8 +677,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *  das Ergebnis direkt für seine Notice auswerten kann, ohne einen eigenen Zugriff auf
    *  den (privaten) Plugin-State zu brauchen. */
   async checkServer(): Promise<ServerState> {
-    const ep = this.settings.endpoint.trim();
-    if (ep === "") {
+    const ep = (await this.resolveEndpointFor(this.endpointRole())).url;
+    if (ep === null) {
       this.state.server = { kind: "unconfigured" };
       this.refreshViews();
       return this.state.server;
@@ -731,11 +766,21 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     opts?: { external?: boolean; signal?: AbortSignal },
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
+    // GENAU EINE Aufloesung fuer den ganzen Lauf — Backend-Bau UND Fortschritts-Poller
+    // (weiter unten) teilen sich diese eine URL, statt je einen eigenen Manager-Zugriff
+    // zu machen. Ohne Manager ist das exakt `settings.endpoint`, wie vor der Aenderung.
+    const endpointUrl = builtin ? null : (await this.resolveEndpointFor(this.endpointRole())).url;
+    if (!builtin && endpointUrl === null) {
+      return { ok: false, message: t("notice.serverFail") };
+    }
+    // Non-null bewiesen durch die Rueckkehr oben: `!builtin && endpointUrl === null` ist
+    // ausgeschlossen, TypeScript kann diese Korrelation zwischen zwei Variablen aber nicht
+    // verfolgen (kein direkter Typ-Guard auf `endpointUrl` allein).
     const backend: ImageBackend = builtin
       ? this.ensureLocalEngine()
       : this.settings.engine === "comfy"
-        ? this.makeComfyClient()
-        : new A1111Client(this.settings.endpoint, httpPostJson);
+        ? this.makeComfyClient(endpointUrl!)
+        : new A1111Client(endpointUrl!, httpPostJson);
     const external = opts?.external === true;
     // `phase` ist die WAHRE Phase und steuert den Kontrollfluss unten (Poller/Timer); im
     // Fremdlauf faellt state.run (die ANGEZEIGTE Phase) fuer die gesamte Laufzeit auf
@@ -765,7 +810,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Renderer mit 403 ab, weil Origin app://obsidian.md nicht zum Host passt). Die
     // Statuszeile zaehlt Sekunden, derselbe Pfad wie bei Draw Things.
     const poller = this.settings.engine === "server"
-      ? new ProgressPoller(this.settings.endpoint, (u) => httpGetJson(u, 1000))
+      ? new ProgressPoller(endpointUrl!, (u) => httpGetJson(u, 1000))
       : null;
     if (builtin) {
       this.ensureLocalEngine().onPhase = (ph, step, total) => {

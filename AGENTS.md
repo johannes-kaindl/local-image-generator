@@ -638,6 +638,31 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Server- oder builtin-Modus. Ein reiner UI-Komfortverlust, keine Falschaussage — deshalb
   bewusst nicht Teil dieser Task, aber hier vermerkt, damit eine spaetere Aenderung an
   `recipeUnchanged` weiss, dass der comfy-Fall dort noch nie eigens behandelt wurde.
+- **Endpunkte koennen seit 0.15.0 vom LLM Endpoint Manager kommen — zwei ROLLEN an einem
+  Manager, nicht zwei Settings-Felder (Entscheidung Johannes 2026-09-17, Welle 7).**
+  `src/core/resolve-endpoint.ts::resolveImageEndpoint(role, choice, localEndpoint, manager,
+  ping)` loest fuer `role` ("server" | "comfy") GENAU EINEN Endpunkt der Capability "image"
+  auf. **Ohne Manager aendert sich NICHTS:** `main.ts::resolveEndpointFor()` gibt dann
+  `settings.endpoint.trim() || null` direkt zurueck, ungepingt — ein Ping hier haette eine
+  Generierung verhindert, die heute (ohne geklickten „Verbindung testen"-Knopf) trotzdem
+  funktioniert. **Mit Manager entscheidet der Kit-Vertrag `resolveEndpointSource` ALLEIN,
+  OHNE stillen Ruckfall** auf das geteilte `endpoint`-Feld (dieselbe Regel wie
+  yijing-oracle/lingotuner: eine Fehlermeldung soll auf die Manager-Einstellungen zeigen).
+  `checkServer()`, `runGeneration()` (Backend-Bau + `ProgressPoller`) und `makeComfyClient()`
+  teilen sich EINE Aufloesung pro Lauf/Check — kein zweiter Manager-Zugriff je Baustein.
+  ⚠️ **Der Manager filtert die angebotene Liste NICHT nach Provider** (a1111 vs. comfy):
+  `buildEndpointSourceSection()` zeigt in BEIDEN Rollen dieselben Capability-"image"-Eintraege,
+  die Trennung ist reine Nutzerwahl (zwei unabhaengige `EndpointChoice`, kein Filter). Wer
+  einen Draw-Things-Endpunkt versehentlich in der Comfy-Rolle waehlt, bekommt keinen Fehler
+  beim Waehlen — erst der naechste Verbindungstest/Lauf zeigt es.
+  **Vendoring ist EINZELN, nicht ueber `tools/sync-kit.sh`** (Rahmen-Regel 2 der
+  Welle-7-Auftragsnote: das Skript pinnt eine gemeinsame Ref fuer alle neun gelisteten Module
+  und haette sie beim Aufnehmen dieser vier Dateien auf 0.39.0 gehoben): `src/vendor/kit/
+  endpoint-source.ts` (obsidian-kit@0.39.0) + `endpoint_config.ts`/`model-choice.ts`
+  (code-kit@0.6.0, Abhaengigkeiten) sowie `src/vendor/kit-obsidian/endpoint-source.ts` +
+  `model-picker.ts` (obsidian-kit@0.39.0) — je mit Kopf-Stempel und Eintrag in
+  `VENDOR.json::vendored_mixed_version` (Vorbild koda-agent `dd55354`). Re-vendor manuell mit
+  demselben `git show`-Befehl gegen einen neuen Tag.
 
 ## Vertrieb: Sideloader statt Community-Store (seit 2026-09-02)
 

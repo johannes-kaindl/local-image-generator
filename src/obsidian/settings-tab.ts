@@ -24,10 +24,12 @@ import { STEPS } from "../core/generation";
 import { BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, filesFor, isBuiltinModelId, modelById, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "../core/settings";
 import { formatBytes, type EngineState } from "../core/viewmodel";
+import { localImageEndpoints, type EndpointRole } from "../core/resolve-endpoint";
 import { t } from "../vendor/kit/i18n";
 import { validateSettings } from "../vendor/kit/settings_schema";
 import { applyDestructive, confirmAction } from "../vendor/kit-obsidian/confirm";
 import { renderSettingDefinitions, settingBodyHost, refreshSettingsTab } from "../vendor/kit-obsidian/settings_walker";
+import { buildEndpointSourceSection, findEndpointManager, type EndpointSourceSectionStrings } from "../vendor/kit-obsidian/endpoint-source";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { renderPresetEditor } from "./preset-editor";
 import { WorkflowPickerModal } from "./workflow-picker";
@@ -302,8 +304,60 @@ export class LigSettingTab extends PluginSettingTab {
     }
   }
 
-  /** Endpunkt-Textfeld und Test-Knopf teilen sich eine Zeile — als Control nicht abbildbar. */
+  /** Endpunkt-Zeile: mit installiertem LLM Endpoint Manager der Kit-Baustein
+   *  (buildEndpointSourceSection, Capability "image", eigene ROLLE je Modus — Entscheidung
+   *  Johannes 2026-09-17: zwei Rollen am selben Manager statt zwei Settings-Felder); ohne
+   *  Manager exakt das bisherige Textfeld + Test-Knopf (renderServerFallback), das dann auch
+   *  der `renderLocalList`-Callback des Bausteins bleibt — der Baustein ruft ihn nur, wenn ER
+   *  selbst keinen Manager findet, also identisches Verhalten wie vor diesem Umbau. */
   private renderServer(setting: Setting): void {
+    const manager = findEndpointManager(this.app);
+    if (!manager) {
+      this.renderServerFallback(setting);
+      return;
+    }
+    const role: EndpointRole = this.plugin.settings.engine === "comfy" ? "comfy" : "server";
+    const strings: EndpointSourceSectionStrings = {
+      managed: t("settings.endpointSource.managed"),
+      managedDesc: role === "comfy" ? t("settings.endpointSource.managedDescComfy") : t("settings.endpointSource.managedDescServer"),
+      openManager: t("settings.endpointSource.openManager"),
+      pickEndpoint: t("settings.endpointSource.pickEndpoint"),
+      automatic: t("settings.endpointSource.automatic"),
+      model: t("settings.endpointSource.model"),
+      importLocal: t("settings.endpointSource.importLocal"),
+      imported: (r) => t("settings.endpointSource.imported", r.added.length, r.merged.length),
+      importFailed: t("settings.endpointSource.importFailed"),
+      modelHint: (key) => t(`settings.endpointSource.modelHint.${key}`),
+      savedSuffix: t("settings.endpointSource.savedSuffix"),
+      refreshModels: t("settings.endpointSource.refreshModels"),
+      saveFailed: t("settings.endpointSource.saveFailed"),
+    };
+    buildEndpointSourceSection({
+      app: this.app,
+      // settingBodyHost, NICHT setting.settingEl: die Kit-Sektion haengt mehrere eigene
+      // `.setting-item`-Zeilen ein — in setting.settingEl (selbst ein `.setting-item`, per
+      // CSS ein Flex-Container fuer Name/Control) liefen sie nebeneinander statt
+      // untereinander (Regel 12: am Screenshot gefunden, nicht am DOM-Smoke).
+      containerEl: settingBodyHost(setting),
+      capability: "image",
+      caller: `local-image-generator/${role}`,
+      choice: () => (role === "comfy" ? this.plugin.settings.comfyEndpointChoice : this.plugin.settings.serverEndpointChoice),
+      setChoice: async (c) => {
+        if (role === "comfy") this.plugin.settings.comfyEndpointChoice = c;
+        else this.plugin.settings.serverEndpointChoice = c;
+        await this.plugin.saveSettings();
+        void this.plugin.checkServer();
+      },
+      local: () => localImageEndpoints(this.plugin.settings.endpoint),
+      strings,
+      renderLocalList: () => this.renderServerFallback(setting),
+      rerender: () => this.refreshUi(),
+    });
+  }
+
+  /** Bestandsverhalten ohne Manager: Endpunkt-Textfeld und Test-Knopf teilen sich eine Zeile
+   *  — als Control nicht abbildbar. */
+  private renderServerFallback(setting: Setting): void {
     // Echtes Render-Signal: den Legacy-Check hier anstoßen und nicht in
     // getSettingDefinitions(), das ab 1.13 auch für den bloßen Suchindex aufgerufen wird.
     this.ensureLegacyChecked();

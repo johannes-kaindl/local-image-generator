@@ -12,6 +12,7 @@ import {
   oneOf,
   type SettingsSchema,
 } from "../vendor/kit/settings_schema";
+import type { EndpointChoice } from "../vendor/kit/endpoint-source";
 
 export type EngineChoice = "builtin" | "server" | "comfy";
 
@@ -101,6 +102,13 @@ export interface LigSettings {
    *  eine Aussage, kein Fehler — wie bei `endpoint`. Nur der Pfad, nie das JSON: ein
    *  Workflow ist 3–15 KB und data.json wird bei jedem saveSettings() ganz geschrieben. */
   comfyWorkflowPath: string;
+  /** Endpunktwahl gegenüber dem LLM Endpoint Manager für den Server-Modus (Capability
+   *  "image", Entscheidung Johannes 2026-09-17: zwei ROLLEN am selben Manager statt zwei
+   *  Settings-Felder). Ohne installierten Manager bleibt `endpoint` die eine Wahrheit für
+   *  beide Modi, wie bisher — dieses Feld greift erst, wenn ein Manager gefunden wird. */
+  serverEndpointChoice: EndpointChoice;
+  /** Dieselbe Rolle für den ComfyUI-Modus — die zweite Hälfte der Zwei-Rollen-Entscheidung. */
+  comfyEndpointChoice: EndpointChoice;
 }
 
 export const DEFAULT_PRESETS: StylePreset[] = [
@@ -130,6 +138,8 @@ export const DEFAULT_SETTINGS: LigSettings = {
   builtinModel: DEFAULT_BUILTIN_MODEL_ID,
   showModelPicker: false,
   comfyWorkflowPath: "",
+  serverEndpointChoice: {},
+  comfyEndpointChoice: {},
 };
 
 /** Filter + Backfill der Historie — Migration 0.3→0.4 (width/height) und 0.4→0.5
@@ -200,7 +210,8 @@ export function migrateSettings(raw: unknown): unknown {
  *  die Funktion ist idempotent.
  *
  *  **Ohne Eintrag bleiben absichtlich** `outputFolder`, `noteFolder`, `endpoint`,
- *  `selectedModel`, `mfluxPath`, `modelsDir` und `sectionsCollapsed`: für sie leistet die
+ *  `selectedModel`, `mfluxPath`, `modelsDir`, `sectionsCollapsed`, `serverEndpointChoice`
+ *  und `comfyEndpointChoice`: für sie leistet die
  *  generische Bauform-Prüfung gegen den Default (`""` bzw. `{}`) exakt dasselbe wie die
  *  früheren Feld-Sanitizer. Ein leerer String ist hier kein Fehler, sondern eine Aussage
  *  (leerer outputFolder = Obsidians Attachment-Logik). */
