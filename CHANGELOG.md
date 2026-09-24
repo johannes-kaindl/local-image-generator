@@ -17,6 +17,7 @@ All notable changes to this project are documented here. The format follows
   choice against the manager (`serverEndpointChoice` / `comfyEndpointChoice`), so picking a
   Draw Things endpoint for one mode does not affect the other. The plain text field remains
   as the fallback shown when the manager is absent or later disabled.
+- **`authorUrl` in the manifest points to the GitHub profile again.**
 
 ## [0.14.0] — 2026-09-07
 
