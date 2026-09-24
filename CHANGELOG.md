@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-09-24
+
 ### Changed
 
 - **Server and ComfyUI endpoints can now come from the LLM Endpoint Manager plugin, if
