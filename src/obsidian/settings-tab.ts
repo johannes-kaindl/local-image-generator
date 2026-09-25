@@ -375,7 +375,7 @@ export class LigSettingTab extends PluginSettingTab {
     setting
       .addText((tf) => {
         // Der Platzhalter nennt den Port des GEWAEHLTEN Modus — ComfyUI hoert standardmaessig
-        // auf 8188, A1111/Draw Things auf 7860. Dasselbe Feld, zwei Erwartungen: ein
+        // auf 8188 (die Desktop-App auf 8000), A1111/Draw Things auf 7860. Dasselbe Feld, zwei Erwartungen: ein
         // 7860-Platzhalter im comfy-Modus ist die erste falsche Fährte.
         tf.setPlaceholder(this.plugin.settings.engine === "comfy" ? "http://127.0.0.1:8188" : "http://127.0.0.1:7860");
         tf.setValue(this.plugin.settings.endpoint).onChange(async (v) => {

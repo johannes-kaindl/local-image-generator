@@ -58,7 +58,7 @@ export const EN: Record<string, string> = {
   // aus dem Server-Modus umstellt, behaelt also seinen A1111-Endpunkt. „Is the API enabled?"
   // fuehrt dann in die Irre — der Server ist erreichbar, er ist nur der falsche.
   "status.noComfyEndpoint": "No ComfyUI server configured",
-  "status.comfyUnreachable": "No ComfyUI at this address (default port 8188) — is it running?",
+  "status.comfyUnreachable": "No ComfyUI at this address (default port 8188, or 8000 in the ComfyUI desktop app) — is it running?",
   "workflow.err.json": "The file is not valid JSON.",
   "workflow.err.notAnObject":
     "Not a workflow: expected an object of nodes. Export from ComfyUI with 'Save (API format)', not the normal save.",
@@ -80,9 +80,9 @@ export const EN: Record<string, string> = {
   "empty.noWorkflow": "Pick a ComfyUI workflow to get started",
   "empty.noWorkflowCta": "Open settings",
   "empty.noComfyServer":
-    "Start ComfyUI on this machine and enter its address in the settings — by default that is http://127.0.0.1:8188.",
+    "Start ComfyUI on this machine and enter its address in the settings — by default that is http://127.0.0.1:8188 (http://127.0.0.1:8000 in the ComfyUI desktop app).",
   "empty.comfyUnreachable":
-    "Nothing that looks like ComfyUI answered at that address. ComfyUI listens on port 8188 by default — and an endpoint left over from Draw Things or AUTOMATIC1111 will answer, but not to ComfyUI's API.",
+    "Nothing that looks like ComfyUI answered at that address. ComfyUI listens on port 8188 by default (8000 in the desktop app) — and an endpoint left over from Draw Things or AUTOMATIC1111 will answer, but not to ComfyUI's API.",
 
   "generate.modelBuiltin": "Model: {0} (built-in)",
   "status.gpuChecking": "Checking GPU…",
@@ -159,7 +159,7 @@ export const EN: Record<string, string> = {
   // geteilt, und ein uebernommener A1111-Endpunkt ist hier der wahrscheinlichste Fehler.
   "settings.comfyServer.name": "ComfyUI endpoint",
   "settings.comfyServer.desc":
-    "Address of your running ComfyUI server — by default http://127.0.0.1:8188. This is the same field as the server endpoint above: an address left over from Draw Things or AUTOMATIC1111 stays here when you switch, and it will not serve ComfyUI's API.",
+    "Address of your running ComfyUI server — by default http://127.0.0.1:8188 (8000 in the ComfyUI desktop app). This is the same field as the server endpoint above: an address left over from Draw Things or AUTOMATIC1111 stays here when you switch, and it will not serve ComfyUI's API.",
   "settings.server.test": "Test connection",
   // Kit-Baustein buildEndpointSourceSection() (Endpoint Manager, seit 0.15.0): zwei
   // UNABHAENGIGE Rollen am selben Manager statt zwei Settings-Felder (Entscheidung Johannes
@@ -261,7 +261,7 @@ export const DE: Record<string, string> = {
   "status.noWorkflow": "Kein Workflow gewählt",
   "status.workflowMissing": "Workflow-Datei nicht gefunden: {0}",
   "status.noComfyEndpoint": "Kein ComfyUI-Server konfiguriert",
-  "status.comfyUnreachable": "Kein ComfyUI unter dieser Adresse (Standard-Port 8188) — läuft es?",
+  "status.comfyUnreachable": "Kein ComfyUI unter dieser Adresse (Standard-Port 8188, in der ComfyUI-Desktop-App 8000) — läuft es?",
   "workflow.err.json": "Die Datei ist kein gültiges JSON.",
   "workflow.err.notAnObject":
     "Kein Workflow: erwartet wird ein Objekt aus Knoten. In ComfyUI mit „Save (API format)“ exportieren, nicht normal speichern.",
@@ -278,9 +278,9 @@ export const DE: Record<string, string> = {
   "empty.noWorkflow": "Wähle einen ComfyUI-Workflow, um loszulegen",
   "empty.noWorkflowCta": "Einstellungen öffnen",
   "empty.noComfyServer":
-    "Starte ComfyUI auf diesem Rechner und trage seine Adresse in den Einstellungen ein — standardmäßig ist das http://127.0.0.1:8188.",
+    "Starte ComfyUI auf diesem Rechner und trage seine Adresse in den Einstellungen ein — standardmäßig ist das http://127.0.0.1:8188 (in der ComfyUI-Desktop-App http://127.0.0.1:8000).",
   "empty.comfyUnreachable":
-    "Unter dieser Adresse hat nichts geantwortet, das nach ComfyUI aussieht. ComfyUI hört standardmäßig auf Port 8188 — und ein Endpunkt, der noch von Draw Things oder AUTOMATIC1111 stammt, antwortet zwar, aber nicht auf ComfyUIs API.",
+    "Unter dieser Adresse hat nichts geantwortet, das nach ComfyUI aussieht. ComfyUI hört standardmäßig auf Port 8188 (in der Desktop-App 8000) — und ein Endpunkt, der noch von Draw Things oder AUTOMATIC1111 stammt, antwortet zwar, aber nicht auf ComfyUIs API.",
   "empty.noServer":
     "Verbinde einen lokalen Bildserver wie Draw Things (API-Server aktivieren) oder AUTOMATIC1111 (--api) und trage den Endpunkt in den Einstellungen ein.",
   "empty.noServerCta": "Einstellungen öffnen",
@@ -360,7 +360,7 @@ export const DE: Record<string, string> = {
     "A1111-kompatibler lokaler Bild-Server — Draw Things (API-Server aktivieren), AUTOMATIC1111 (--api), Forge, SD.Next.",
   "settings.comfyServer.name": "ComfyUI-Endpoint",
   "settings.comfyServer.desc":
-    "Adresse deines laufenden ComfyUI-Servers — standardmäßig http://127.0.0.1:8188. Es ist dasselbe Feld wie der Server-Endpoint darüber: eine Adresse, die noch von Draw Things oder AUTOMATIC1111 stammt, bleibt beim Umschalten stehen und bedient ComfyUIs API nicht.",
+    "Adresse deines laufenden ComfyUI-Servers — standardmäßig http://127.0.0.1:8188 (in der ComfyUI-Desktop-App 8000). Es ist dasselbe Feld wie der Server-Endpoint darüber: eine Adresse, die noch von Draw Things oder AUTOMATIC1111 stammt, bleibt beim Umschalten stehen und bedient ComfyUIs API nicht.",
   "settings.server.test": "Verbindung testen",
   "settings.endpointSource.managed": "Endpunkte kommen vom LLM Endpoint Manager",
   "settings.endpointSource.managedDescServer":

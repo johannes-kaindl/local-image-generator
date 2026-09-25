@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The ComfyUI hints now name both default ports.** The standalone ComfyUI listens on 8188, the ComfyUI desktop app on 8000; the settings row, the status line and the empty state used to mention only 8188, so anyone running the desktop app saw an address that could never answer. The placeholder in the field stays `http://127.0.0.1:8188`.
+
 ## [0.15.0] — 2026-09-24
 
 ### Changed
