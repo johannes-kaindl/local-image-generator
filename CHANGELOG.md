@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-09-26
+
 ### Added
 
 - **Help row at the top of the settings**, with links to the documentation and the issue tracker (the `bug` button). It is the first row of the tab, above the Engine section.
