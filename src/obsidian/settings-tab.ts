@@ -31,6 +31,7 @@ import { applyDestructive, confirmAction } from "../vendor/kit-obsidian/confirm"
 import { renderSettingDefinitions, settingBodyHost, refreshSettingsTab } from "../vendor/kit-obsidian/settings_walker";
 import { buildEndpointSourceSection, findEndpointManager, type EndpointSourceSectionStrings } from "../vendor/kit-obsidian/endpoint-source";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
+import { helpDefinition } from "./help-row";
 import { renderPresetEditor } from "./preset-editor";
 import { WorkflowPickerModal } from "./workflow-picker";
 import type LocalImageGeneratorPlugin from "../main";
@@ -117,6 +118,7 @@ export class LigSettingTab extends PluginSettingTab {
       render: (setting) => this.renderWorkflow(setting),
     };
     return [
+      helpDefinition(),
       {
         type: "group",
         heading: t("settings.engine.heading"),

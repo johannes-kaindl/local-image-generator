@@ -90,6 +90,7 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   muss `git status` nach einem erneuten Lauf leer bleiben (Reproduzierbarkeit).
   ⚠️ `HUB_CSS` aus `src/vendor/kit-obsidian/hub.ts` ist zusaetzlich in `styles.css` uebernommen —
   das Kit injiziert kein CSS. Wer das Modul neu vendoriert, gleicht den Block mit ab.
+- **Hilfe-Zeile:** `src/vendor/kit-obsidian/help-setting.ts` hat einen EIGENEN Pin (`KIT_HELP_REF`, Default `0.43.0`) in `tools/sync-kit.sh`; die uebrigen Module bleiben auf `KIT_REF`. Die Zeile ist das erste Element von `getSettingDefinitions()` (`src/obsidian/help-row.ts`), Test `tests/help-row.test.ts`, Smoke-Punkt 41.
 - **Commit style:** Conventional Commits (deutsch), AI-Commits mit Co-Authored-By-Trailer.
 - **Deploy (lokal):** `OBSIDIAN_PLUGIN_DIR=<vault>/.obsidian/plugins/local-image-generator npm run deploy`
 - **Dach-Regeln gelten:** Kit-first (`../AGENTS.md`, `../REGISTRY.md`), UI-STANDARD (`../UI-STANDARD.md`).

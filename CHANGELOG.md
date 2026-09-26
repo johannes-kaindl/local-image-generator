@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Help row at the top of the settings**, with links to the documentation and the issue tracker (the `bug` button). It is the first row of the tab, above the Engine section.
+
 ### Changed
 
 - **The ComfyUI hints now name both default ports.** The standalone ComfyUI listens on 8188, the ComfyUI desktop app on 8000; the settings row, the status line and the empty state used to mention only 8188, so anyone running the desktop app saw an address that could never answer. The placeholder in the field stays `http://127.0.0.1:8188`.

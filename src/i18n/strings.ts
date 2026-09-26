@@ -110,6 +110,10 @@ export const EN: Record<string, string> = {
   "notice.saved": "Saved: {0}",
   "notice.noteFailed": "Image saved to {0}, but the note failed: {1}",
 
+  "settings.help.name": "Help",
+  "settings.help.desc": "Getting started, how-tos and troubleshooting",
+  "settings.help.openDocs": "Open documentation",
+  "settings.help.reportIssue": "Report an issue",
   "settings.output.heading": "Output",
   "settings.output.folder": "Image folder",
   "settings.output.folderDesc":
@@ -313,6 +317,10 @@ export const DE: Record<string, string> = {
   "notice.saved": "Gespeichert: {0}",
   "notice.noteFailed": "Bild wurde unter {0} gespeichert, aber die Notiz ist fehlgeschlagen: {1}",
 
+  "settings.help.name": "Hilfe",
+  "settings.help.desc": "Erste Schritte, Anleitungen und Fehlersuche",
+  "settings.help.openDocs": "Dokumentation öffnen",
+  "settings.help.reportIssue": "Problem melden",
   "settings.output.heading": "Ausgabe",
   "settings.output.folder": "Bilderordner",
   "settings.output.folderDesc":

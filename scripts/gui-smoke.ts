@@ -2736,6 +2736,34 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
  * Version aus einer `manifest.json` auf Platte — `null`, wenn sie fehlt oder unlesbar ist.
  * Gegenstueck zu `plugin.manifest.version` aus dem Renderer, die etwas anderes meint (s. u.).
  */
+/**
+ * Punkt 41: die Hilfe-Zeile ist die ERSTE Zeile des gerenderten Settings-Tabs (UI-STANDARD §8),
+ * mit Text-Knopf „Open documentation“ und dem `bug`-Knopf (Tooltip = einziger zugaenglicher Name).
+ * Gemessen am DOM des offenen Tabs, nicht an den Definitionen — der Host kann sie umsortieren.
+ * Geklickt wird nicht: der Klick oeffnete einen Browser. Die URLs deckt tests/help-row.test.ts.
+ */
+async function runHelpRowCheck(cdp: Cdp): Promise<void> {
+  const NAME = "41. Die Hilfe-Zeile steht als erste Zeile oben im Settings-Tab";
+  const r = await cdp.evaluate<{ erste: string | null; knopf: string | null; bug: string | null }>(`
+    app.setting.open();
+    app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
+    await new Promise((r) => setTimeout(r, 300));
+    if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
+    await new Promise((r) => setTimeout(r, 300));
+    const tab = app.setting.activeTab.containerEl;
+    const first = tab.querySelector(".setting-item");
+    const out = {
+      erste: first?.querySelector(".setting-item-name")?.textContent?.trim() ?? null,
+      knopf: first?.querySelector("button")?.textContent?.trim() ?? null,
+      bug: first?.querySelector(".extra-setting-button")?.getAttribute("aria-label") ?? null,
+    };
+    app.setting.close();
+    return out;
+  `);
+  const ok = (r.erste === "Help" || r.erste === "Hilfe") && r.knopf !== null && r.knopf.length > 0 && r.bug !== null && r.bug.length > 0;
+  record(NAME, ok, `erste Zeile „${r.erste}“, Knopf „${r.knopf}“, bug-Tooltip „${r.bug}“`);
+}
+
 function manifestVersion(pfad: string): string | null {
   if (!existsSync(pfad)) return null;
   try {
@@ -3619,6 +3647,9 @@ async function main(): Promise<void> {
     // Eigener Mock (scripts/mock-comfy.mjs, `npm run smoke:comfy`), eigener Zustand — die
     // Funktion stellt Endpunkt/Workflow/Modus selbst her und setzt sie im finally zurueck.
     await runComfyChecks(cdp, comfyEndpoint, generateTimeoutMs);
+
+    // --- 41. Hilfe-Zeile in den Settings -------------------------------------
+    await runHelpRowCheck(cdp);
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.
