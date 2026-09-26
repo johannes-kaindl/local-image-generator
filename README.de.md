@@ -27,21 +27,22 @@ Wege, wählbar in den Einstellungen:
 
 In jedem Fall verlassen Prompts und Bilder deinen Rechner nie.
 
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/gitea/v/release/jkaindl/local-image-generator?gitea_url=https%3A%2F%2Fgit.jkaindl.de&label=release)](https://git.jkaindl.de/jkaindl/local-image-generator/releases)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/johannes-kaindl/local-image-generator/blob/main/LICENSE)
+[![Docs: CC BY-SA 4.0](https://img.shields.io/badge/docs-CC%20BY--SA%204.0-lightgrey.svg)](https://github.com/johannes-kaindl/local-image-generator/blob/main/LICENSE-DOCS)
+[![Release](https://img.shields.io/github/v/release/johannes-kaindl/local-image-generator?label=release)](https://github.com/johannes-kaindl/local-image-generator/releases)
 [![Obsidian](https://img.shields.io/badge/obsidian-1.8.7%2B-purple)](https://obsidian.md)
 
 > **Hinweis:** Diese Übersetzung folgt der englischen [`README.md`](README.md).
 > Bei Abweichungen gilt die englische Fassung.
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/hero.png" alt="Obsidian mit einem Bild der eingebauten Engine: die Notiz in der Mitte zeigt das fertige Bild, das Generator-Panel rechts dasselbe Ergebnis samt Prompt, Schrittzahl und Seed und nennt SD-Turbo als verwendetes Modell." width="600">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/hero.png" alt="Obsidian mit einem Bild der eingebauten Engine: die Notiz in der Mitte zeigt das fertige Bild, das Generator-Panel rechts dasselbe Ergebnis samt Prompt, Schrittzahl und Seed und nennt SD-Turbo als verwendetes Modell." width="600">
 </p>
 
 ## Features
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/generate-panel.png" alt="Das Generator-Panel in Obsidians rechter Seitenleiste mit einsatzbereiter eingebauter Engine: Prompt-Feld, Stil-Chips sowie Regler für Schritte und Seed. Negativ-Prompt, Guidance und Größe fehlen, weil SD-Turbo sie nicht unterstützt." width="456">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/generate-panel.png" alt="Das Generator-Panel in Obsidians rechter Seitenleiste mit einsatzbereiter eingebauter Engine: Prompt-Feld, Stil-Chips sowie Regler für Schritte und Seed. Negativ-Prompt, Guidance und Größe fehlen, weil SD-Turbo sie nicht unterstützt." width="456">
 </p>
 
 - Den Generator über das Ribbon-Icon oder den Befehl **Generator öffnen** aufrufen.
@@ -99,7 +100,7 @@ Die Oberfläche gibt es auf Englisch und Deutsch und folgt automatisch der
 Spracheinstellung von Obsidian — eine eigene Sprachoption gibt es nicht.
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/style-chips.png" alt="Die Stil-Chips unter dem Prompt-Feld: Sumi-e, Watercolor, Photo und Oil." width="380">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/style-chips.png" alt="Die Stil-Chips unter dem Prompt-Feld: Sumi-e, Watercolor, Photo und Oil." width="380">
 </p>
 
 ## Für Plugin-Entwickler
@@ -203,10 +204,9 @@ nächste startet nicht mehr. Ohne Signal ändert sich nichts — `apiVersion` bl
 
 ## Installation
 
-Dieses Plugin wird **nicht über den Community-Store verteilt**. Es liegt auf einer eigenen
-Forge, und es gibt zwei Wege dorthin.
+Es gibt zwei Wege, das Plugin zu bekommen.
 
-**Empfohlen — über den [AnySource Sideloader](https://git.jkaindl.de/jkaindl/anysource-sideloader)**,
+**Empfohlen — über den [AnySource Sideloader](https://github.com/johannes-kaindl/anysource-sideloader)**,
 der Plugins von jeder git-Forge installiert und aktuell hält. Diesen Katalog einmal abonnieren:
 
 ```
@@ -216,21 +216,16 @@ https://git.jkaindl.de/jkaindl/obsidian-catalog/raw/branch/main/catalog.json
 Local Image Generator taucht danach in der Plugin-Liste des Sideloaders auf und aktualisiert
 sich wie jedes andere Plugin — kein Kopieren von Hand, und jeder Download wird gegen seine
 Prüfsumme geprüft. Wer nur dieses eine Plugin will, trägt statt des Katalogs seine
-Repository-URL als Quelle ein: `https://git.jkaindl.de/jkaindl/local-image-generator`.
+Repository-URL als Quelle ein: `https://github.com/johannes-kaindl/local-image-generator`.
 
 **Von Hand**, wer sich kein weiteres Plugin dafür installieren möchte:
 
 1. `main.js`, `manifest.json` und `styles.css` aus dem
-   [letzten Release](https://git.jkaindl.de/jkaindl/local-image-generator/releases) laden.
+   [letzten Release](https://github.com/johannes-kaindl/local-image-generator/releases) laden.
 2. Nach `<vault>/.obsidian/plugins/local-image-generator/` kopieren.
 3. Obsidian → Einstellungen → Community-Plugins → **Local Image Generator** aktivieren.
 
 Aktualisieren heißt dann: dasselbe noch einmal. Genau dafür gibt es den Sideloader-Weg.
-
-> [!warning] BRAT funktioniert für dieses Plugin derzeit nicht
-> BRAT installiert von GitHub, und der GitHub-Spiegel dieses Projekts ist momentan nicht
-> öffentlich lesbar — das Konto ist geflaggt, anonyme Zugriffe bekommen ein 404. Der
-> Sideloader-Weg oben hängt gar nicht von GitHub ab.
 
 Nach der Installation:
 
@@ -243,7 +238,7 @@ Nach der Installation:
    des Servers unter **Server-Endpunkt** eintragen und **Verbindung testen** klicken.
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/first-run.png" alt="Das Generator-Panel direkt nach der Installation: Prompt-Feld, Stil-Chips und Regler, darunter der Hinweis, dass das eingebaute Modell noch nicht geladen ist, mit dem Knopf „Download model (2.5 GB)“." width="380">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/first-run.png" alt="Das Generator-Panel direkt nach der Installation: Prompt-Feld, Stil-Chips und Regler, darunter der Hinweis, dass das eingebaute Modell noch nicht geladen ist, mit dem Knopf „Download model (2.5 GB)“." width="380">
 </p>
 
 ### Einen Server einrichten (optional)
@@ -272,7 +267,7 @@ in den Plugin-Einstellungen eintragen und **Verbindung testen** klicken. Statusz
 Einstellungen zeigen danach den Namen des aktiven Modells.
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/settings-server.png" alt="Der Engine-Abschnitt der Einstellungen im Server-Modus: die Engine-Auswahl mit „Server (Draw Things / A1111)“ und das Feld für den Server-Endpunkt samt Knopf „Test connection“." width="380">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/settings-server.png" alt="Der Engine-Abschnitt der Einstellungen im Server-Modus: die Engine-Auswahl mit „Server (Draw Things / A1111)“ und das Feld für den Server-Endpunkt samt Knopf „Test connection“." width="380">
 </p>
 
 ## Verwendung
@@ -293,11 +288,11 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 5. Frühere Erzeugungen findest du jederzeit im Reiter **Verlauf**.
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/history.png" alt="Der History-Reiter mit zwei Läufen, jeder mit Prompt, Seed, Schrittzahl und Uhrzeit, nach Aktualität sortiert, mit den Umschaltern Recent und By prompt und einem Knopf Clear all." width="456">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/history.png" alt="Der History-Reiter mit zwei Läufen, jeder mit Prompt, Seed, Schrittzahl und Uhrzeit, nach Aktualität sortiert, mit den Umschaltern Recent und By prompt und einem Knopf Clear all." width="456">
 </p>
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/result-note.png" alt="Eine Ergebnis-Notiz: das Rezept im Frontmatter — Prompt, Seed, Schritte, CFG, Modell, Größe und Bilddatei — darunter das eingebettete Bild." width="496">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/result-note.png" alt="Eine Ergebnis-Notiz: das Rezept im Frontmatter — Prompt, Seed, Schritte, CFG, Modell, Größe und Bilddatei — darunter das eingebettete Bild." width="496">
 </p>
 
 ## Voraussetzungen
@@ -320,7 +315,7 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 ## Konfiguration
 
 <p align="center">
-  <img src="https://git.jkaindl.de/jkaindl/local-image-generator/raw/branch/main/docs/images/settings.png" alt="Die Einstellungen des Plugins mit gewählter eingebauter Engine: die Engine-Auswahl, die SD-Turbo-Modellzeile mit dem Zustand Ready und einem Remove-Knopf, Bilder- und Notizordner, Modus des Create-Knopfes, Standard-Schrittzahl, die editierbare Liste der Stil-Chips und die Download-Quelle unter Advanced." width="515">
+  <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/settings.png" alt="Die Einstellungen des Plugins mit gewählter eingebauter Engine: die Engine-Auswahl, die SD-Turbo-Modellzeile mit dem Zustand Ready und einem Remove-Knopf, Bilder- und Notizordner, Modus des Create-Knopfes, Standard-Schrittzahl, die editierbare Liste der Stil-Chips und die Download-Quelle unter Advanced." width="515">
 </p>
 
 **Einstellungen → Local Image Generator**:
@@ -455,7 +450,7 @@ anderer Netzzugriff, keine Telemetrie.
 
 ## Modell & Lizenzen
 
-- **Plugin-Code:** AGPL-3.0-or-later (siehe `LICENSE`).
+- **Plugin-Code:** AGPL-3.0-or-later (siehe [`LICENSE`](https://github.com/johannes-kaindl/local-image-generator/blob/main/LICENSE)).
 - **Eingebaute Modelle:** zwei Katalog-Einträge, beide von Stability AI, beide
   weiterverteilt als eigene ONNX-Konversion dieses Plugins (fp16-Gewichte,
   fp32-Ein-/Ausgänge) unter der
@@ -479,7 +474,13 @@ andere Obsidian-Plugins und SDXL-Turbo als zweites eingebautes Modell standen hi
 als Ideen und sind seither erschienen. Weitere eingebaute Katalogeinträge bleiben eine
 Option, sobald sich das Format bewährt hat.
 
+## Dokumentation
+
+- [Dokumentations-Index](https://github.com/johannes-kaindl/local-image-generator/blob/main/docs/README.md) — alle Anleitungen an einem Ort (englisch).
+- [Getting started](https://github.com/johannes-kaindl/local-image-generator/blob/main/docs/getting-started.md) — von der Installation zum ersten Bild.
+- [Troubleshooting](https://github.com/johannes-kaindl/local-image-generator/blob/main/docs/troubleshooting.md) — die genaue Meldung, ihre Ursache und die Abhilfe.
+
 ## Lizenz
 
-AGPL-3.0-or-later — siehe [LICENSE](LICENSE). Die Lizenzierung der Modelle ist eine
+AGPL-3.0-or-later — siehe [LICENSE](https://github.com/johannes-kaindl/local-image-generator/blob/main/LICENSE). Die Lizenzierung der Modelle ist eine
 eigene Sache — siehe [Modell & Lizenzen](#modell--lizenzen) oben.
