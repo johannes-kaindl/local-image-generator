@@ -28,6 +28,14 @@
     {
       "dir": "src/vendor/kit-obsidian", "source": "obsidian-kit", "from": "src/obsidian",
       "modules": [{ "name": "help-setting", "ref": "0.43.0" }]
+    },
+    {
+      "dir": "src/vendor/kit-obsidian", "source": "obsidian-kit", "from": "src/obsidian",
+      "modules": [{ "name": "shortcuts-bridge", "ref": "0.45.1" }, { "name": "clock", "ref": "0.45.1" }]
+    },
+    {
+      "dir": "src/vendor/kit", "source": "obsidian-kit", "from": "src/pure",
+      "modules": [{ "name": "image-gen-provider", "ref": "0.45.0" }]
     }
   ]
 }
