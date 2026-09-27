@@ -1,7 +1,7 @@
 # Local Image Generator
 
 Generate images inside Obsidian — on your own machine, with no cloud and no
-account. Three ways to do it, chosen in the settings:
+account. Four ways to do it, chosen in the settings:
 
 - **Built-in (default):** a model runs **on your GPU inside Obsidian** via
   WebGPU — pick one in the settings. **SD-Turbo** (≈ 2.6 GB, 512×512) is the
@@ -24,6 +24,14 @@ account. Three ways to do it, chosen in the settings:
   WebSocket connection from inside Obsidian, so the status line counts
   seconds instead), no CFG slider — see the changelog for the full list of
   what this mode does not do.
+- **Image Playground (mobile):** the only mode that works on your phone —
+  everything else needs a desktop Obsidian with either a GPU or a reachable
+  local server. Runs entirely on-device through Apple's Image Playground via
+  a Shortcut you install once (see [Setting up Image Playground](#setting-up-image-playground-mobile)
+  below); the generated file is saved into your attachment folder like any
+  other backend. Only stylized output — animation, illustration, sketch —
+  never photorealistic images, and no negative prompt, no size control, no
+  CFG, no starting image. Requires iOS/macOS 26+ and Apple Intelligence.
 
 In every case, your prompts and images never leave your machine.
 
@@ -284,6 +292,32 @@ line and settings both show the server's active model name once connected.
   <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/settings-server.png" alt="The Engine section of the settings switched to Server: the engine picker showing Draw Things / A1111 and the server endpoint field with a Test connection button." width="380">
 </p>
 
+### Setting up Image Playground (mobile)
+
+Requires **iOS/macOS 26+ and Apple Intelligence**. The plugin talks to
+Image Playground through a Shortcut you install once — there is no other
+way for a third-party app to reach it on iOS.
+
+1. Get the Shortcut named **`Generate Image (Obsidian)`** — either import
+   Johannes Kaindl's shared version (link and setup walkthrough:
+   [uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts))
+   or build your own: a Shortcut that takes the passed-in text as the
+   prompt, runs an **Image Playground** action with it, and saves the
+   result into your vault with a **Save File** action.
+2. Switch **Engine** to *Image Playground (Apple shortcut, mobile)* in this
+   plugin's settings.
+3. Enter the exact Shortcut name in **Shortcut name** — it defaults to
+   `Generate Image (Obsidian)`, matching the shared Shortcut above; if you
+   renamed yours, this field has to match exactly.
+4. Generate as usual. Running it briefly switches you to the Shortcuts app
+   and back — that hand-off is normal (enabling *Reduce Motion* in iOS
+   Accessibility settings makes it noticeably shorter).
+
+The central guide — the Shortcut's import questions, the full error table
+(guardrail refusals, a missing Shortcut, timeouts), and requirements in
+detail — lives at
+[uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts).
+
 ## Usage
 
 1. Built-in engine: make sure the model is downloaded (the panel offers the
@@ -311,8 +345,11 @@ line and settings both show the server's active model name once connected.
 
 ## Requirements
 
-- **Obsidian desktop only** (`isDesktopOnly: true` — this plugin does not
-  run on Obsidian Mobile).
+- **Works on mobile through Image Playground only.** Built-in, Server and
+  ComfyUI all need a desktop Obsidian install — a GPU or a reachable local
+  server. Image Playground needs **iOS/macOS 26+ and Apple Intelligence**;
+  on a device or OS version without it, that mode simply is not usable —
+  pick one of the other three on desktop instead.
 - **Built-in engine:** a GPU that Obsidian's WebGPU can use with 16-bit
   shaders (`shader-f16`) — Apple Silicon Macs qualify, as do most current
   discrete GPUs. Disk and peak GPU memory depend on which model you pick:

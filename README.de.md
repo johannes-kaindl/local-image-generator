@@ -1,6 +1,6 @@
 # Local Image Generator
 
-Bilder in Obsidian erzeugen — auf dem eigenen Rechner, ohne Cloud und ohne Konto. Drei
+Bilder in Obsidian erzeugen — auf dem eigenen Rechner, ohne Cloud und ohne Konto. Vier
 Wege, wählbar in den Einstellungen:
 
 - **Eingebaut (Standard):** ein Modell rechnet **auf deiner GPU in Obsidian** per
@@ -24,6 +24,15 @@ Wege, wählbar in den Einstellungen:
   aus Obsidian heraus ab, deshalb zählt die Statuszeile stattdessen Sekunden), kein
   CFG-Regler — die vollständige Liste dessen, was dieser Modus nicht kann, steht im
   Changelog.
+- **Image Playground (mobil):** der einzige Modus, der auf dem Handy funktioniert —
+  alle anderen brauchen ein Desktop-Obsidian mit GPU bzw. einen erreichbaren
+  lokalen Server. Läuft vollständig on-device über Apples Image Playground per
+  einem einmalig installierten Kurzbefehl (siehe
+  [Image Playground einrichten](#image-playground-mobil-einrichten) unten); die
+  erzeugte Datei landet wie bei jedem anderen Backend in deinem Anhang-Ordner.
+  Nur stilisierte Ausgaben — Animation, Illustration, Sketch — nie
+  fotorealistische Bilder, und weder Negativ-Prompt noch Größenwahl, CFG oder
+  ein Ausgangsbild. Braucht iOS/macOS 26+ und Apple Intelligence.
 
 In jedem Fall verlassen Prompts und Bilder deinen Rechner nie.
 
@@ -270,6 +279,32 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
   <img src="https://raw.githubusercontent.com/johannes-kaindl/local-image-generator/main/docs/images/settings-server.png" alt="Der Engine-Abschnitt der Einstellungen im Server-Modus: die Engine-Auswahl mit „Server (Draw Things / A1111)“ und das Feld für den Server-Endpunkt samt Knopf „Test connection“." width="380">
 </p>
 
+### Image Playground (mobil) einrichten
+
+Braucht **iOS/macOS 26+ und Apple Intelligence**. Das Plugin spricht Image Playground
+über einen einmalig installierten Kurzbefehl an — auf iOS gibt es für eine
+Drittanbieter-App keinen anderen Weg dorthin.
+
+1. Den Kurzbefehl **`Generate Image (Obsidian)`** besorgen — entweder Johannes Kaindls
+   geteilte Fassung importieren (Link und Einrichtungsanleitung:
+   [uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts))
+   oder selbst bauen: ein Kurzbefehl, der den übergebenen Text als Prompt nimmt, damit
+   eine **Image Playground**-Aktion ausführt und das Ergebnis per **Datei sichern** in
+   den Vault schreibt.
+2. In den Plugin-Einstellungen **Engine** auf *Image Playground (Apple-Kurzbefehl,
+   mobil)* umstellen.
+3. Den exakten Kurzbefehl-Namen bei **Kurzbefehl-Name** eintragen — Vorgabe ist
+   `Generate Image (Obsidian)`, passend zum geteilten Kurzbefehl oben; bei einem
+   umbenannten eigenen Kurzbefehl muss das Feld genau übereinstimmen.
+4. Wie gewohnt generieren. Der Lauf wechselt kurz in die Kurzbefehle-App und zurück —
+   dieser Wechsel ist normal (aktiviertes „Bewegung reduzieren" in den
+   Bedienungshilfen von iOS macht ihn spürbar kürzer).
+
+Der zentrale Guide — die Import-Fragen des Kurzbefehls, die vollständige Fehlertabelle
+(Guardrail-Ablehnungen, ein fehlender Kurzbefehl, Timeouts) und alle Voraussetzungen im
+Detail — steht unter
+[uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts).
+
 ## Verwendung
 
 1. Eingebaute Engine: sicherstellen, dass das Modell geladen ist (das Panel bietet den
@@ -297,8 +332,11 @@ Einstellungen zeigen danach den Namen des aktiven Modells.
 
 ## Voraussetzungen
 
-- **Nur Obsidian Desktop** (`isDesktopOnly: true` — dieses Plugin läuft nicht auf
-  Obsidian Mobile).
+- **Mobil funktioniert nur Image Playground.** Eingebaut, Server und ComfyUI brauchen
+  alle ein Desktop-Obsidian — eine GPU oder einen erreichbaren lokalen Server. Image
+  Playground braucht **iOS/macOS 26+ und Apple Intelligence**; ohne passendes Gerät
+  oder OS ist dieser Modus schlicht nicht nutzbar — dann einen der drei anderen auf
+  dem Desktop wählen.
 - **Eingebaute Engine:** eine GPU, die Obsidians WebGPU mit 16-Bit-Shadern
   (`shader-f16`) nutzen kann — Apple-Silicon-Macs erfüllen das, ebenso die meisten
   aktuellen dedizierten GPUs. Plattenplatz und Speicherspitze hängen vom gewählten
