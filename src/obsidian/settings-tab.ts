@@ -117,6 +117,16 @@ export class LigSettingTab extends PluginSettingTab {
       desc: t("settings.workflow.desc"),
       render: (setting) => this.renderWorkflow(setting),
     };
+    // Image Playground (Spec Baustein 5, Welle 13): kein Endpunkt, kein Server — nur ein
+    // Kurzbefehl-Name. Die Beschreibung nennt die Ehrlichkeits-Grenzen ausdruecklich
+    // (Auftrag C): stilisierte Ausgaben, keine Fotorealistik, keine Negativ-Prompts/Maße,
+    // kein img2img — die Settings-Zeile ist der Ort, an dem ein Nutzer das VOR dem ersten
+    // Lauf erfaehrt, nicht erst am Fehlschlag.
+    const playgroundRow: SettingDefinitionItem<keyof LigSettings> = {
+      name: t("settings.playground.name"),
+      desc: t("settings.playground.desc"),
+      control: { type: "text", key: "playgroundShortcutName", placeholder: DEFAULT_SETTINGS.playgroundShortcutName },
+    };
     return [
       helpDefinition(),
       {
@@ -138,6 +148,7 @@ export class LigSettingTab extends PluginSettingTab {
                 builtin: t("settings.engine.builtin"),
                 server: t("settings.engine.server"),
                 comfy: t("settings.engine.comfy"),
+                playground: t("settings.engine.playground"),
               },
             },
           },
@@ -145,7 +156,9 @@ export class LigSettingTab extends PluginSettingTab {
             ? [builtinModelRow, showModelPickerRow, modelRow]
             : mode === "comfy"
               ? [serverRow, workflowRow]
-              : [serverRow]),
+              : mode === "playground"
+                ? [playgroundRow]
+                : [serverRow]),
         ],
       },
       {
@@ -234,11 +247,12 @@ export class LigSettingTab extends PluginSettingTab {
     if (key === "engine") {
       // Moduswechsel hat Seiteneffekte (GPU-Sessions frei, Server prüfen) — über das Plugin.
       // Während einer Generierung lehnt es ab (Notice); refreshUi stellt den Dropdown zurück.
-      // DREI moegliche Werte seit dem comfy-Backend (AGENTS.md § "Der dritte Modus-Wert
-      // faellt an rund einem Dutzend Stellen in den else-Zweig"): eine Ternaerkette, die
-      // nur "server" kennt, schaltete "comfy" hier still auf "builtin" zurueck — kein
-      // Fehler, keine Notice, das Dropdown sprang einfach um.
-      const next: EngineChoice = clean === "server" ? "server" : clean === "comfy" ? "comfy" : "builtin";
+      // VIER moegliche Werte seit dem Playground-Backend (AGENTS.md § "Der dritte Modus-Wert
+      // faellt an rund einem Dutzend Stellen in den else-Zweig" — gilt fuer jeden weiteren
+      // Wert genauso): eine Ternaerkette, die einen Wert nicht kennt, schaltet ihn hier
+      // still auf "builtin" zurueck — kein Fehler, keine Notice, das Dropdown springt um.
+      const next: EngineChoice =
+        clean === "server" ? "server" : clean === "comfy" ? "comfy" : clean === "playground" ? "playground" : "builtin";
       await this.plugin.setEngine(next);
       this.refreshUi();
       return;

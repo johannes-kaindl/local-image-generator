@@ -2764,6 +2764,125 @@ async function runHelpRowCheck(cdp: Cdp): Promise<void> {
   record(NAME, ok, `erste Zeile „${r.erste}“, Knopf „${r.knopf}“, bug-Tooltip „${r.bug}“`);
 }
 
+/**
+ * Punkte 42–44: Image-Playground-Backend (Spec Baustein 5, Welle 13) — Backend-Wahl,
+ * Settings-Zeile und Fehlerpfad. Der echte Kurzbefehl-Rundlauf ist am CDP nicht ehrlich
+ * pruefbar (Kit-Kommentar shortcuts-bridge.ts: "kein automatisierter GUI-Smoke moeglich" —
+ * keine Kurzbefehle-App im Container/der Zweitinstanz); gemessen wird bis zur Modus-/
+ * Settings-/Statuszeilen-Grenze, wie bei den drei bestehenden Backends VOR ihrem jeweiligen
+ * Netzweg auch.
+ */
+async function runPlaygroundChecks(cdp: Cdp): Promise<void> {
+  const setzeModus = async (mode: "builtin" | "server" | "comfy" | "playground"): Promise<void> => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== ${JSON.stringify(mode)}) await p.setEngine(${JSON.stringify(mode)});
+      p.refreshViews();
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 300));
+  };
+  const setzeKurzbefehlName = async (name: string): Promise<void> => {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.settings.playgroundShortcutName = ${JSON.stringify(name)};
+      await p.saveSettings();
+      p.refreshViews();
+      return true;
+    `);
+    await new Promise((r) => setTimeout(r, 300));
+  };
+  const statuszeile = () =>
+    cdp.evaluate<{ text: string; isOk: boolean; isError: boolean }>(`
+      const el = document.querySelector(".lig-status-text");
+      const icon = document.querySelector(".lig-status-icon");
+      return {
+        text: el ? el.textContent.trim() : "",
+        isOk: icon ? icon.classList.contains("is-ok") : false,
+        isError: icon ? icon.classList.contains("is-error") : false,
+      };
+    `);
+
+  // --- 42. Backend-Wahl: das Settings-Dropdown fuehrt "playground" als echte <option>,
+  //     der Wechsel blendet Negativ-Prompt/CFG/Groesse aus (dieselbe Erwartung wie builtin,
+  //     aus demselben Grund: der Kurzbefehl nimmt nur den Prompt entgegen). ----------------
+  {
+    const NAME = "42. Backend-Wahl bietet Image Playground im Dropdown an und blendet Negativ-Prompt/CFG/Groesse aus";
+    const dropdownOptionen = await cdp.evaluate<string[]>(`
+      app.setting.open();
+      app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
+      await new Promise((r) => setTimeout(r, 300));
+      if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
+      await new Promise((r) => setTimeout(r, 300));
+      const select = app.setting.activeTab.containerEl.querySelector("select");
+      const out = select ? Array.from(select.options).map((o) => o.textContent.trim()) : [];
+      app.setting.close();
+      return out;
+    `);
+    const hatPlaygroundOption = dropdownOptionen.includes(t("settings.engine.playground"));
+    await setzeModus("playground");
+    const wirklichUmgeschaltet = await cdp.evaluate<string>(`
+      return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.engine;
+    `);
+    // `.lig-size` (das <select>) traegt `is-hidden` NICHT selbst — der Wrapper
+    // `.lig-size-slot` tut es (generate-panel.ts). `getComputedStyle` eines Kindes bleibt
+    // von einem `display:none` des Vorfahren unberuehrt, deshalb ist der Wrapper der
+    // richtige Messpunkt (erster Lauf dieses Punkts mass genau daran vorbei — CORE-TEST-15).
+    const sicht = await comfySelectorSicht(cdp, [".lig-negative-row", ".lig-cfg", ".lig-cfg-label", ".lig-cfg-value", ".lig-size-slot"]);
+    const nichtVersteckt = sicht.filter((s) => !s.fehlt && s.display !== "none");
+    const ok = hatPlaygroundOption && wirklichUmgeschaltet === "playground" && nichtVersteckt.length === 0;
+    record(
+      NAME,
+      ok,
+      ok
+        ? `Dropdown-Option „${t("settings.engine.playground")}“ vorhanden, engine=„${wirklichUmgeschaltet}“, alle modusabhaengigen Regler versteckt`
+        : `Option: ${hatPlaygroundOption ? "vorhanden" : "FEHLT"} (gefunden: ${dropdownOptionen.join(", ") || "keine"}) · engine nach Wechsel: „${wirklichUmgeschaltet}“ · noch sichtbar: ${nichtVersteckt.map((s) => s.sel).join(", ") || "keine"}`,
+    );
+  }
+
+  // --- 43. Settings: die Kurzbefehl-Name-Zeile erscheint NUR im playground-Modus ---------
+  {
+    const NAME = "43. Settings zeigen die Kurzbefehl-Name-Zeile nur im playground-Modus";
+    const zeileVorhanden = async (): Promise<boolean> =>
+      cdp.evaluate<boolean>(`
+        app.setting.open();
+        app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
+        await new Promise((r) => setTimeout(r, 300));
+        if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
+        await new Promise((r) => setTimeout(r, 300));
+        const namen = Array.from(app.setting.activeTab.containerEl.querySelectorAll(".setting-item-name")).map((el) => el.textContent.trim());
+        app.setting.close();
+        return namen.includes(${JSON.stringify(t("settings.playground.name"))});
+      `);
+    const imPlaygroundModus = await zeileVorhanden();
+    await setzeModus("builtin");
+    const imBuiltinModus = await zeileVorhanden();
+    await setzeModus("playground");
+    const ok = imPlaygroundModus && !imBuiltinModus;
+    record(NAME, ok, `playground: ${imPlaygroundModus ? "vorhanden" : "fehlt"} · builtin: ${imBuiltinModus ? "faelschlich vorhanden" : "korrekt weg"}`);
+  }
+
+  // --- 44. Fehlerpfad: leerer Kurzbefehl-Name meldet sich als Fehler, ein gesetzter Name
+  //     ist sofort "Bereit" — ohne jeden Netzweg (kein Server, kein Workflow-Check). -------
+  {
+    const NAME = "44. Fehlerpfad: leerer Kurzbefehl-Name ist ein Fehler, ein gesetzter Name ist sofort bereit";
+    await setzeKurzbefehlName("");
+    const leer = await statuszeile();
+    await setzeKurzbefehlName("Generate Image (Obsidian)");
+    const gesetzt = await statuszeile();
+    const erwarteterFehlertext = t("status.noShortcut");
+    const erwarteterOkText = t("status.ready");
+    const ok = leer.isError && leer.text === erwarteterFehlertext && gesetzt.isOk && gesetzt.text === erwarteterOkText;
+    record(
+      NAME,
+      ok,
+      ok
+        ? `leer → „${leer.text}“ (is-error) · gesetzt → „${gesetzt.text}“ (is-ok)`
+        : `leer: „${leer.text}“ (erwartet „${erwarteterFehlertext}“) · gesetzt: „${gesetzt.text}“ (erwartet „${erwarteterOkText}“)`,
+    );
+  }
+}
+
 function manifestVersion(pfad: string): string | null {
   if (!existsSync(pfad)) return null;
   try {
@@ -2988,7 +3107,7 @@ async function main(): Promise<void> {
     // Punkte 1–11 messen den Server-Pfad; die eingebaute Engine kommt in 13–16 dran. Der Modus
     // wird deshalb hier auf „server" gestellt und im finally zurückgeschrieben (setEngine räumt
     // GPU-Sessions ab und prüft den Server neu — genau wie ein Klick im Dropdown).
-    previous = await cdp.evaluate<{ createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string; builtinModel: string; showModelPicker: boolean }>(`
+    previous = await cdp.evaluate<{ createMode: string; outputFolder: string; noteFolder: string; history: unknown[]; engine: string; assetBaseUrl: string; builtinModel: string; showModelPicker: boolean; playgroundShortcutName: string }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
       const before = {
         createMode: p.settings.createMode,
@@ -2999,6 +3118,7 @@ async function main(): Promise<void> {
         assetBaseUrl: p.settings.assetBaseUrl,
         builtinModel: p.settings.builtinModel,
         showModelPicker: p.settings.showModelPicker,
+        playgroundShortcutName: p.settings.playgroundShortcutName,
       };
       p.settings.createMode = "note";
       p.settings.outputFolder = ${JSON.stringify(SMOKE_FOLDER)};
@@ -3650,6 +3770,11 @@ async function main(): Promise<void> {
 
     // --- 41. Hilfe-Zeile in den Settings -------------------------------------
     await runHelpRowCheck(cdp);
+
+    // --- 42–44. Image-Playground-Backend (Welle 13) --------------------------
+    // Ausserhalb der --builtin/--quick-Bedingung wie 18a-d: kein Server, kein Download,
+    // kein Netzweg — nur Modus-Wechsel, Settings-DOM und Statuszeile.
+    await runPlaygroundChecks(cdp);
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.
@@ -3666,6 +3791,7 @@ async function main(): Promise<void> {
           p.settings.assetBaseUrl = before.assetBaseUrl;
           p.settings.builtinModel = before.builtinModel;
           p.settings.showModelPicker = before.showModelPicker;
+          p.settings.playgroundShortcutName = before.playgroundShortcutName;
           await p.saveSettings();
           if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
           p.refreshViews();

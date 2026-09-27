@@ -133,8 +133,9 @@ export const EN: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Built-in: an image model runs on your GPU inside Obsidian (downloaded once on request — see the model row below for which one and its size). Server: a local Draw Things / A1111-compatible server with its own models and full controls. ComfyUI: your own workflow file on a running ComfyUI server (default port 8188) — the plugin fills in prompt, seed, steps and size and leaves the rest of the graph alone.",
+  "settings.engine.desc": "Built-in: an image model runs on your GPU inside Obsidian (downloaded once on request — see the model row below for which one and its size). Server: a local Draw Things / A1111-compatible server with its own models and full controls. ComfyUI: your own workflow file on a running ComfyUI server (default port 8188) — the plugin fills in prompt, seed, steps and size and leaves the rest of the graph alone. Image Playground: the only backend that works on mobile — Built-in, Server and ComfyUI need a desktop Obsidian install with a GPU or a reachable local server.",
   "settings.engine.builtin": "Built-in (on your GPU)",
+  "settings.engine.playground": "Image Playground (Apple shortcut, mobile)",
   "settings.engine.server": "Server (Draw Things / A1111)",
   "settings.engine.comfy": "ComfyUI (your workflow)",
   "settings.model.name": "{0} model ({1})",
@@ -191,6 +192,17 @@ export const EN: Record<string, string> = {
     "A workflow exported from ComfyUI in API format. The plugin fills in prompt, negative prompt, seed, steps and size — sampler, scheduler, CFG, LoRAs and upscalers stay as you built them.",
   "settings.workflow.pick": "Choose…",
   "workflow.pickerTitle": "Pick a ComfyUI workflow (.json)",
+
+  // Image Playground (Apple shortcut, Spec Baustein 5): honest about its limits right here,
+  // not only in the docs — stylized output only, no negative prompts, no size control, no
+  // img2img. Requires iOS/macOS 26+ and Apple Intelligence.
+  "settings.playground.name": "Shortcut name",
+  "settings.playground.desc":
+    "Exact name of the Apple Shortcut that runs Image Playground (see the setup guide, linked above). Requires iOS/macOS 26+ and Apple Intelligence. Image Playground only produces stylized output (animation, illustration, sketch) — never photorealistic images — and takes no negative prompt, no size, no CFG and no starting image. The generated file goes into your attachment folder, same as the other backends.",
+  "status.noShortcut": "No Image Playground shortcut configured",
+  "empty.noShortcut": "Set the exact Shortcut name in the plugin settings to use Image Playground.",
+  "empty.noShortcutCta": "Open settings",
+  "generate.modelPlayground": "Model: Image Playground (on-device, Apple Shortcut)",
 
   "notice.serverOk": "Server OK — model: {0}",
   "notice.serverFail": "Server not reachable. Check that it is running and the API is enabled.",
@@ -340,10 +352,11 @@ export const DE: Record<string, string> = {
 
   "settings.engine.heading": "Engine",
   "settings.engine.name": "Engine",
-  "settings.engine.desc": "Eingebaut: ein Bildmodell rechnet auf deiner GPU in Obsidian (einmal auf Wunsch geladen — welches und wie groß steht in der Modell-Zeile darunter). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern. ComfyUI: dein eigener Workflow auf einem laufenden ComfyUI-Server (Standard-Port 8188) — das Plugin setzt Prompt, Seed, Steps und Größe ein und lässt den Rest des Graphen in Ruhe.",
+  "settings.engine.desc": "Eingebaut: ein Bildmodell rechnet auf deiner GPU in Obsidian (einmal auf Wunsch geladen — welches und wie groß steht in der Modell-Zeile darunter). Server: ein lokaler Draw-Things-/A1111-kompatibler Server mit eigenen Modellen und vollen Reglern. ComfyUI: dein eigener Workflow auf einem laufenden ComfyUI-Server (Standard-Port 8188) — das Plugin setzt Prompt, Seed, Steps und Größe ein und lässt den Rest des Graphen in Ruhe. Image Playground: das einzige Backend, das mobil funktioniert — Eingebaut, Server und ComfyUI brauchen ein Desktop-Obsidian mit GPU bzw. einen erreichbaren lokalen Server.",
   "settings.engine.builtin": "Eingebaut (auf deiner GPU)",
   "settings.engine.server": "Server (Draw Things / A1111)",
   "settings.engine.comfy": "ComfyUI (dein Workflow)",
+  "settings.engine.playground": "Image Playground (Apple-Kurzbefehl, mobil)",
   "settings.model.name": "{0}-Modell ({1})",
   "settings.model.desc": "{0} · {1}. Wird nur nach Klick geladen, per Prüfsumme geprüft, außerhalb des Vaults abgelegt.",
   "settings.model.download": "Herunterladen",
@@ -393,6 +406,14 @@ export const DE: Record<string, string> = {
     "Ein aus ComfyUI im API-Format exportierter Workflow. Das Plugin setzt Prompt, Negativ-Prompt, Seed, Steps und Größe ein — Sampler, Scheduler, CFG, LoRAs und Upscaler bleiben, wie du sie gebaut hast.",
   "settings.workflow.pick": "Wählen…",
   "workflow.pickerTitle": "ComfyUI-Workflow wählen (.json)",
+
+  "settings.playground.name": "Kurzbefehl-Name",
+  "settings.playground.desc":
+    "Exakter Name des Apple-Kurzbefehls, der Image Playground ausführt (siehe die verlinkte Einrichtungsanleitung oben). Braucht iOS/macOS 26+ und Apple Intelligence. Image Playground liefert nur stilisierte Ausgaben (Animation, Illustration, Sketch) — nie fotorealistische Bilder — und kennt weder Negativ-Prompt noch Größe, CFG oder ein Ausgangsbild. Die erzeugte Datei landet in deinem Anhang-Ordner, wie bei den anderen Backends.",
+  "status.noShortcut": "Kein Image-Playground-Kurzbefehl konfiguriert",
+  "empty.noShortcut": "Trage den exakten Kurzbefehl-Namen in den Plugin-Einstellungen ein, um Image Playground zu nutzen.",
+  "empty.noShortcutCta": "Einstellungen öffnen",
+  "generate.modelPlayground": "Modell: Image Playground (on-device, Apple-Kurzbefehl)",
 
   "notice.serverOk": "Server OK — Modell: {0}",
   "notice.serverFail": "Server nicht erreichbar. Prüfe, ob er läuft und die API aktiviert ist.",

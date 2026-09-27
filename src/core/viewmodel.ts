@@ -112,6 +112,10 @@ export interface PanelState {
   showModelPicker: boolean;
   engine: EngineState;
   server: ServerState;
+  /** Kurzbefehl-Name fuers Image-Playground-Backend (settings.playgroundShortcutName) — nur
+   *  im playground-Modus relevant, wie `workflow` nur im comfy-Modus. Ein leerer Name ist
+   *  "nicht konfiguriert", derselbe Fehlerfall wie ein leerer Server-Endpunkt. */
+  playgroundShortcutName: string;
   run: RunState;
   image: { dataUrl: string; params: GenParams } | null;
   editorActive: boolean;
@@ -203,6 +207,10 @@ export function formatElapsed(totalSec: number): string {
  *  gebunden (generate-panel.ts). */
 function recipeUnchanged(s: PanelState): boolean {
   const p = s.image?.params;
+  // playground faellt bewusst in denselben Zweig wie comfy: `s.server` bleibt fuer
+  // playground immer "unconfigured" (kein Server-Konzept), modelUnchanged ist also immer
+  // false — derselbe reine UI-Komfortverlust wie bei comfy (AGENTS.md), keine Falschaussage:
+  // generateEnabled sperrt ein unveraendertes Rezept dann nie, das Bild bleibt korrekt.
   const modelUnchanged =
     s.mode === "builtin"
       ? p?.model === s.builtinModel
@@ -318,6 +326,22 @@ function runStatus(s: PanelState): PanelViewModel["status"] {
   return { icon: "circle-check", text: t("status.ready"), cls: "is-ok" };
 }
 
+/** Image Playground braucht weder Server noch Workflow — nur einen Kurzbefehl-Namen
+ *  (Settings). Ein leerer Name ist derselbe Fehlerfall wie ein leerer Endpunkt im
+ *  Server-Modus: "nicht konfiguriert", kein Laufzeitfehler. */
+function playgroundStatus(s: PanelState): PanelViewModel["status"] {
+  if (s.run.kind === "error") return { icon: "circle-x", text: t("status.error", s.run.message), cls: "is-error" };
+  if (s.playgroundShortcutName.trim() === "") return { icon: "circle-x", text: t("status.noShortcut"), cls: "is-error" };
+  return runStatus(s);
+}
+
+function playgroundEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
+  if (s.playgroundShortcutName.trim() === "")
+    return { text: t("empty.noShortcut"), ctaLabel: t("empty.noShortcutCta"), ctaAction: "settings" };
+  if (!s.image && !busy) return { text: t("empty.noImage") };
+  return null;
+}
+
 function serverEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
   if (s.server.kind === "unconfigured") return { text: t("empty.noServer"), ctaLabel: t("empty.noServerCta"), ctaAction: "settings" };
   if (s.server.kind === "unreachable") return { text: t("empty.unreachable"), ctaLabel: t("empty.unreachableCta"), ctaAction: "recheck" };
@@ -361,19 +385,24 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     || s.run.kind === "loading-model" || s.run.kind === "external";
   const builtin = s.mode === "builtin";
   const comfy = s.mode === "comfy";
+  const playground = s.mode === "playground";
   const backendReady = builtin
     ? s.engine.kind === "ready"
-    : s.server.kind === "ok" && (!comfy || s.workflow.kind === "ok");
+    : playground
+      ? s.playgroundShortcutName.trim() !== ""
+      : s.server.kind === "ok" && (!comfy || s.workflow.kind === "ok");
   const caps = backendCapabilities(toBackendContext(s.mode, s.builtinModel, slotsOf(s.workflow)));
 
-  const status = builtin ? engineStatus(s) : comfy ? comfyStatus(s) : serverStatus(s);
-  const empty = builtin ? engineEmpty(s, busy) : comfy ? comfyEmpty(s, busy) : serverEmpty(s, busy);
+  const status = builtin ? engineStatus(s) : playground ? playgroundStatus(s) : comfy ? comfyStatus(s) : serverStatus(s);
+  const empty = builtin ? engineEmpty(s, busy) : playground ? playgroundEmpty(s, busy) : comfy ? comfyEmpty(s, busy) : serverEmpty(s, busy);
 
   const modelLabel = builtin
     ? t("generate.modelBuiltin", modelById(s.builtinModel).label)
-    : s.server.kind === "ok" && s.server.modelName !== null
-      ? t("generate.modelInfo", s.server.modelName)
-      : t("generate.modelInApp");
+    : playground
+      ? t("generate.modelPlayground")
+      : s.server.kind === "ok" && s.server.modelName !== null
+        ? t("generate.modelInfo", s.server.modelName)
+        : t("generate.modelInApp");
 
   return {
     status,

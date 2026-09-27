@@ -80,6 +80,7 @@ describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
       comfyWorkflowPath: "",
       serverEndpointChoice: { endpointId: "e1", model: "m1" },
       comfyEndpointChoice: { endpointId: "e2" },
+      playgroundShortcutName: "Generate Image (Obsidian)",
     };
     expect(validate(healthy)).toEqual(healthy);
   });
@@ -372,5 +373,16 @@ describe("ComfyUI-Backend (Spec 1 §2)", () => {
   it("Migration ruehrt einen vorhandenen engine-Wert nicht an", () => {
     const raw = { engine: "comfy", endpoint: "" };
     expect(migrateSettings(raw)).toBe(raw);
+  });
+});
+
+describe("Image-Playground-Backend (Spec Baustein 5, Welle 13)", () => {
+  it("akzeptiert playground als Engine-Wert", () => {
+    const s = validate({ ...DEFAULT_SETTINGS, engine: "playground" });
+    expect(s.engine).toBe("playground");
+  });
+
+  it("playgroundShortcutName traegt per Default den in der Spec benannten Kurzbefehl-Namen", () => {
+    expect(DEFAULT_SETTINGS.playgroundShortcutName).toBe("Generate Image (Obsidian)");
   });
 });

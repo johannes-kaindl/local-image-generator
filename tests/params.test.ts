@@ -319,4 +319,24 @@ describe("hardenParams — cfg je Modus", () => {
   it("server: der gesetzte Wert, unveraendert", () => {
     expect(hardenParams({ prompt: "x", cfg: 9 }, ctx("server")).cfg).toBe(9);
   });
+
+  it("playground: null — der Kurzbefehl kennt gar kein CFG-Konzept (dieselbe Ehrlichkeit wie comfy)", () => {
+    const p = hardenParams(
+      { prompt: "x", cfg: 9 },
+      { ...ctx("server"), mode: "playground" as const },
+    );
+    expect(p.cfg).toBeNull();
+  });
+});
+
+describe("hardenParams — playground blendet Negativ-Prompt und Vorlage aus", () => {
+  it("laesst Negativ-Prompt UND initImage fallen — der Kurzbefehl nimmt nur den Prompt entgegen", () => {
+    const p = hardenParams(
+      { prompt: "x", negativePrompt: "blurry", cfg: 9, initImage: { ref: "a.png" } },
+      { ...ctx("server"), mode: "playground" as const },
+    );
+    expect(p.negativePrompt).toBe("");
+    expect(p.initImage).toBeNull();
+    expect(p.cfg).toBeNull();
+  });
 });

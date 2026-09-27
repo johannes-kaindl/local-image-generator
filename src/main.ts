@@ -42,6 +42,8 @@ import { confirmAction } from "./vendor/kit-obsidian/confirm";
 import { comfyTransport, httpGetJson, httpPostJson } from "./obsidian/http";
 import { hasLegacyCache } from "./obsidian/legacy-cache";
 import { LocalEngineBackend, SessionBuildTimeout } from "./obsidian/local-engine";
+import { PlaygroundBackend } from "./obsidian/playground-backend";
+import { createShortcutsBridge, type ShortcutsBridge } from "./vendor/kit-obsidian/shortcuts-bridge";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
 import { base64OfDataUrl, dataUrlToBytes, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
@@ -71,6 +73,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // Download. Der Settings-Tab beobachtet den Engine-Zustand über onEngineStateChanged.
   private readonly modelStore = new ModelStore();
   private localEngine: LocalEngineBackend | null = null;
+  private shortcutsBridge!: ShortcutsBridge;
   private downloadAbort: AbortController | null = null;
   onEngineStateChanged: (() => void) | null = null;
   // `mode`, `builtinModel`, `showModelPicker` fehlen hier bewusst: sie SIND settings.engine /
@@ -79,7 +82,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
   // `workflow` ist seit Task 5 Teil von PanelState (der ganze Zustand, nicht nur die Slots) —
   // die fruehere Intersection ist damit aufgeloest.
-  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker"> = {
+  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker" | "playgroundShortcutName"> = {
     initImage: null,
     denoising: null,
     missingBytes: null,
@@ -134,6 +137,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       },
       save: (image, createNote) => this.saveApiImage(image, createNote),
       defaultCreateNote: () => this.settings.createMode === "note",
+      saveToFolder: (folder, params, base64) => this.saveToFolder(folder, params, base64),
     });
 
     // migrateSettings VOR mergeSettings: das neue Feld `engine` entscheidet sich am alten
@@ -145,6 +149,10 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     );
     this.state.server = { kind: this.settings.endpoint.trim() === "" ? "unconfigured" : "checking" };
     this.state.engine = { kind: this.settings.engine === "builtin" ? "gpu-checking" : "not-downloaded" };
+    // Einmal je Sitzung, unabhaengig vom aktuellen Modus (Kit-Vertrag: EIN Besitzer verbaut
+    // die Bruecke einmal, nie je Aufruf) — registerObsidianProtocolHandler() ist ein
+    // no-op-artiges Setup, solange niemand `run()` aufruft.
+    this.shortcutsBridge = createShortcutsBridge(this, { protocolAction: "local-image-generator-shortcut" });
 
     this.settingTab = new LigSettingTab(this.app, this);
     this.addSettingTab(this.settingTab);
@@ -159,6 +167,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
           mode: this.settings.engine,
           builtinModel: this.settings.builtinModel,
           showModelPicker: this.settings.showModelPicker,
+          playgroundShortcutName: this.settings.playgroundShortcutName,
         };
       },
       getSettings: () => this.settings,
@@ -254,7 +263,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Race gegen die eigene Migration zu laufen und einen 2,5-GB-Neudownload anzubieten.
     await this.modelStore.migrateLegacyKeys(assetsFor("sd-turbo"));
     if (this.settings.engine === "builtin") void this.refreshEngineState();
-    else void this.checkServer();
+    // playground hat keinen Server-Begriff — nichts zu pruefen, der Kurzbefehl-Name allein
+    // entscheidet ueber die Bereitschaft (apiReadiness()/getPanelState() lesen ihn direkt).
+    else if (this.settings.engine !== "playground") void this.checkServer();
     if (this.settings.engine === "comfy") void this.loadWorkflow();
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
     // Settings-Tab-Öffnung): Bestandsinstallationen können noch ~2,5 GB alte SD-Turbo-
@@ -306,6 +317,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       if (w.kind !== "ok") return { ready: false, reason: "not-configured" };
       // Danach gilt dieselbe Server-Bedingung wie fuer A1111 — Fall-through nach unten.
     }
+    if (this.settings.engine === "playground") {
+      // Kein Server-Begriff — der Kurzbefehl-Name ist die ganze Konfiguration.
+      return this.settings.playgroundShortcutName.trim() === ""
+        ? { ready: false, reason: "not-configured" }
+        : { ready: true };
+    }
     const s = this.state.server;
     if (s.kind === "ok") return { ready: true };
     if (s.kind === "unconfigured") return { ready: false, reason: "not-configured" };
@@ -313,9 +330,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   private currentModelName(): string {
-    return this.settings.engine === "builtin"
-      ? this.settings.builtinModel
-      : (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
+    if (this.settings.engine === "builtin") return this.settings.builtinModel;
+    // Stabile Kennung wie ein builtin-Modell-Id (kein UI-Label) — "Image Playground" traegt
+    // hier keine Uebersetzung, aus demselben Grund wie "sd-turbo": das Feld landet in
+    // GenParams.model/der Ergebnis-Notiz, nicht in einem sichtbaren Widget.
+    if (this.settings.engine === "playground") return "image-playground";
+    return (this.state.server.kind === "ok" ? this.state.server.modelName : null) ?? "unknown";
   }
 
   /** Das gewaehlte eingebaute Modell (settings.builtinModel) — abgeleitet, keine zweite
@@ -421,6 +441,37 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     }
   }
 
+  /** Kit-Vertrag `image-gen-provider::generateImage` (Auftrag E, Welle 13): schreibt in
+   *  einen vom AUFRUFER benannten Ordner — anders als `resolveImagePath()`, das immer
+   *  `settings.outputFolder` verwendet. Ein Fremdplugin (Koda, yijing, epub-exporter, …)
+   *  bekommt so seinen eigenen Zielordner, statt in den lig-eigenen Ordner DIESES Nutzers zu
+   *  schreiben. Legt den Ordner an, dedupt Kollisionen — dieselbe Logik wie der
+   *  outputFolder-Zweig in `resolveImagePath()`, nur mit einem uebergebenen statt einem
+   *  konfigurierten Ordner (leer = Vault-Wurzel, kein Attachment-Sonderfall: der ist eine
+   *  Zusage an DIESEN Nutzer, kein genereller Vertrag). */
+  private async saveToFolder(
+    folder: string,
+    params: GenParams,
+    base64: string,
+  ): Promise<string | { ok: false; message: string }> {
+    if (this.unloaded) return { ok: false, message: "plugin unloaded" };
+    try {
+      const clean = normalizePath(folder.trim());
+      if (clean !== "" && !(this.app.vault.getAbstractFileByPath(clean) instanceof TFolder)) {
+        await this.app.vault.createFolder(clean).catch(() => undefined);
+      }
+      const filename = buildImageFilename(new Date(params.date), params.seed);
+      const path = dedupeFilename(
+        normalizePath(clean === "" ? filename : `${clean}/${filename}`),
+        (p) => this.app.vault.getAbstractFileByPath(p) !== null,
+      );
+      const file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${base64}`));
+      return file.path;
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   private setEngineState(e: EngineState): void {
     this.state.engine = e;
     this.refreshViews();
@@ -451,7 +502,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // wer direkt danach in den builtin-Modus zurueckwechselt, baut sonst eine zweite
       // Session neben einer noch nicht freigegebenen auf.
       await e?.dispose();
-      await this.checkServer();
+      // playground hat keinen Server zu pruefen — derselbe Ausschluss wie beim Start
+      // (onload) und beim GUI-Guard (generate()).
+      if (mode !== "playground") await this.checkServer();
       if (mode === "comfy") await this.loadWorkflow();
     } else {
       await this.refreshEngineState();
@@ -616,6 +669,30 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return new ComfyClient(url, w.json, comfyTransport(), { timeoutMs: 1_800_000 });
   }
 
+  /** Ein Backend pro Lauf, wie bei den anderen drei. Timeout **120 s**: der Spike maß
+   *  18,5 s fuer einen echten Image-Playground-Lauf (Spec-Messgrundlage) — grosszuegig
+   *  darueber, dieselbe Haltung wie `SESSION_BUILD_TIMEOUT_MS` ("generous beats clever"),
+   *  weil ein Timeout hier die EINZIGE Verteidigung ist (Kit-Kommentar shortcuts-bridge.ts:
+   *  Kurzbefehle kennen kein Try/Catch, ein gelöschter Kurzbefehl antwortet nie). Zielordner
+   *  ist `settings.outputFolder` — dieselbe Ablage wie der Rest des Plugins, kein eigenes
+   *  Zielordner-Setting (Auftrag Welle 13). */
+  private makePlaygroundBackend(): ImageBackend {
+    return new PlaygroundBackend(
+      this.settings.playgroundShortcutName,
+      this.settings.outputFolder.trim() || "/",
+      120_000,
+      {
+        bridge: this.shortcutsBridge,
+        readBinary: (p) => this.app.vault.adapter.readBinary(p),
+        deleteFile: async (p) => {
+          const f = this.app.vault.getAbstractFileByPath(p);
+          if (f !== null) await this.app.fileManager.trashFile(f);
+        },
+        arrayBufferToBase64,
+      },
+    );
+  }
+
   /** Aktuelle Rolle beim Endpoint Manager — Server- und Comfy-Modus fragen UNABHAENGIG
    *  voneinander (Entscheidung Johannes 2026-09-17: zwei Rollen statt zwei Settings-Felder).
    *  Nur fuer Nicht-builtin-Modi sinnvoll; der Aufrufer prueft das selbst. */
@@ -766,21 +843,26 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     opts?: { external?: boolean; signal?: AbortSignal },
   ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
+    const playground = this.settings.engine === "playground";
     // GENAU EINE Aufloesung fuer den ganzen Lauf — Backend-Bau UND Fortschritts-Poller
     // (weiter unten) teilen sich diese eine URL, statt je einen eigenen Manager-Zugriff
     // zu machen. Ohne Manager ist das exakt `settings.endpoint`, wie vor der Aenderung.
-    const endpointUrl = builtin ? null : (await this.resolveEndpointFor(this.endpointRole())).url;
-    if (!builtin && endpointUrl === null) {
+    // playground hat KEINEN Endpunkt — `resolveEndpointFor` wuerde hier ins Leere fragen
+    // (kein `EndpointRole` fuer die Bruecke), deshalb derselbe Ausschluss wie bei builtin.
+    const endpointUrl = builtin || playground ? null : (await this.resolveEndpointFor(this.endpointRole())).url;
+    if (!builtin && !playground && endpointUrl === null) {
       return { ok: false, message: t("notice.serverFail") };
     }
-    // Non-null bewiesen durch die Rueckkehr oben: `!builtin && endpointUrl === null` ist
-    // ausgeschlossen, TypeScript kann diese Korrelation zwischen zwei Variablen aber nicht
-    // verfolgen (kein direkter Typ-Guard auf `endpointUrl` allein).
+    // Non-null bewiesen durch die Rueckkehr oben: `!builtin && !playground && endpointUrl
+    // === null` ist ausgeschlossen, TypeScript kann diese Korrelation zwischen zwei
+    // Variablen aber nicht verfolgen (kein direkter Typ-Guard auf `endpointUrl` allein).
     const backend: ImageBackend = builtin
       ? this.ensureLocalEngine()
-      : this.settings.engine === "comfy"
-        ? this.makeComfyClient(endpointUrl!)
-        : new A1111Client(endpointUrl!, httpPostJson);
+      : playground
+        ? this.makePlaygroundBackend()
+        : this.settings.engine === "comfy"
+          ? this.makeComfyClient(endpointUrl!)
+          : new A1111Client(endpointUrl!, httpPostJson);
     const external = opts?.external === true;
     // `phase` ist die WAHRE Phase und steuert den Kontrollfluss unten (Poller/Timer); im
     // Fremdlauf faellt state.run (die ANGEZEIGTE Phase) fuer die gesamte Laufzeit auf
@@ -910,9 +992,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const builtin = this.settings.engine === "builtin";
     // ViewModel gated das bereits — Defensive: server ok bzw. Engine bereit. Im comfy-Modus
     // reicht ein erreichbarer Server nicht: ohne brauchbaren Workflow gibt es nichts zu senden.
+    // playground braucht weder Server noch Engine — nur einen gesetzten Kurzbefehl-Namen.
     const bereit = builtin
       ? this.state.engine.kind === "ready"
-      : this.state.server.kind === "ok" && (this.settings.engine !== "comfy" || this.state.workflow.kind === "ok");
+      : this.settings.engine === "playground"
+        ? this.settings.playgroundShortcutName.trim() !== ""
+        : this.state.server.kind === "ok" && (this.settings.engine !== "comfy" || this.state.workflow.kind === "ok");
     if (!bereit) return;
     // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
     // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams

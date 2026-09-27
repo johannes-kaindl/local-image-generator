@@ -14,7 +14,7 @@ import {
 } from "../vendor/kit/settings_schema";
 import type { EndpointChoice } from "../vendor/kit/endpoint-source";
 
-export type EngineChoice = "builtin" | "server" | "comfy";
+export type EngineChoice = "builtin" | "server" | "comfy" | "playground";
 
 /** Ein Stil-Baustein, der per Chip an den Prompt gehängt wird. */
 export interface StylePreset {
@@ -109,6 +109,11 @@ export interface LigSettings {
   serverEndpointChoice: EndpointChoice;
   /** Dieselbe Rolle für den ComfyUI-Modus — die zweite Hälfte der Zwei-Rollen-Entscheidung. */
   comfyEndpointChoice: EndpointChoice;
+  /** Exakter Kurzbefehl-Name für das Image-Playground-Backend (Kit `shortcuts-bridge`,
+   *  Spec Baustein 5) — mobil das einzige Backend. Kein Endpunkt, kein Server: der Kurzbefehl
+   *  ist die ganze Konfiguration. Zielordner nutzt bewusst `outputFolder` mit (keine eigene
+   *  Zielordner-Einstellung, Auftrag Welle 13: "bestehende Attachment-Logik nutzen"). */
+  playgroundShortcutName: string;
 }
 
 export const DEFAULT_PRESETS: StylePreset[] = [
@@ -140,6 +145,7 @@ export const DEFAULT_SETTINGS: LigSettings = {
   comfyWorkflowPath: "",
   serverEndpointChoice: {},
   comfyEndpointChoice: {},
+  playgroundShortcutName: "Generate Image (Obsidian)",
 };
 
 /** Filter + Backfill der Historie — Migration 0.3→0.4 (width/height) und 0.4→0.5
@@ -210,13 +216,13 @@ export function migrateSettings(raw: unknown): unknown {
  *  die Funktion ist idempotent.
  *
  *  **Ohne Eintrag bleiben absichtlich** `outputFolder`, `noteFolder`, `endpoint`,
- *  `selectedModel`, `mfluxPath`, `modelsDir`, `sectionsCollapsed`, `serverEndpointChoice`
- *  und `comfyEndpointChoice`: für sie leistet die
+ *  `selectedModel`, `mfluxPath`, `modelsDir`, `sectionsCollapsed`, `serverEndpointChoice`,
+ *  `comfyEndpointChoice` und `playgroundShortcutName`: für sie leistet die
  *  generische Bauform-Prüfung gegen den Default (`""` bzw. `{}`) exakt dasselbe wie die
  *  früheren Feld-Sanitizer. Ein leerer String ist hier kein Fehler, sondern eine Aussage
  *  (leerer outputFolder = Obsidians Attachment-Logik). */
 export const SETTINGS_SCHEMA: SettingsSchema<LigSettings> = {
-  engine: oneOf<EngineChoice>(["builtin", "server", "comfy"]),
+  engine: oneOf<EngineChoice>(["builtin", "server", "comfy", "playground"]),
   assetBaseUrl: nonEmptyString({ trim: true }),
   // check(...), NICHT clampIntField(1, 50): der Kombinator ist String-tolerant und trunct
   // Floats ("3" → 3, 2.5 → 2). Hier gilt ein Wert, der kein ganzzahliger Schritt im Bereich

@@ -35,6 +35,7 @@ const base: PanelState = {
   workflow: { kind: "unconfigured" },
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
+  playgroundShortcutName: "Generate Image (Obsidian)",
   run: { kind: "idle" },
   image: null,
   editorActive: true,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS } from "../src/core/generation";
+import { backendCapabilities, CFG, DEFAULT_SIZE, SIZES, STEPS, toBackendContext } from "../src/core/generation";
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 
 // KEIN it()-Block: diese Funktion wird nie aufgerufen. Sie prueft den TYPECHECK, nicht das
@@ -89,6 +89,21 @@ describe("backendCapabilities", () => {
       negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max,
       fixedSize: null, sizes: null,
     });
+  });
+});
+
+describe("backendCapabilities im playground-Modus (Image Playground, Spec Baustein 5)", () => {
+  it("kann weder Negativ-Prompt noch CFG noch img2img — und der Groessen-Regler ist ausgeblendet (genau EIN sizes-Eintrag)", () => {
+    const c = backendCapabilities({ mode: "playground" });
+    expect(c.negativePrompt).toBe(false);
+    expect(c.cfg).toBe(false);
+    expect(c.initImage).toBe(false);
+    expect(c.sizes).toEqual([DEFAULT_SIZE]);
+    expect(c.fixedSize).toEqual(DEFAULT_SIZE);
+  });
+
+  it("toBackendContext bildet 'playground' verlustfrei ab (kein Modell, keine Slots noetig)", () => {
+    expect(toBackendContext("playground", "sd-turbo", null)).toEqual({ mode: "playground" });
   });
 });
 

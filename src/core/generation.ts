@@ -71,7 +71,8 @@ export interface BackendCapabilities {
 export type BackendContext =
   | { mode: "builtin"; model: BuiltinModelId }
   | { mode: "server" }
-  | { mode: "comfy"; slots: WorkflowSlots | null };
+  | { mode: "comfy"; slots: WorkflowSlots | null }
+  | { mode: "playground" };
 
 /** Was ein Backend ehrlich kann. Im builtin-Modus haengt das Ergebnis vom AKTIVEN Modell ab
  *  (SD-Turbo: eine Größe, SDXL-Turbo: zwei); im comfy-Modus vom hinterlegten Workflow — `model`
@@ -84,6 +85,20 @@ export type BackendContext =
  *  unmoeglich. Der Server-Zweig bleibt von einem Modell unberuehrt: er kennt kein "Modell" in
  *  diesem Sinn, der Server waehlt selbst. */
 export function backendCapabilities(ctx: BackendContext): BackendCapabilities {
+  if (ctx.mode === "playground") {
+    // Image Playground (Apple-Kurzbefehl, Spec Baustein 5) kennt weder Negativ-Prompt noch
+    // CFG noch eine waehlbare Groesse noch img2img — der Kurzbefehl nimmt nur den Prompt.
+    // `sizes` mit GENAU EINEM Eintrag blendet den Groessen-Regler aus (dasselbe Muster wie
+    // ein Ein-Groessen-builtin-Modell); der Wert selbst ist ein Platzhalter, keine Zusage —
+    // die tatsaechliche Bildgroesse bestimmt der Kurzbefehl. Settings-Tab und Fehlertext
+    // nennen das ausdruecklich (Auftrag C, Welle 13), damit der Platzhalter nicht wie eine
+    // Konfigurationsmoeglichkeit aussieht.
+    return {
+      negativePrompt: false, cfg: false, initImage: false,
+      minSteps: STEPS.min, maxSteps: STEPS.max,
+      fixedSize: DEFAULT_SIZE, sizes: [DEFAULT_SIZE],
+    };
+  }
   if (ctx.mode === "server") {
     return {
       negativePrompt: true, cfg: true, initImage: true,
@@ -139,5 +154,6 @@ export function toBackendContext(
 ): BackendContext {
   if (mode === "builtin") return { mode, model: builtinModel };
   if (mode === "comfy") return { mode, slots: workflowSlots };
+  if (mode === "playground") return { mode };
   return { mode: "server" };
 }
