@@ -2,29 +2,6 @@
   "source": "obsidian-kit",
   "version": "0.27.0",
   "sha": "548041b",
-  "vendored": "confirm.ts, folder-suggest.ts, hub.ts, settings_walker.ts",
-  "vendored_mixed_version": [
-    {
-      "file": "endpoint-source.ts",
-      "source": "obsidian-kit",
-      "version": "0.39.0",
-      "sha": "044b565",
-      "note": "Einzeln vendoriert (git show 0.39.0:src/obsidian/endpoint-source.ts). Importe ../vendor/code-kit/pure/ und ../pure/ im Vendor-Layout auf ../kit/ umgeschrieben (Dateikopf traegt den Vermerk). Re-vendor manuell gegen einen neuen Tag; Kopf-Stempel und dieser Eintrag von Hand nachziehen."
-    },
-    {
-      "file": "model-picker.ts",
-      "source": "obsidian-kit",
-      "version": "0.39.0",
-      "sha": "044b565",
-      "note": "Einzeln vendoriert (git show 0.39.0:src/obsidian/model-picker.ts) als Abhaengigkeit von endpoint-source.ts. Import ../vendor/code-kit/pure/model-choice im Vendor-Layout auf ../kit/model-choice umgeschrieben."
-    },
-    {
-      "file": "help-setting.ts",
-      "source": "obsidian-kit",
-      "version": "0.43.0",
-      "sha": "bcd1805",
-      "note": "Einzeln vendoriert (git show 0.43.0:src/obsidian/help-setting.ts), keine weiteren Kit-Abhaengigkeiten. tools/sync-kit.sh pinnt eine gemeinsame Ref fuer alle Module und haette sie mit auf 0.43.0 gehoben. Re-vendor manuell gegen einen neuen Tag; Kopf-Stempel und dieser Eintrag von Hand nachziehen."
-    }
-  ],
-  "note": "Verbatim snapshot. Never hand-edit (Ausnahme: \"vendored_mixed_version\"-Eintraege, die per Definition ausserhalb von tools/sync-kit.sh liegen). Re-vendor via tools/sync-kit.sh. version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; \"vendored_mixed_version\" traegt seine Version/SHA je Eintrag selbst. Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
+  "vendored": "confirm.ts, folder-suggest.ts, hub.ts, settings_walker.ts, endpoint-source.ts (obsidian-kit@0.39.0, 044b565), model-picker.ts (obsidian-kit@0.39.0, 044b565), help-setting.ts (obsidian-kit@0.43.0, bcd1805)",
+  "note": "Verbatim snapshot. Never hand-edit. Pins in tools/kit-sync.json, re-vendor via tools/sync-kit.sh (zentrales kit-sync im Dach). version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; abweichende Einzelpins stehen dort inline (Datei (quelle@version, sha)). Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
 }

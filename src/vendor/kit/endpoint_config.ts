@@ -1,4 +1,4 @@
-// vendored from code-kit@0.6.0, src/ts/pure/endpoint_config.ts — do not hand-edit; re-vendor via tools/sync-kit.sh (Einzeldatei, s. VENDOR.json vendored_mixed_version)
+// vendored from code-kit@0.6.0, src/ts/pure/endpoint_config.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /** Obsidian-freie Wahrheit für Endpunkt-Einträge: Struktur, Auth-Header, Modellwahl,
  *  Migration alter String-Listen und Listen-Bearbeitung.
  *

@@ -1,5 +1,4 @@
-// vendored from obsidian-kit@0.39.0, src/obsidian/endpoint-source.ts — do not hand-edit; re-vendor via tools/sync-kit.sh (Einzeldatei, s. VENDOR.json vendored_mixed_version)
-// ONE mechanical deviation from verbatim: kit-internal imports (../vendor/code-kit/pure/ and ../pure/) → ../kit/ (vendor layout); reproduce on every re-vendor, nothing else may differ.
+// vendored from obsidian-kit@0.39.0, src/obsidian/endpoint-source.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 import { Notice, Setting, type App } from "obsidian";
 import { resolveModelChoice, type ModelHintKey } from "../kit/model-choice";
 import type { EndpointConfig } from "../kit/endpoint_config";

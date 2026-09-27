@@ -69,28 +69,32 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 - **Pure-Core-Schnitt:** `src/core/` und `src/vendor/kit/` importieren NIE `obsidian`
   (Gate: `scripts/check-pure.mjs`, `ROOTS`). `src/obsidian/legacy-cache.ts` ist browser-API-only
   (Cache API), ebenfalls obsidian-frei — nicht vom Gate erfasst, manuell halten.
-- **Vendoring (nie von Hand):** `sh tools/sync-kit.sh` kopiert die Kit-Module byte-identisch aus
-  `../obsidian-kit` (`KIT_DIR` ueberschreibbar), setzt die Stempelzeile und schreibt beide
-  `VENDOR.json`. **Gelesen wird aus einer festen Ref (`KIT_REF`, Default `0.27.0`), nicht aus dem
-  Arbeitsstand des Nachbar-Checkouts** (CORE-META-22) — ein Kit-Upgrade ist damit eine bewusste
-  Handlung (`KIT_REF=0.29.0 sh tools/sync-kit.sh`) und kein Nebeneffekt davon, dass jemand
-  nebenan einen Branch auscheckt. Bis 2026-09-02 war es umgekehrt, und das war seit Kit 0.28.0
-  ein DEFEKT, keine Ungenauigkeit: die pure-Module sind nach `code-kit` abgewandert, im
-  Arbeitsstand von 0.29.0 fehlen 8 der 9 gelisteten — ein Lauf waere abgebrochen. Der alte Guard
-  (`[ -d "$KIT/src/pure" ]`) sah das nicht, weil der ORDNER weiter existiert, nur mit anderem
-  Inhalt: **eine Existenzpruefung auf den Ordner beantwortet die Frage nach dem Inhalt nicht.**
-  ⚠️ Und die Vorlage, aus der die anderen Repos das Muster haben, traegt einen falschen Satz:
-  Stempel und Inhalt in EINER Umleitung aufs Ziel zu schreiben laesst bei fehlgeschlagenem
-  `git show` sehr wohl einen **Torso** zurueck (1 Zeile, nur der Stempel — und mit der Version
-  der ANGEFRAGTEN Ref, sieht also wie gueltiges Vendoring aus). Hier gemessen und behoben:
-  erst `.tmp`, dann `mv`. **Zielordner ist Vertrag, nicht Geschmack:** `obsidian-kit/src/pure/*` →
-  `src/vendor/kit/`, `obsidian-kit/src/obsidian/*` → `src/vendor/kit-obsidian/` — ein
-  obsidian-importierendes Modul unter `src/vendor/kit/` bricht `npm run check:pure` und damit das
-  Gate. Ein neues Modul kommt in die Modulliste des Skripts, nicht per `cp` in den Baum; danach
-  muss `git status` nach einem erneuten Lauf leer bleiben (Reproduzierbarkeit).
+- **Vendoring (nie von Hand):** `sh tools/sync-kit.sh` ist seit Welle 12 (2026-09-27) nur noch
+  ein Wrapper und delegiert an das zentrale `../tools/kit-sync/kit-sync.mjs`; Pins und
+  Modul-/Zielordner-Zuordnung stehen in `tools/kit-sync.json`, nicht mehr in Env-Variablen
+  (`KIT_REF`/`KIT_HELP_REF` sind Geschichte). Ein Kit-Upgrade ist weiter eine bewusste Handlung —
+  jetzt per Editieren der `ref`-Werte in `tools/kit-sync.json`, kein Nebeneffekt davon, dass
+  jemand nebenan im Nachbar-Checkout einen Branch auscheckt (Inhalt kommt per `git show <ref>:…`,
+  CORE-META-22). Vor 2026-09-27 lief das ueber ein repo-eigenes Skript mit `KIT_REF`/`KIT_HELP_REF`;
+  die dort gemessenen Lehren gelten fuer das zentrale Werkzeug sinngemaess (Fix bereits dort
+  gebaut): Inhalt kommt aus einer FESTEN REF, nie aus dem Arbeitsstand des Nachbar-Repos: bis
+  2026-09-02 war das hier umgekehrt und seit Kit 0.28.0 ein DEFEKT (pure-Module nach `code-kit`
+  abgewandert, ein Lauf gegen den Arbeitsstand waere abgebrochen, ohne dass der alte
+  Ordner-Existenz-Guard es gesehen haette). Ebenso: Schreiben ueber `.tmp` + `mv`, nie eine
+  Umleitung direkt aufs Ziel (sonst bleibt bei fehlgeschlagenem `git show` ein Torso mit
+  gueltig aussehender Stempelzeile stehen) — `kit-sync.mjs` macht das. **Zielordner ist Vertrag,
+  nicht Geschmack:** `obsidian-kit/src/pure/*` → `src/vendor/kit/`,
+  `obsidian-kit/src/obsidian/*` → `src/vendor/kit-obsidian/` — ein obsidian-importierendes Modul
+  unter `src/vendor/kit/` bricht `npm run check:pure` und damit das Gate. Ein neues Modul kommt
+  in die `modules`-Liste von `tools/kit-sync.json`, nicht per `cp` in den Baum; danach muss
+  `node ../tools/kit-sync/kit-sync.mjs --check` Exit 0 liefern (Reproduzierbarkeit).
   ⚠️ `HUB_CSS` aus `src/vendor/kit-obsidian/hub.ts` ist zusaetzlich in `styles.css` uebernommen —
   das Kit injiziert kein CSS. Wer das Modul neu vendoriert, gleicht den Block mit ab.
-- **Hilfe-Zeile:** `src/vendor/kit-obsidian/help-setting.ts` hat einen EIGENEN Pin (`KIT_HELP_REF`, Default `0.43.0`) in `tools/sync-kit.sh`; die uebrigen Module bleiben auf `KIT_REF`. Die Zeile ist das erste Element von `getSettingDefinitions()` (`src/obsidian/help-row.ts`), Test `tests/help-row.test.ts`, Smoke-Punkt 41.
+- **Hilfe-Zeile:** `src/vendor/kit-obsidian/help-setting.ts` hat seit Welle 12 einen Einzelpin
+  `{ "name": "help-setting", "ref": "0.43.0" }` in `tools/kit-sync.json` (vorher `KIT_HELP_REF`
+  in `tools/sync-kit.sh`); die uebrigen Module bleiben auf der Quell-Ref `0.27.0`. Die Zeile ist
+  das erste Element von `getSettingDefinitions()` (`src/obsidian/help-row.ts`), Test
+  `tests/help-row.test.ts`, Smoke-Punkt 41.
 - **Commit style:** Conventional Commits (deutsch), AI-Commits mit Co-Authored-By-Trailer.
 - **Deploy (lokal):** `OBSIDIAN_PLUGIN_DIR=<vault>/.obsidian/plugins/local-image-generator npm run deploy`
 - **Dach-Regeln gelten:** Kit-first (`../AGENTS.md`, `../REGISTRY.md`), UI-STANDARD (`../UI-STANDARD.md`).
@@ -677,14 +681,18 @@ erlaubt, stillschweigend abzuweichen nicht.
   die Trennung ist reine Nutzerwahl (zwei unabhaengige `EndpointChoice`, kein Filter). Wer
   einen Draw-Things-Endpunkt versehentlich in der Comfy-Rolle waehlt, bekommt keinen Fehler
   beim Waehlen — erst der naechste Verbindungstest/Lauf zeigt es.
-  **Vendoring ist EINZELN, nicht ueber `tools/sync-kit.sh`** (Rahmen-Regel 2 der
-  Welle-7-Auftragsnote: das Skript pinnt eine gemeinsame Ref fuer alle neun gelisteten Module
-  und haette sie beim Aufnehmen dieser vier Dateien auf 0.39.0 gehoben): `src/vendor/kit/
-  endpoint-source.ts` (obsidian-kit@0.39.0) + `endpoint_config.ts`/`model-choice.ts`
-  (code-kit@0.6.0, Abhaengigkeiten) sowie `src/vendor/kit-obsidian/endpoint-source.ts` +
-  `model-picker.ts` (obsidian-kit@0.39.0) — je mit Kopf-Stempel und Eintrag in
-  `VENDOR.json::vendored_mixed_version` (Vorbild koda-agent `dd55354`). Re-vendor manuell mit
-  demselben `git show`-Befehl gegen einen neuen Tag.
+  **Vendoring lief bis Welle 12 EINZELN, ausserhalb von `tools/sync-kit.sh`** (Rahmen-Regel 2
+  der Welle-7-Auftragsnote: das damalige Skript pinnte eine gemeinsame Ref fuer alle neun
+  gelisteten Module und haette sie beim Aufnehmen dieser vier Dateien auf 0.39.0 gehoben).
+  Seit Welle 12 (2026-09-27, zentrales `kit-sync`) sind Einzelpins ein normaler Fall der
+  Konfiguration, kein Sonderweg mehr: `tools/kit-sync.json` traegt fuer
+  `src/vendor/kit/endpoint-source.ts` und `src/vendor/kit-obsidian/{endpoint-source,
+  model-picker}.ts` je `{ "name": …, "ref": "0.39.0" }` (obsidian-kit), fuer
+  `src/vendor/kit/{endpoint_config,model-choice}.ts` die Quelle `code-kit@0.6.0` — beide
+  VENDOR.json listen die Abweichung seither inline im `vendored`-Schluessel
+  (`datei.ts (quelle@version, sha)`), das fruehere Array `vendored_mixed_version` ist damit
+  redundant geworden und entfernt. Re-vendor gegen einen neuen Tag: `ref` in
+  `tools/kit-sync.json` anheben, `node ../tools/kit-sync/kit-sync.mjs` laufen lassen.
 
 ## Vertrieb: Sideloader statt Community-Store (seit 2026-09-02)
 
