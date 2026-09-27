@@ -3,6 +3,7 @@ import { createImageGenerationApi, IMAGE_GENERATION_API_VERSION, type ApiDeps } 
 import { BUILTIN_MODELS } from "../src/core/model-manifest";
 import { STEPS } from "../src/core/generation";
 import { hardenParams } from "../src/core/params";
+import { isImageGenProviderApi } from "../src/vendor/kit/image-gen-provider";
 
 const params = {
   prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
@@ -22,6 +23,7 @@ function deps(over: Partial<ApiDeps> = {}): ApiDeps {
     run: async () => ({ ok: true, base64: "PNGDATA" }),
     save: async () => ({ ok: true, imagePath: "img.png", notePath: null }),
     defaultCreateNote: () => false,
+    saveToFolder: async (_folder, _p, _base64) => "attachments/img.png",
     ...over,
   };
 }
@@ -418,5 +420,63 @@ describe("save()", () => {
       deps({ save: async () => ({ ok: false, reason: "write-failed", message: "EACCES" }) }),
     );
     await expect(api.save(image)).resolves.toEqual({ ok: false, reason: "write-failed", message: "EACCES" });
+  });
+});
+
+// Auftrag E (Welle 13): der Kit-Vertrag `image-gen-provider` ist ADDITIV auf demselben
+// API-Objekt, kein Ersatz. Die Auflage des Masters: der gevendorte Form-Guard entscheidet,
+// nicht die Absicht — positiv gegen das echte zusammengesetzte Objekt, negativ gegen die
+// aeltere Form ohne `generateImage`/`version` (LESSONS 2026-09-25: eine Attrappe mit
+// Versionskopie waere keine Pruefung).
+describe("Kit-Vertrag image-gen-provider (additiv, Auftrag E)", () => {
+  it("isImageGenProviderApi erkennt das echte, zusammengesetzte API-Objekt (positiv)", () => {
+    const api = createImageGenerationApi(deps());
+    expect(isImageGenProviderApi(api)).toBe(true);
+  });
+
+  it("isImageGenProviderApi verwirft das ALTE Objekt ohne generateImage/version (negativ)", () => {
+    const altesApi = { apiVersion: IMAGE_GENERATION_API_VERSION, status: () => ({}), generate: async () => ({}) };
+    expect(isImageGenProviderApi(altesApi)).toBe(false);
+  });
+
+  it("generateImage() rechnet ueber deps.run()/harden() und schreibt ueber saveToFolder() — backend-uebergreifend, nie ueber eine Bruecke direkt", async () => {
+    let gehaertetMit: unknown;
+    let gespeichertIn: string | undefined;
+    const api = createImageGenerationApi(
+      deps({
+        harden: (input) => {
+          gehaertetMit = input;
+          return params;
+        },
+        saveToFolder: async (folder) => {
+          gespeichertIn = folder;
+          return "attachments/koda/img.png";
+        },
+      }),
+    );
+    const r = await api.generateImage("a red fox", { targetFolder: "attachments/koda" });
+    expect(r).toBe("attachments/koda/img.png");
+    expect(gehaertetMit).toEqual({ prompt: "a red fox" });
+    expect(gespeichertIn).toBe("attachments/koda");
+  });
+
+  it("generateImage() meldet busy/not-ready/Backend-Fehler als Werte, nie als Wurf", async () => {
+    const busy = await createImageGenerationApi(deps({ isBusy: () => true })).generateImage("x", { targetFolder: "a" });
+    expect(busy).toMatchObject({ error: "busy" });
+
+    const notReady = await createImageGenerationApi(
+      deps({ readiness: () => ({ ready: false, reason: "not-configured" }) }),
+    ).generateImage("x", { targetFolder: "a" });
+    expect(notReady).toMatchObject({ error: "backend-unavailable" });
+
+    const failed = await createImageGenerationApi(
+      deps({ run: async () => ({ ok: false, message: "server down" }) }),
+    ).generateImage("x", { targetFolder: "a" });
+    expect(failed).toMatchObject({ error: "failed", message: "server down" });
+
+    const writeFailed = await createImageGenerationApi(
+      deps({ saveToFolder: async () => ({ ok: false, message: "EACCES" }) }),
+    ).generateImage("x", { targetFolder: "a" });
+    expect(writeFailed).toMatchObject({ error: "failed", message: "EACCES" });
   });
 });

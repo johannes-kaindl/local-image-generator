@@ -8,6 +8,13 @@ import type { HardenInput } from "./params";
 import type { GenParams } from "./viewmodel";
 import type { EngineChoice } from "./settings";
 import type { WorkflowSlots } from "./comfy/workflow";
+import {
+  IMAGE_GEN_PROVIDER_API_VERSION,
+  type GenerateImageOptions,
+  type ImageGenProviderApi,
+  type ImageGenProviderError,
+  type ImageGenProviderErrorCode,
+} from "../vendor/kit/image-gen-provider";
 
 export const IMAGE_GENERATION_API_VERSION = 1;
 
@@ -113,11 +120,11 @@ export interface ApiStatus {
   apiVersion: number;
   /** Deskriptiv, keine Steuerung — ein Konsument liest `capabilities` und `ready`/`reason`,
    *  nicht dieses Feld (gemessen: derzeit kein Konsument im Workspace liest es ueberhaupt).
-   *  Deshalb bleibt `apiVersion` bei der Erweiterung um "comfy" auf 1: "server" fuer ComfyUI
-   *  zu melden waere eine Falschaussage ueber das laufende Backend (Keine-Attrappen-Linie),
-   *  und ein Versions-Sprung zwaenge Konsumenten zu einer Pruefung, fuer die sich nichts
-   *  aendert — dieselbe additive Logik wie bei `recheck()` in 0.10.0. */
-  engine: "builtin" | "server" | "comfy";
+   *  Deshalb bleibt `apiVersion` bei der Erweiterung um "comfy"/"playground" auf 1: ein
+   *  falscher Modus-Name waere eine Falschaussage ueber das laufende Backend
+   *  (Keine-Attrappen-Linie), und ein Versions-Sprung zwaenge Konsumenten zu einer Pruefung,
+   *  fuer die sich nichts aendert — dieselbe additive Logik wie bei `recheck()` in 0.10.0. */
+  engine: "builtin" | "server" | "comfy" | "playground";
   /** Synchron und netzfrei. Sagt NICHTS über die aktuelle Erreichbarkeit eines Servers —
    *  das ginge nur mit einem Netzaufruf, und `status()` macht keinen. Im Server-Modus
    *  spiegelt es den zuletzt ermittelten Zustand. */
@@ -154,7 +161,12 @@ export type ApiSaveResult =
   | { ok: true; imagePath: string; notePath: string | null }
   | { ok: false; reason: "write-failed"; message: string };
 
-export interface ImageGenerationApi {
+/** Zusaetzlich zum eigenen Vertrag (`apiVersion`/`status`/`generate`/`save`/`recheck`) traegt
+ *  das Objekt den gevendorten Kit-Vertrag `image-gen-provider` — additiv, kein Ersatz
+ *  (Entscheidung Master Welle 13): bestehende Fremdkonsumenten der reichen API sehen keine
+ *  Aenderung, ein neuer Konsument kann stattdessen `isImageGenProviderApi(api)` pruefen und
+ *  bekommt die einfache, backend-uebergreifende Form `generateImage(prompt, opts)`. */
+export interface ImageGenerationApi extends ImageGenProviderApi {
   readonly apiVersion: number;
   status(): ApiStatus;
   /** Ermittelt die Bereitschaft NEU und liefert den frischen Stand — das Gegenstueck zu
@@ -212,6 +224,12 @@ export interface ApiDeps {
   save(image: ApiImage, createNote: boolean): Promise<ApiSaveResult>;
   /** Voreinstellung des Nutzers (settings.createMode === "note"). */
   defaultCreateNote(): boolean;
+  /** Schreibt roh in einen VOM AUFRUFER benannten Ordner — anders als `save()`, das immer
+   *  `settings.outputFolder` (die Einstellung DIESES Nutzers) verwendet. Der Kit-Vertrag
+   *  `image-gen-provider` gibt dem Konsumenten einen eigenen Zielordner vor (`targetFolder`);
+   *  ein Fremdplugin wie Koda soll seine Bilder nicht in den lig-eigenen Ordner des Nutzers
+   *  mischen. Legt den Ordner an, wenn er fehlt; dedupt Kollisionen wie `save()`. */
+  saveToFolder(folder: string, params: GenParams, base64: string): Promise<string | { ok: false; message: string }>;
 }
 
 /** Interner GenParams → Vertrags-ApiParams. Bewusst eine Uebersetzung statt derselben
@@ -243,6 +261,14 @@ function unusableParams(p: ApiParams | undefined | null): string | null {
   return null;
 }
 
+/** `ApiFailure` (dieser Vertrag) → `ImageGenProviderErrorCode` (Kit-Vertrag) — zwei Unions,
+ *  die aus verschiedenen Gruenden entstanden sind (v1 hier, die Bridge-Spec dort) und sich
+ *  nicht 1:1 decken. `"timeout"`/`"refused"` gehoeren dem Kurzbefehl-Backend (die Bridge
+ *  selbst meldet sie), keine der hiesigen `ApiFailure`-Ursachen bildet auf sie ab. */
+function toProviderErrorCode(reason: ApiFailure): ImageGenProviderErrorCode {
+  return reason === "busy" ? "busy" : "backend-unavailable";
+}
+
 export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   // Als benannte Funktion statt als Methode, damit `recheck()` sie ohne `this` aufrufen kann:
   // ein Konsument darf `const { recheck } = api` schreiben, und dann gaebe es kein `this`.
@@ -270,8 +296,30 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
 
   return {
     apiVersion: IMAGE_GENERATION_API_VERSION,
+    // Kit-Vertrag `image-gen-provider` (additiv, s. ImageGenerationApi-Doc-Kommentar):
+    // eigenes Feld, weil `version` eine andere Zahl als `apiVersion` bedeuten KANN, sobald
+    // der Kit-Vertrag einmal eine Erweiterung bekommt, die dieser reiche Vertrag nicht
+    // mitmacht (oder umgekehrt) — zwei Versionsfelder fuer zwei unabhaengige Vertraege.
+    version: IMAGE_GEN_PROVIDER_API_VERSION,
 
     status: readStatus,
+
+    // Abstrahiert ueber ALLE VIER Backends (Auftrag E) — nie ueber die Bruecke: der Aufruf
+    // geht durch dieselbe `deps.run()`/Haertung wie ein Panel-Klick, das Backend entscheidet
+    // main.ts (runGeneration()), nicht diese Fassade. Negativ-Prompt/CFG/Groesse/Vorlage
+    // bekommt der Aufrufer nicht angeboten — der Kit-Vertrag kennt nur `prompt` + `opts`,
+    // die Haertung neutralisiert den Rest ehrlich (dieselbe Keine-Attrappen-Linie wie ueberall).
+    async generateImage(prompt: string, opts: GenerateImageOptions): Promise<string | ImageGenProviderError> {
+      if (deps.isBusy()) return { error: "busy", message: "generation already running" };
+      const r = deps.readiness();
+      if (!r.ready) return { error: toProviderErrorCode(r.reason), message: `not ready: ${r.reason}` };
+      const params = deps.harden({ prompt });
+      const out = await deps.run(params);
+      if (!out.ok) return { error: "failed", message: out.message };
+      const saved = await deps.saveToFolder(opts.targetFolder, params, out.base64);
+      if (typeof saved !== "string") return { error: "failed", message: saved.message };
+      return saved;
+    },
 
     async recheck(): Promise<ApiStatus> {
       // Server UND comfy haben einen entfernten Zustand, der sich hinter unserem Ruecken
