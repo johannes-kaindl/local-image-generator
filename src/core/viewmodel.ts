@@ -157,6 +157,16 @@ export interface PanelViewModel {
     modelPicker: boolean;
     stepsMin: number;
     stepsMax: number;
+    /** Nimmt das Backend Steps ueberhaupt entgegen? Bisher gab es nur EINEN gemeinsamen
+     *  Bereich (stepsMin/stepsMax) fuer alle Modi — playground ist der erste Modus, der den
+     *  Regler nicht nur begrenzt, sondern GANZ ignoriert (der Kurzbefehl kennt kein
+     *  Steps-Argument). Ein sichtbarer, bedienbarer Regler ohne Wirkung waere die Attrappe,
+     *  gegen die dieses Feld steht (Keine-Attrappen-Linie, wie negative/cfg/size). */
+    steps: boolean;
+    /** Nimmt das Backend einen Seed entgegen? Steuert Feld UND Wuerfel-Knopf UND „Reroll" —
+     *  playground hat weder Determinismus noch Reproduzierbarkeit ueber einen Seed; das Feld
+     *  vorzuzeigen behauptete eine Zusage, die der Kurzbefehl nicht einloest. */
+    seed: boolean;
   };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
@@ -423,6 +433,11 @@ export function buildViewModel(s: PanelState): PanelViewModel {
       modelPicker: builtin && s.showModelPicker && s.downloadedModels.length > 1,
       stepsMin: caps.minSteps,
       stepsMax: caps.maxSteps,
+      // Bisher hing an KEINEM Modus ein eigenes Signal fuer Steps/Seed — der Regler war immer
+      // sichtbar, nur sein Bereich (stepsMin/stepsMax) wechselte. playground ist der erste
+      // Modus, der beides gar nicht entgegennimmt (Abnahme-Befund Welle 13).
+      steps: !playground,
+      seed: !playground,
     },
     modelLabel,
     modelOptions: s.downloadedModels.map((id) => ({ id, label: modelById(id).label })),

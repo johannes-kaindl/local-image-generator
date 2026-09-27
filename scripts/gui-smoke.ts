@@ -2807,7 +2807,7 @@ async function runPlaygroundChecks(cdp: Cdp): Promise<void> {
   //     der Wechsel blendet Negativ-Prompt/CFG/Groesse aus (dieselbe Erwartung wie builtin,
   //     aus demselben Grund: der Kurzbefehl nimmt nur den Prompt entgegen). ----------------
   {
-    const NAME = "42. Backend-Wahl bietet Image Playground im Dropdown an und blendet Negativ-Prompt/CFG/Groesse aus";
+    const NAME = "42. Backend-Wahl bietet Image Playground im Dropdown an und blendet Negativ-Prompt/CFG/Groesse/Steps/Seed/Reroll aus";
     const dropdownOptionen = await cdp.evaluate<string[]>(`
       app.setting.open();
       app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
@@ -2828,15 +2828,25 @@ async function runPlaygroundChecks(cdp: Cdp): Promise<void> {
     // `.lig-size-slot` tut es (generate-panel.ts). `getComputedStyle` eines Kindes bleibt
     // von einem `display:none` des Vorfahren unberuehrt, deshalb ist der Wrapper der
     // richtige Messpunkt (erster Lauf dieses Punkts mass genau daran vorbei — CORE-TEST-15).
-    const sicht = await comfySelectorSicht(cdp, [".lig-negative-row", ".lig-cfg", ".lig-cfg-label", ".lig-cfg-value", ".lig-size-slot"]);
+    // Abnahme-Befund (Master, nach dem ersten gruenen Lauf dieser Welle): Steps-Regler,
+    // Seed-Feld/Wuerfel-Knopf UND "Reroll" hatten kein eigenes Sichtbarkeits-Signal und
+    // blieben bedienbar, obwohl der Kurzbefehl beide ignoriert — dieselbe Keine-Attrappen-
+    // Linie wie bei Negativ-Prompt/CFG/Groesse. `.lig-steps`/`.lig-seed` tragen `is-hidden`
+    // SELBST (anders als `.lig-size`), Reroll steckt in der Ergebnis-Karte (`.lig-reroll`).
+    const sicht = await comfySelectorSicht(cdp, [
+      ".lig-negative-row", ".lig-cfg", ".lig-cfg-label", ".lig-cfg-value", ".lig-size-slot",
+      ".lig-steps-label", ".lig-steps", ".lig-steps-value",
+      ".lig-seed-label", ".lig-seed", ".lig-seed-dice", ".lig-reroll",
+    ]);
     const nichtVersteckt = sicht.filter((s) => !s.fehlt && s.display !== "none");
-    const ok = hatPlaygroundOption && wirklichUmgeschaltet === "playground" && nichtVersteckt.length === 0;
+    const fehlend = sicht.filter((s) => s.fehlt);
+    const ok = hatPlaygroundOption && wirklichUmgeschaltet === "playground" && nichtVersteckt.length === 0 && fehlend.length === 0;
     record(
       NAME,
       ok,
       ok
         ? `Dropdown-Option „${t("settings.engine.playground")}“ vorhanden, engine=„${wirklichUmgeschaltet}“, alle modusabhaengigen Regler versteckt`
-        : `Option: ${hatPlaygroundOption ? "vorhanden" : "FEHLT"} (gefunden: ${dropdownOptionen.join(", ") || "keine"}) · engine nach Wechsel: „${wirklichUmgeschaltet}“ · noch sichtbar: ${nichtVersteckt.map((s) => s.sel).join(", ") || "keine"}`,
+        : `Option: ${hatPlaygroundOption ? "vorhanden" : "FEHLT"} (gefunden: ${dropdownOptionen.join(", ") || "keine"}) · engine nach Wechsel: „${wirklichUmgeschaltet}“ · noch sichtbar: ${nichtVersteckt.map((s) => s.sel).join(", ") || "keine"} · nicht im DOM: ${fehlend.map((s) => s.sel).join(", ") || "keine"}`,
     );
   }
 

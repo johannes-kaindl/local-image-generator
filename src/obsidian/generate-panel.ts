@@ -32,6 +32,7 @@ export class GeneratePanel implements HubPanel<TabId> {
   private renderedModelIds = "";
   private promptEl!: HTMLTextAreaElement;
   private negativePromptEl!: HTMLTextAreaElement;
+  private stepsLabelEl!: HTMLElement;
   private stepsEl!: HTMLInputElement;
   private stepsValueEl!: HTMLElement;
   private cfgEl!: HTMLInputElement;
@@ -48,7 +49,9 @@ export class GeneratePanel implements HubPanel<TabId> {
   private initFromResultBtn!: HTMLButtonElement;
   /** Zuletzt angewandter Steps-Bereich — Rebuild der Slider-Grenzen nur bei Moduswechsel. */
   private stepsRange: { min: number; max: number } | null = null;
+  private seedLabelEl!: HTMLElement;
   private seedEl!: HTMLInputElement;
+  private seedDiceEl!: HTMLButtonElement;
   private generateBtn!: HTMLButtonElement;
   private emptyEl!: HTMLElement;
   private emptyTextEl!: HTMLElement;
@@ -130,7 +133,9 @@ export class GeneratePanel implements HubPanel<TabId> {
       // naechsten ANDEREN Refresh optimistisch auf der geklickten Option stehen.
       this.host.setBuiltinModel(this.modelPickEl.value as BuiltinModelId);
     });
-    controls.createSpan({ text: t("generate.steps"), cls: "lig-label" });
+    // Eigene Klasse wie bei lig-cfg-label: der GUI-Smoke muss genau dieses Element messen
+    // koennen, ein blosses .lig-label ist von den Nachbarn nicht zu unterscheiden.
+    this.stepsLabelEl = controls.createSpan({ text: t("generate.steps"), cls: "lig-label lig-steps-label" });
     // Im comfy-Modus hat der Nutzer seinen Workflow schon auf einen Wert gebracht (Spec §3)
     // — der ist der bessere Startwert als der generische Default. Nur beim Mount gelesen
     // (Mount-once, s. Modulkopf): ein spaeterer Workflow-Wechsel wirkt erst beim naechsten
@@ -192,7 +197,7 @@ export class GeneratePanel implements HubPanel<TabId> {
       this.denoiseValueEl.setText(Number(this.denoiseEl.value).toFixed(2));
       this.refresh();
     });
-    controls.createSpan({ text: t("generate.seed"), cls: "lig-label" });
+    this.seedLabelEl = controls.createSpan({ text: t("generate.seed"), cls: "lig-label lig-seed-label" });
     this.seedEl = controls.createEl("input", {
       cls: "lig-seed",
       attr: { type: "number", value: String(randomSeed()) },
@@ -200,11 +205,11 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.seedEl.addEventListener("input", () => {
       this.refresh();
     });
-    const dice = controls.createEl("button", { cls: "clickable-icon" });
-    setIcon(dice, "dices");
-    setTooltip(dice, t("generate.randomSeed"));
-    dice.setAttribute("aria-label", t("generate.randomSeed"));
-    dice.addEventListener("click", () => {
+    this.seedDiceEl = controls.createEl("button", { cls: "clickable-icon lig-seed-dice" });
+    setIcon(this.seedDiceEl, "dices");
+    setTooltip(this.seedDiceEl, t("generate.randomSeed"));
+    this.seedDiceEl.setAttribute("aria-label", t("generate.randomSeed"));
+    this.seedDiceEl.addEventListener("click", () => {
       this.seedEl.value = String(randomSeed());
       this.refresh();
     });
@@ -227,7 +232,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.imageCard = root.createDiv({ cls: "lig-card" });
     this.imgEl = this.imageCard.createEl("img", { cls: "lig-image" });
     const actions = this.imageCard.createDiv({ cls: "lig-row lig-actions" });
-    this.regenBtn = actions.createEl("button", { text: t("generate.button.reroll") });
+    this.regenBtn = actions.createEl("button", { text: t("generate.button.reroll"), cls: "lig-reroll" });
     this.regenBtn.addEventListener("click", () => {
       // Reroll = neuer Zufalls-Seed + generieren. Der obere "Generate"-Knopf nimmt den
       // Seed aus dem Feld und würfelt nie — so sagt jeder Knopf, was er tut.
@@ -374,6 +379,17 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.cfgLabelEl.toggleClass("is-hidden", !vm.controls.cfg);
     this.cfgEl.toggleClass("is-hidden", !vm.controls.cfg);
     this.cfgValueEl.toggleClass("is-hidden", !vm.controls.cfg);
+    // Abnahme-Befund Welle 13: Steps/Seed waren die einzigen Regler ohne eigenes
+    // Sichtbarkeits-Signal — ein Kurzbefehl-Backend, das beide ignoriert, zeigte sie trotzdem
+    // bedienbar an (Keine-Attrappen-Linie). "Reroll" haengt am Seed: ohne Seed-Wirkung ist ein
+    // Knopf, der einen neuen Seed wuerfelt und generiert, dieselbe Attrappe.
+    this.stepsLabelEl.toggleClass("is-hidden", !vm.controls.steps);
+    this.stepsEl.toggleClass("is-hidden", !vm.controls.steps);
+    this.stepsValueEl.toggleClass("is-hidden", !vm.controls.steps);
+    this.seedLabelEl.toggleClass("is-hidden", !vm.controls.seed);
+    this.seedEl.toggleClass("is-hidden", !vm.controls.seed);
+    this.seedDiceEl.toggleClass("is-hidden", !vm.controls.seed);
+    this.regenBtn.toggleClass("is-hidden", !vm.controls.seed);
     this.sizeRowEl.toggleClass("is-hidden", !vm.controls.size);
     // Optionen NUR aus dem Modellkatalog (builtin) oder der generischen Konstante (server) —
     // nicht aus dem Modellnamen ableiten (Kommentar an buildSizeDropdown()).

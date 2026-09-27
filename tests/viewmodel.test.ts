@@ -223,14 +223,14 @@ describe("buildViewModel — builtin engine (0.6)", () => {
   it("server-Modus: alle Regler sichtbar, Steps 1–50, kontinuierlich", () => {
     expect(buildViewModel(base).controls).toEqual({
       negative: true, cfg: true, size: true, sizes: null, initImage: true, denoising: false,
-      modelPicker: false, stepsMin: 1, stepsMax: 50,
+      modelPicker: false, stepsMin: 1, stepsMax: 50, steps: true, seed: true,
     });
   });
   it("builtin/not-downloaded: Regler reduziert, CTA download, Generate gesperrt — der Server-Zustand ist egal; img2img seit 0.11 aber verfuegbar", () => {
     const vm = buildViewModel(builtin);
     expect(vm.controls).toEqual({
       negative: false, cfg: false, size: false, sizes: [{ width: 512, height: 512 }], initImage: true,
-      denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 8,
+      denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 8, steps: true, seed: true,
     });
     expect(vm.empty?.ctaAction).toBe("download");
     expect(vm.status.cls).toBe("is-error");
@@ -549,5 +549,24 @@ describe("Status im comfy-Modus", () => {
     expect(vm.controls.negative).toBe(true);
     expect(vm.controls.cfg).toBe(false);
     expect(vm.controls.initImage).toBe(false);
+  });
+});
+
+// Abnahme-Befund Welle 13: Steps/Seed (+ Reroll haengt am Seed) waren die einzigen Regler
+// ohne eigenes Sichtbarkeits-Signal — der Kurzbefehl ignoriert beide, das Panel zeigte sie
+// trotzdem bedienbar. Alle drei anderen Modi bleiben unveraendert true.
+describe("controls.steps/seed (Keine-Attrappen-Linie, Image Playground)", () => {
+  it("playground blendet Steps UND Seed aus — der Kurzbefehl nimmt keinen von beiden entgegen", () => {
+    const vm = buildViewModel(stateOf({ mode: "playground" }));
+    expect(vm.controls.steps).toBe(false);
+    expect(vm.controls.seed).toBe(false);
+  });
+
+  it("builtin/server/comfy zeigen beide weiterhin", () => {
+    for (const mode of ["builtin", "server", "comfy"] as const) {
+      const vm = buildViewModel(stateOf({ mode }));
+      expect(vm.controls.steps).toBe(true);
+      expect(vm.controls.seed).toBe(true);
+    }
   });
 });
