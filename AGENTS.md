@@ -664,6 +664,37 @@ erlaubt, stillschweigend abzuweichen nicht.
   Server- oder builtin-Modus. Ein reiner UI-Komfortverlust, keine Falschaussage — deshalb
   bewusst nicht Teil dieser Task, aber hier vermerkt, damit eine spaetere Aenderung an
   `recipeUnchanged` weiss, dass der comfy-Fall dort noch nie eigens behandelt wurde.
+- **Der vierte Modus-Wert (`"playground"`, Welle 13) ist an denselben Stellen eingepasst —
+  diesmal VOR dem Release, nicht danach nachgezogen.** 17 Touchpoints (Liste in der
+  Welle-13-Ist-Stand-Meldung, Cockpit-Task „Welle 13 — Image-Playground-Backend und
+  Anbieter-API v1"): `EngineChoice`+`oneOf`, `runGeneration()`-Ternaerkette,
+  `apiReadiness()`, `currentModelName()`, `endpointRole()`/`resolveEndpointFor()`-Ausschluss
+  (playground hat KEINEN Endpunkt), `setEngine()`-Aufraeumzweig, `generate()`-Guard,
+  Settings-Dropdown-Ternaerkette, `backendCapabilities()`/`toBackendContext()`,
+  `buildViewModel()` (builtin/comfy-Booleans → playground dazu). `recipeUnchanged` faellt
+  fuer playground bewusst in denselben Server-Vergleich wie comfy (`s.server.kind` bleibt
+  fuer playground immer `"unconfigured"`) — derselbe reine UI-Komfortverlust wie oben, kein
+  Datenfehler. Wer einen FUENFTEN Modus einfuehrt: dieselbe Liste, nicht neu suchen.
+- **Der Kurzbefehl schreibt die Bilddatei direkt in den Vault (Spec `shortcuts-bridge`,
+  `expectFile`) — die normale Panel-Pipeline schreibt danach TROTZDEM noch einmal.**
+  `PlaygroundBackend.generate()` (`src/obsidian/playground-backend.ts`) liest die vom
+  Kurzbefehl gefundene Datei zurueck, base64-kodiert sie (der `ImageBackend`-Vertrag
+  verlangt genau das, wie bei den anderen drei Backends) und LOESCHT die Rohdatei danach
+  (`fileManager.trashFile`) — sonst laege ein Duplikat im Vault: die Panel-Pipeline
+  schreibt das zurueckgegebene Base64-Bild ohnehin noch einmal an den ueblichen Zielpfad
+  (`resolveImagePath()`, korrekte Namensgebung/Dedup). Der Zielordner fuer `expectFile` ist
+  bewusst `settings.outputFolder` — dieselbe Ablage wie der Rest des Plugins, kein eigenes
+  Zielordner-Setting (Auftrag Welle 13: „bestehende Attachment-Logik nutzen").
+- **`generateImage()` (Kit-Vertrag `image-gen-provider`) ist ein ZUSAETZLICHER Export auf
+  demselben API-Objekt, keine zweite Fassade.** Die bestehende Provider-API
+  (`IMAGE_GENERATION_API_VERSION` bleibt 1, `status/generate/save/recheck`) ist unveraendert;
+  `ImageGenerationApi extends ImageGenProviderApi` traegt zusaetzlich `version` (Kit-eigenes
+  Versionsfeld, ABSICHTLICH ein anderes Feld als `apiVersion` — die beiden Vertraege koennen
+  unabhaengig voneinander wachsen) und `generateImage(prompt, opts)`. Schreibt ueber eine
+  NEUE `ApiDeps.saveToFolder(folder, params, base64)` in einen vom AUFRUFER benannten Ordner
+  (`opts.targetFolder`) — bewusst NICHT ueber `save()`/`resolveImagePath()`, die immer
+  `settings.outputFolder` (die Einstellung DIESES Nutzers) verwenden: ein Fremdplugin wie
+  Koda soll seine Bilder nicht dorthin mischen.
 - **Endpunkte koennen seit 0.15.0 vom LLM Endpoint Manager kommen — zwei ROLLEN an einem
   Manager, nicht zwei Settings-Felder (Entscheidung Johannes 2026-09-17, Welle 7).**
   `src/core/resolve-endpoint.ts::resolveImageEndpoint(role, choice, localEndpoint, manager,
