@@ -1,6 +1,6 @@
 // Plugin-eigene UI-Chrome-Strings (Buttons, Settings, Notices). registerI18n() wird EINMALIG
 // im onload aufgerufen (vor addCommand/addSettingTab/addRibbonIcon/registerView), siehe
-// docs/superpowers/specs/2026-07-17-i18n-design.md §2.
+// Vault-Cockpit `_SDD/2026-07-17-i18n-design.md` §2.
 //
 // Key-Namespaces: cmd.* (Commands) · view.* (View-Titel/Tabs) · generate.* (Generate-Panel) ·
 // status.* (Statuszeile) · empty.* (Leerzustände) · notice.* (new Notice(...)) ·

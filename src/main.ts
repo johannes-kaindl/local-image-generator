@@ -1,7 +1,7 @@
 // Wiring (Spec §4): EIN registerView, Command + Ribbon, Host-Implementierung für die
 // View. Thin Client — keine In-Process-Engine mehr: generate() spricht über HTTP mit
 // einem lokal laufenden A1111-kompatiblen Server (/sdapi/v1/txt2img).
-// i18n (docs/superpowers/specs/2026-07-17-i18n-design.md §2): registerI18n() + setLang()
+// i18n (Vault-Cockpit `_SDD/2026-07-17-i18n-design.md` §2): registerI18n() + setLang()
 // laufen ZUERST im onload, vor addSettingTab/registerView/addRibbonIcon/addCommand — sonst
 // rendern die ersten t()-Aufrufe rohe Keys.
 import { arrayBufferToBase64, getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
