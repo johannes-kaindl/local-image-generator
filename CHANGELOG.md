@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Internal design notes moved out of the repository; the user documentation is unchanged.
+
 ## [0.17.0] — 2026-10-02
 
 ### Added
