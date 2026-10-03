@@ -160,7 +160,7 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 7 | Die Generierung liefert ein Bild in die Karte | Ende-zu-Ende über echtes HTTP |
 | 8 | Die Ergebnis-Notiz trägt den echten Modellnamen | **die Nutzlast** von `1d1c046` |
 | 9 | Die Ergebnis-Notiz bettet das Bild ein | das Produkt, nicht der Zustand |
-| 10 | Historien-Klick stellt Prompt **und** Seed her | Jays 0.2-Befund („merkt sich nur den Prompt") |
+| 10 | Historien-Klick stellt Prompt **und** Seed her | the maintainer's 0.2 finding („merkt sich nur den Prompt") |
 | 11 | „Reroll" würfelt neu und startet | der Knopf, der sich vom Nachbarn unterscheiden muss |
 | 12 | Die Einstellungen erscheinen in der Settings-**Suche** | der Store-Linter prüft nur, DASS `getSettingDefinitions()` existiert — nicht, ob die Zeilen beim Nutzer ankommen |
 | 13 | Engine auf „Eingebaut" — Panel zeigt den Modellzustand, Negativ-Prompt weg, CTA da | der Moduswechsel muss die Regler ehrlich machen (Spec 0.6 §6) |
