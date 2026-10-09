@@ -1,10 +1,10 @@
 {
   "sources": {
     "obsidian-kit": {
-      "ref": "0.51.2"
+      "ref": "0.51.3"
     },
     "code-kit": {
-      "ref": "0.15.0"
+      "ref": "0.15.4"
     }
   },
   "targets": [
@@ -51,7 +51,8 @@
       "source": "obsidian-kit",
       "from": "src/pure",
       "modules": [
-        "endpoint-source"
+        "endpoint-source",
+        "endpoint-secret-hook"
       ],
       "rewrite": [
         [
@@ -67,7 +68,6 @@
       "modules": [
         "clock",
         "confirm",
-        "endpoint-list",
         "endpoint-secrets",
         "endpoint-source",
         "folder-suggest",

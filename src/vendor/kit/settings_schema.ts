@@ -1,4 +1,4 @@
-// vendored from code-kit@0.15.0, src/ts/pure/settings_schema.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.15.4, src/ts/pure/settings_schema.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /** Validierender Settings-Merge (**geschlossene Welt**) — das Ergebnis hat GENAU die
  *  Schlüssel von `defaults`, und jedes Feld ist entweder ein geprüfter Wert aus `raw` oder
  *  der Default. `data.json` liegt im Vault des Nutzers: handeditiert, von einem

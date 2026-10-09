@@ -1,7 +1,7 @@
 {
   "source": "obsidian-kit",
-  "version": "0.51.2",
-  "sha": "7699e21",
-  "vendored": "clock.ts, confirm.ts, endpoint-list.ts, endpoint-secrets.ts, endpoint-source.ts, folder-suggest.ts, help-setting.ts, hub.ts, model-picker.ts, secrets.ts, settings_walker.ts, shortcuts-bridge.ts",
+  "version": "0.51.3",
+  "sha": "656ab02",
+  "vendored": "clock.ts, confirm.ts, endpoint-secrets.ts, endpoint-source.ts, folder-suggest.ts, help-setting.ts, hub.ts, model-picker.ts, secrets.ts, settings_walker.ts, shortcuts-bridge.ts",
   "note": "Verbatim snapshot. Never hand-edit. Pins in tools/kit-sync.json, re-vendor via tools/sync-kit.sh (zentrales kit-sync im Dach). version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; abweichende Einzelpins stehen dort inline (Datei (quelle@version, sha)). Eigene Ablage neben src/vendor/kit/, weil diese Module \"obsidian\" importieren (scripts/check-pure.mjs scannt src/vendor/kit dagegen). HUB_CSS aus hub.ts ist zusaetzlich in styles.css uebernommen — das Kit injiziert kein CSS."
 }
