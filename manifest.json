@@ -2,7 +2,7 @@
   "id": "local-image-generator",
   "name": "Local Image Generator",
   "version": "0.17.1",
-  "minAppVersion": "1.8.7",
+  "minAppVersion": "1.11.4",
   "description": "Generate images right in your vault — built-in SD-Turbo on your GPU, your local Draw Things / A1111 / ComfyUI server, or Apple's Image Playground on mobile. Private, on-device, no cloud.",
   "author": "Johannes Kaindl",
   "authorUrl": "https://github.com/johannes-kaindl",

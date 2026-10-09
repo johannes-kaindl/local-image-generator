@@ -1,4 +1,4 @@
-// vendored from obsidian-kit@0.27.0, src/pure/cache-download.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.15.0, src/ts/web/cache-download.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /** Eine Datei gestreamt in die Cache API laden — speicherkonstant, abbrechbar, und mit der
  *  Zusicherung, dass nach einem Fehlschlag KEIN Teil-Eintrag im Cache zurückbleibt.
  *
@@ -146,7 +146,18 @@ export async function streamIntoCache(o: StreamIntoCacheOptions): Promise<Stream
   const res = await o.fetchFn(o.url, { signal: o.signal });
   if (!accept(res) || !res.body) throw new Error(`download failed: HTTP ${res.status} for ${o.label}`);
 
-  const contentLength = parseContentLength(res.headers.get("content-length"));
+  // `content-length` zählt die Bytes AUF DER LEITUNG. Trägt die Antwort eine
+  // Übertragungskodierung, dekodiert `fetch` den Body transparent und der Header bleibt auf dem
+  // komprimierten Wert stehen — er ist dann keine Aussage über das, was hier ankommt, sondern
+  // eine kleinere Zahl. Deshalb gilt er als nicht vorhanden: sonst bricht ein einwandfreier
+  // Download mit „incomplete" ab (der Pfad war in local-image-generator offen und unbetreten —
+  // Huggingface liefert die betroffenen Textdateien unkomprimiert aus), und ein Fortschrittsbalken
+  // liefe über 100 % hinaus. `identity` heißt ausdrücklich „nicht kodiert" und zählt nicht mit.
+  // Unberührt bleibt `expectedBytes`: es rechnet gegen die Manifest-Größe, also gegen die
+  // dekodierte Zahl — das ist die belastbare Prüfung, und sie greift auch hier.
+  const encoding = res.headers.get("content-encoding")?.trim().toLowerCase() ?? "";
+  const encoded = encoding !== "" && encoding !== "identity";
+  const contentLength = encoded ? null : parseContentLength(res.headers.get("content-length"));
 
   const [progressBranch, cacheBranch] = res.body.tee();
   // Abbruchkante für den Cache-Zweig (s. Modulkopf): macht `putDone` auch dann settle-bar,

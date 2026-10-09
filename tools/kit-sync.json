@@ -1,41 +1,101 @@
 {
-  "sources": { "obsidian-kit": { "ref": "0.27.0" }, "code-kit": { "ref": "0.6.0" } },
+  "sources": {
+    "obsidian-kit": {
+      "ref": "0.51.2"
+    },
+    "code-kit": {
+      "ref": "0.15.0"
+    }
+  },
   "targets": [
     {
-      "dir": "src/vendor/kit", "source": "obsidian-kit", "from": "src/pure",
-      "modules": ["cache-download", "endpoint", "frontmatter", "i18n", "num", "settings", "settings_schema", "sha256", "timeout"]
+      "dir": "src/vendor/kit",
+      "source": "code-kit",
+      "from": "src/ts/pure",
+      "modules": [
+        "endpoint",
+        "endpoint_config",
+        "endpoint_diagnostics",
+        "i18n",
+        "model-choice",
+        "model-list-cache",
+        "num",
+        "reasoning",
+        "sampling-profiles",
+        "secrets",
+        "settings",
+        "settings_schema",
+        "sha256",
+        "timeout"
+      ]
     },
     {
-      "dir": "src/vendor/kit", "source": "obsidian-kit", "from": "src/pure",
-      "modules": [{ "name": "endpoint-source", "ref": "0.39.0" }],
-      "rewrite": [["../vendor/code-kit/pure/", "./"]]
-    },
-    { "dir": "src/vendor/kit", "source": "code-kit", "from": "src/ts/pure", "modules": ["endpoint_config", "model-choice"] },
-    {
-      "dir": "src/vendor/kit-obsidian", "source": "obsidian-kit", "from": "src/obsidian",
-      "modules": ["confirm", "folder-suggest", "hub", "settings_walker"]
+      "dir": "src/vendor/kit",
+      "source": "code-kit",
+      "from": "src/ts/web",
+      "modules": [
+        "cache-download"
+      ]
     },
     {
-      "dir": "src/vendor/kit-obsidian", "source": "obsidian-kit", "from": "src/obsidian",
-      "modules": [{ "name": "endpoint-source", "ref": "0.39.0" }],
-      "rewrite": [["../vendor/code-kit/pure/", "../kit/"], ["../pure/", "../kit/"]]
+      "dir": "src/vendor/kit",
+      "source": "obsidian-kit",
+      "from": "src/pure",
+      "modules": [
+        "frontmatter",
+        "image-gen-provider"
+      ]
     },
     {
-      "dir": "src/vendor/kit-obsidian", "source": "obsidian-kit", "from": "src/obsidian",
-      "modules": [{ "name": "model-picker", "ref": "0.39.0" }],
-      "rewrite": [["../vendor/code-kit/pure/", "../kit/"]]
+      "dir": "src/vendor/kit",
+      "source": "obsidian-kit",
+      "from": "src/pure",
+      "modules": [
+        "endpoint-source"
+      ],
+      "rewrite": [
+        [
+          "../vendor/code-kit/pure/",
+          "./"
+        ]
+      ]
     },
     {
-      "dir": "src/vendor/kit-obsidian", "source": "obsidian-kit", "from": "src/obsidian",
-      "modules": [{ "name": "help-setting", "ref": "0.43.0" }]
+      "dir": "src/vendor/kit-obsidian",
+      "source": "obsidian-kit",
+      "from": "src/obsidian",
+      "modules": [
+        "clock",
+        "confirm",
+        "endpoint-list",
+        "endpoint-secrets",
+        "endpoint-source",
+        "folder-suggest",
+        "help-setting",
+        "hub",
+        "model-picker",
+        "secrets",
+        "settings_walker",
+        "shortcuts-bridge"
+      ],
+      "rewrite": [
+        [
+          "../vendor/code-kit/pure/",
+          "../kit/"
+        ],
+        [
+          "../pure/",
+          "../kit/"
+        ]
+      ]
     },
     {
-      "dir": "src/vendor/kit-obsidian", "source": "obsidian-kit", "from": "src/obsidian",
-      "modules": [{ "name": "shortcuts-bridge", "ref": "0.45.1" }, { "name": "clock", "ref": "0.45.1" }]
-    },
-    {
-      "dir": "src/vendor/kit", "source": "obsidian-kit", "from": "src/pure",
-      "modules": [{ "name": "image-gen-provider", "ref": "0.45.0" }]
+      "dir": "tests/vendor/kit",
+      "source": "obsidian-kit",
+      "from": "src/testing",
+      "modules": [
+        "kit-css"
+      ]
     }
   ]
 }
