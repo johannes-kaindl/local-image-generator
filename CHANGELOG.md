@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-10-09
+
 ### Changed
 
 - **Needs Obsidian 1.11.4 or newer** (`minAppVersion` was 1.8.7). The shared connection kit it now builds on uses Obsidian's secret storage; this plugin stores no keys itself, and nothing else changes for you.
