@@ -39,7 +39,7 @@ In jedem Fall verlassen Prompts und Bilder deinen Rechner nie.
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](https://github.com/johannes-kaindl/local-image-generator/blob/main/LICENSE)
 [![Docs: CC BY-SA 4.0](https://img.shields.io/badge/docs-CC%20BY--SA%204.0-lightgrey.svg)](https://github.com/johannes-kaindl/local-image-generator/blob/main/LICENSE-DOCS)
 [![Release](https://img.shields.io/github/v/release/johannes-kaindl/local-image-generator?label=release)](https://github.com/johannes-kaindl/local-image-generator/releases)
-[![Obsidian](https://img.shields.io/badge/obsidian-1.8.7%2B-purple)](https://obsidian.md)
+[![Obsidian](https://img.shields.io/badge/obsidian-1.11.4%2B-purple)](https://obsidian.md)
 
 > **Hinweis:** Diese Übersetzung folgt der englischen [`README.md`](README.md).
 > Bei Abweichungen gilt die englische Fassung.

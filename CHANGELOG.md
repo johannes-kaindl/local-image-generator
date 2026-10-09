@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Needs Obsidian 1.11.4 or newer** (`minAppVersion` was 1.8.7). The shared connection kit it now builds on uses Obsidian's secret storage; this plugin stores no keys itself, and nothing else changes for you.
+- Kit 0.51.2 / code-kit 0.15.0. The Backend and manager-endpoint settings behave as before.
+
 ## [0.17.1] — 2026-10-03
 
 ### Changed
