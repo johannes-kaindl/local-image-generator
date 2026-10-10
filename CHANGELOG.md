@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-10-10
+
 ### Changed
 
 - The two settings screenshots in the README now show the current Settings page, including the Help row.
