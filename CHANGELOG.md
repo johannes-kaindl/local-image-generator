@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Kit pins raised to `obsidian-kit` 0.56.0 and `code-kit` 0.23.0 (from 0.51.3 and 0.15.4). Nothing in the plugin's settings, panels or generated notes changes. Of the skipped kit releases, only the endpoint resolution reaches this plugin: with the endpoint manager installed it resolves the image endpoint as before; the global "local model" fallback of the shared endpoint source is gone (obsidian-kit 0.55.0), which this plugin never read. The sampling-profile response check now cuts `<think>` blocks in linear time (code-kit 0.22.0) and the key-redaction rules got broader (code-kit 0.18.0/0.21.0); this plugin vendors the module but sends no chat requests, so neither is visible here.
+
 ## [0.18.1] — 2026-10-10
 
 ### Changed
