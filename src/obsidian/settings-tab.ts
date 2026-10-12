@@ -29,7 +29,7 @@ import { t } from "../vendor/kit/i18n";
 import { validateSettings } from "../vendor/kit/settings_schema";
 import { applyDestructive, confirmAction } from "../vendor/kit-obsidian/confirm";
 import { renderSettingDefinitions, settingBodyHost, refreshSettingsTab } from "../vendor/kit-obsidian/settings_walker";
-import { buildEndpointSourceSection, findEndpointManager, type EndpointSourceSectionStrings } from "../vendor/kit-obsidian/endpoint-source";
+import { buildEndpointSourceSection, findEndpointManager, type EndpointSourceBaseStrings } from "../vendor/kit-obsidian/endpoint-source";
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { helpDefinition } from "./help-row";
 import { renderPresetEditor } from "./preset-editor";
@@ -333,19 +333,15 @@ export class LigSettingTab extends PluginSettingTab {
       return;
     }
     const role: EndpointRole = this.plugin.settings.engine === "comfy" ? "comfy" : "server";
-    const strings: EndpointSourceSectionStrings = {
+    const strings: EndpointSourceBaseStrings = {
       managed: t("settings.endpointSource.managed"),
       managedDesc: role === "comfy" ? t("settings.endpointSource.managedDescComfy") : t("settings.endpointSource.managedDescServer"),
       openManager: t("settings.endpointSource.openManager"),
       pickEndpoint: t("settings.endpointSource.pickEndpoint"),
       automatic: t("settings.endpointSource.automatic"),
-      model: t("settings.endpointSource.model"),
       importLocal: t("settings.endpointSource.importLocal"),
       imported: (r) => t("settings.endpointSource.imported", r.added.length, r.merged.length),
       importFailed: t("settings.endpointSource.importFailed"),
-      modelHint: (key) => t(`settings.endpointSource.modelHint.${key}`),
-      savedSuffix: t("settings.endpointSource.savedSuffix"),
-      refreshModels: t("settings.endpointSource.refreshModels"),
       saveFailed: t("settings.endpointSource.saveFailed"),
     };
     // settingBodyHost, NICHT setting.settingEl: die Kit-Sektion haengt mehrere eigene
@@ -357,6 +353,7 @@ export class LigSettingTab extends PluginSettingTab {
       app: this.app,
       containerEl: host,
       capability: "image",
+      modelRow: false,
       caller: `local-image-generator/${role}`,
       choice: () => (role === "comfy" ? this.plugin.settings.comfyEndpointChoice : this.plugin.settings.serverEndpointChoice),
       setChoice: async (c) => {
@@ -370,15 +367,10 @@ export class LigSettingTab extends PluginSettingTab {
       renderLocalList: () => this.renderServerFallback(setting),
       rerender: () => this.refreshUi(),
     });
-    // Keine Modell-Zeile: "Der Server bestimmt das Modell ... es waehlt nie ein Modell aus"
-    // (AGENTS.md, Keine-Attrappen-Linie) — resolveEndpointFor() in main.ts verwirft
-    // EndpointSourceResult.model vollstaendig, eine gewaehlte Zeile haette also KEINE
-    // Wirkung. Der Kit-Baustein hat keine Option, die Modell-Zeile wegzulassen (er zeichnet
-    // sie unbedingt, sobald ein Endpunkt existiert); ausgeblendet statt eine wirkungslose
-    // Auswahl zu zeigen. Fund aus dem Master-Review der ersten Fassung (Screenshot).
-    for (const nameEl of Array.from(host.querySelectorAll<HTMLElement>(".setting-item-name"))) {
-      if (nameEl.textContent === t("settings.endpointSource.model")) nameEl.closest(".setting-item")?.remove();
-    }
+    // Keine Modell-Zeile (`modelRow: false` oben): "Der Server bestimmt das Modell ... es waehlt
+    // nie ein Modell aus" (AGENTS.md, Keine-Attrappen-Linie) — resolveEndpointFor() in main.ts
+    // verwirft EndpointSourceResult.model vollstaendig, eine gewaehlte Zeile haette also KEINE
+    // Wirkung. Vor kit 0.59.0 hat ein DOM-Workaround die Zeile nachtraeglich entfernt.
   }
 
   /** Bestandsverhalten ohne Manager: Endpunkt-Textfeld und Test-Knopf teilen sich eine Zeile

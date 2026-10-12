@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Kit pins raised to `obsidian-kit` 0.59.0 and `code-kit` 0.24.0 (from 0.56.0 and 0.23.0). Nothing in the plugin's settings, panels or generated notes changes. Of the skipped kit releases, the endpoint list (adjusted buttons per row, 0.59.0), the streaming answer area, the "Request" section and the embedding list do not exist in this plugin; the new test helpers, build step and busy guard of 0.57.0 to 0.59.0 and code-kit 0.24.0 are not used here.
+- With the LLM Endpoint Manager installed, the endpoint row in Settings is now built without the model row by the shared endpoint source itself (`modelRow: false`, obsidian-kit 0.59.0) instead of removing it from the page afterwards. The Settings page looks the same: the server chooses the model, so there is nothing to pick. The four texts only that row used are gone from the plugin.
+
 ## [0.18.2] — 2026-10-12
 
 ### Changed
