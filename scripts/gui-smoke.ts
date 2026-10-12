@@ -85,7 +85,7 @@ import { join } from "node:path";
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
-import { Cdp, attachTo, bereiteInstanzVor, clickReal, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
+import { Cdp, attachTo, bereiteInstanzVor, clickReal, entferneFakeManager, installFakeManager, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
 import { createBilanz, parseArgs, runDriver } from "../../tools/obsidian-cdp/bilanz.js";
 // Der Build-Guard liegt ebenfalls zentral: `requireEigenerBuild` bricht ab, wenn der Build im
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
@@ -168,6 +168,7 @@ const PUNKTE = [
   "42. Backend-Wahl bietet Image Playground im Dropdown an und blendet Negativ-Prompt/CFG/Groesse/Steps/Seed/Reroll aus",
   "43. Settings zeigen die Kurzbefehl-Name-Zeile nur im playground-Modus",
   "44. Fehlerpfad: leerer Kurzbefehl-Name ist ein Fehler, ein gesetzter Name ist sofort bereit",
+  "45. Mit Fake-Manager (Capability image) steht die Endpunkt-Sektion in den Settings, aber keine Modell-Zeile",
 ] as const;
 
 const bilanz = createBilanz({ punkte: PUNKTE });
@@ -2815,6 +2816,55 @@ async function runHelpRowCheck(cdp: Cdp): Promise<void> {
  * Settings-/Statuszeilen-Grenze, wie bei den drei bestehenden Backends VOR ihrem jeweiligen
  * Netzweg auch.
  */
+/**
+ * Punkt 45: Die Endpunkt-Sektion des Kit-Bausteins (`buildEndpointSourceSection`) entsteht nur, wenn
+ * ein `llm-endpoint-manager` im Slot liegt — in der Staging-Lage liegt keiner, der Fake-Manager aus
+ * der Bruecke (Capability `image`) stellt ihn her. Gemessen am DOM des offenen Tabs: die Zeile
+ * „Endpoint" da (Sektion gerendert), die Zeile „Model" nicht (der Server bestimmt das Modell,
+ * `resolveEndpointFor` verwirft es; AGENTS.md, Keine-Attrappen-Linie). Der Unit-Beleg der Option
+ * `modelRow: false` liegt im Kit. Zustand (Slot, Modus) wird im finally zurueckgesetzt.
+ */
+async function runEndpointSourceCheck(cdp: Cdp): Promise<void> {
+  const NAME = "45. Mit Fake-Manager (Capability image) steht die Endpunkt-Sektion in den Settings, aber keine Modell-Zeile";
+  const engineVorher = await cdp.evaluate<string>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.engine;`);
+  let installiert = false;
+  try {
+    const r = await installFakeManager(cdp, {
+      endpunkte: [{ id: "smoke-image", url: "http://127.0.0.1:7861", models: ["smoke-model-a", "smoke-model-b"], capabilities: ["image"] }],
+      invalidiere: [PLUGIN_ID],
+    });
+    installiert = r.installiert;
+    if (!r.installiert) {
+      bilanz.unmeasured(NAME as (typeof PUNKTE)[number], `Fake-Manager nicht installiert (${r.grund ?? "ohne Grund"}; vorher: ${r.vorher})`);
+      return;
+    }
+    const zeilen = await cdp.evaluate<string[]>(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== "server") await p.setEngine("server");
+      app.setting.open();
+      app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
+      await new Promise((r) => setTimeout(r, 300));
+      if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
+      await new Promise((r) => setTimeout(r, 600));
+      const namen = Array.from(app.setting.activeTab.containerEl.querySelectorAll(".setting-item-name")).map((el) => (el.textContent || "").trim());
+      app.setting.close();
+      return namen;
+    `);
+    const sektion = zeilen.some((n) => n === "Endpoint" || n === "Endpunkt");
+    const modellZeile = zeilen.some((n) => n === "Model" || n === "Modell");
+    record(NAME, sektion && !modellZeile, `Sektion ${sektion ? "da" : "FEHLT"} · Modell-Zeile ${modellZeile ? "FAELSCHLICH da" : "korrekt weg"} · Zeilen: ${zeilen.join(" | ").slice(0, 160)}`);
+  } finally {
+    await cdp.evaluate(`app.setting.close?.(); return true;`).catch(() => undefined);
+    if (installiert) await entferneFakeManager(cdp, { invalidiere: [PLUGIN_ID] }).catch(() => undefined);
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== ${JSON.stringify(engineVorher)}) await p.setEngine(${JSON.stringify(engineVorher)});
+      p.refreshViews();
+      return true;
+    `).catch(() => undefined);
+  }
+}
+
 async function runPlaygroundChecks(cdp: Cdp): Promise<void> {
   const setzeModus = async (mode: "builtin" | "server" | "comfy" | "playground"): Promise<void> => {
     await cdp.evaluate(`
@@ -3827,6 +3877,9 @@ async function main(): Promise<void> {
     // Ausserhalb der --builtin/--quick-Bedingung wie 18a-d: kein Server, kein Download,
     // kein Netzweg — nur Modus-Wechsel, Settings-DOM und Statuszeile.
     await runPlaygroundChecks(cdp);
+
+    // --- 45. Endpunkt-Sektion mit Fake-Manager (Welle 20) ---------------------
+    await runEndpointSourceCheck(cdp);
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.
