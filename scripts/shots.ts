@@ -9,31 +9,26 @@
  *
  * ## Ablauf
  *
- * ⚠️ **Vor dem Quit koordinieren — Obsidian ist geteilte Infrastruktur.** Dieses Rezept
- * braucht den frischen Start (ein Bild pro Start, jeder Lauf hinterlaesst Zustand); Mitnutzen ist
- * hier keine Alternative. Aber Obsidian ist Single-Instance: der Quit trifft die Instanz, an der
- * moeglicherweise eine andere Session arbeitet, und zerstoert deren Zustand. Der eigene Lauf ist
- * danach sauber gruen; der Schaden faellt nicht auf.
+ * ⚠️ **Aufgenommen wird in einer Zweitinstanz, nie in der laufenden Instanz.** Obsidian ist geteilte
+ * Infrastruktur: ein Quit trifft die Instanz, an der moeglicherweise eine andere Session arbeitet,
+ * und zerstoert deren Zustand. Dieses Rezept braucht den frischen Start (ein Bild pro Start, jeder
+ * Lauf hinterlaesst Zustand) — den bekommt die Zweitinstanz mit eigenem Profil (`--user-data-dir`)
+ * und eigenem Port; `--port` ist Pflicht (oder `SHOTS_PORT`), es gibt keinen Standardport.
  *
  * ```bash
- * lsof -nP -iTCP:9222 -sTCP:LISTEN >/dev/null && echo "belegt — erst fragen, wem"
- * ```
+ * npm run build && npm run shots -- --setup         # Vault aus dem Fixture bauen ($STAGING_VAULTS_DIR)
  *
- * Hoert der Port, haengt jemand dran: **erst fragen, dann quitten.** ⚠️ Und die Pruefung ersetzt die
- * Frage nicht — sie zeigt aktive CDP-Treiber, aber nicht, wer ein Fenster offen haelt oder auf den
- * Port wartet; am 2026-08-30 haette sie einen zwei Stunden alten Reindex nicht gezeigt, denn der
- * hing an Ollama, nicht am Port.
+ * UD=/tmp/obs-test-local-image-generator            # Profil je Repo
+ * pgrep -f "user-data-dir=$UD"                      # leer, sonst ausweichen
+ * lsof -nP -iTCP:<port> -sTCP:LISTEN                # leer
+ * cp ~/Library/Application\ Support/obsidian/obsidian-*.asar "$UD"/
+ * # $UD/obsidian.json: Vault und "language":"en" eintragen (Obsidian liest die Datei nur beim Start)
+ * /Applications/Obsidian.app/Contents/MacOS/Obsidian --user-data-dir="$UD" --remote-debugging-port=<port> &
+ * python3 ~/.claude/hooks/obsidian-cdp-lock.py acquire --label local-image-generator \
+ *   --intent "README-Bilder" --exclusive focus --port <port> --ttl 900
  *
- * ```bash
- * export STAGING_VAULTS_DIR="$HOME/StagingVaults"   # einmalig
- * npm run build && npm run shots -- --setup         # Vault aus dem Fixture bauen
- *
- * osascript -e 'quit app "Obsidian"'                # Handarbeit: Debug-Port
- * open -a Obsidian --args --remote-debugging-port=9222
- * #   ... den Aufnahme-Vault oeffnen und einmalig als vertrauenswuerdig markieren
- *
- * npm run shots                                     # alles aufnehmen
- * npm run shots -- --only settings.png              # ein Bild nachziehen
+ * npm run shots -- --port <port>                    # alles aufnehmen
+ * npm run shots -- --port <port> --only settings.png   # ein Bild nachziehen
  * npm run shots -- --list                           # Vertrag anzeigen
  * ```
  *
@@ -708,20 +703,18 @@ async function main(): Promise<void> {
       "\n⚠️  Lief Obsidian waehrend dieses Setups, muss es JETZT neu starten. --setup hat\n" +
         "   Notizen, Layout und Plugin-Einstellungen ersetzt; ein laufendes Obsidian haelt\n" +
         "   den alten Stand im Speicher und schreibt ihn zurueck.\n" +
-        "\n⚠️  Erst pruefen, ob schon ein Obsidian laeuft — ein Quit zerstoert den Zustand\n" +
-        "    einer fremden Session, und der eigene Lauf ist danach trotzdem gruen:\n" +
-        "      lsof -nP -iTCP:9222 -sTCP:LISTEN\n" +
-        "    Hoert der Port, haengt jemand dran: erst fragen, dann quitten.\n" +
-        "\nObsidian mit offenem Debug-Port starten und diesen Vault oeffnen:\n" +
-        "  osascript -e 'quit app \"Obsidian\"'\n" +
-        "  open -a Obsidian --args --remote-debugging-port=9222\n" +
+        "\nNie die laufende Instanz quitten. Zweitinstanz mit eigenem Profil und eigenem Port\n" +
+        "starten (Rezept im Kopf dieser Datei), diesen Vault in $UD/obsidian.json eintragen.\n" +
         "Beim ersten Mal fragt Obsidian, ob es dem Vault-Autor vertraut — bestaetigen,\n" +
         "sonst laeuft das Plugin nicht und jedes Bild zeigt ein leeres Blatt.",
     );
     return;
   }
 
-  const port = Number(flag("--port") ?? env.SHOTS_PORT ?? 9222);
+  const port = Number(flag("--port") ?? env.SHOTS_PORT);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error("--port <1024-65535> (oder SHOTS_PORT) ist Pflicht (Port deiner Zweitinstanz) — kein Standardport.");
+  }
   // `--only` nimmt eine Komma-Liste. Ein einzelner Name ist der haeufige Fall; die Liste
   // braucht man, um alles AUSSER `first-run.png` zu fahren — das raeumt sonst das Modell
   // weg und der Lauf laedt 2,5 GB neu, nur um dieselben Bilder zu bekommen.

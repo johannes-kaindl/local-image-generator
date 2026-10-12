@@ -8,37 +8,22 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
 
 ## Voraussetzungen
 
-⚠️ **Zuerst prüfen, wer sonst an Obsidian hängt.** Ein `quit` trifft die Instanz, an der
-möglicherweise eine andere Session arbeitet, und zerstört deren Zustand. Der eigene Lauf ist
-danach sauber grün; der Schaden entsteht woanders und fällt nicht auf.
+⚠️ **Der Smoke läuft in einer Zweitinstanz, nie in der laufenden Instanz.** Obsidian ist geteilte Infrastruktur: ein `quit` trifft die Instanz, an der möglicherweise eine andere Session arbeitet, und zerstört deren Zustand. Die Sperre hängt am Profil, nicht am Rechner — mit eigenem `--user-data-dir` und eigenem Debug-Port läuft eine zweite Instanz parallel zur regulären (Dach-`AGENTS.md`). `--port` ist Pflicht, ohne ihn bricht der Treiber mit Exit 2 ab.
 
-⚠️ **Hier stand: „Obsidian ist Single-Instance".** Das ist seit 2026-09-02 gemessen widerlegt
-(Dach-`AGENTS.md`): die Sperre hängt am PROFIL, nicht am Rechner — mit eigenem
-`--user-data-dir` und eigenem Debug-Port läuft eine zweite Instanz parallel zur regulären.
-Für einen Lauf, der die reguläre Instanz nicht anfassen soll, ist das der Ausweg statt einer
-Nachfrage. **Den Port dabei nicht aus einem Beispiel abschreiben:** am 2026-09-06 lief bereits
-eine fremde Zweitinstanz auf der in der Doku genannten 9333, der eigene Start bekam den Port
-nicht, und `curl` beantwortete die Frage „läuft meine Instanz?" mit dem Fenstertitel der
-fremden — eine Kollision, die sich nicht als Fehler meldet, sondern als plausibles falsches
-Ergebnis.
-
-```bash
-lsof -nP -iTCP:9222 -sTCP:LISTEN >/dev/null && echo "läuft bereits — NICHT beenden"
-```
-
-Hört der Port schon, dann **mitnutzen statt neu starten**: ein eigenes Fenster per
-`vault-open` über IPC öffnen, dann `attachTo("workspace", port, vault)` — der Vault-Name
-wählt, nicht die Reihenfolge. ⚠️ Die Port-Prüfung ersetzt die Frage nicht: sie zeigt aktive
-CDP-Treiber, aber nicht, wer ein Fenster offen hält oder auf den Port wartet.
-
-Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt das Rezept unten.
-
-1. **Obsidian mit Debug-Port** — der eine Handgriff, der Handarbeit bleibt (Neustart nötig):
+1. **Zweitinstanz mit eigenem Profil und eigenem Port** — den Port nicht aus einem Beispiel abschreiben, sondern prüfen (eine Kollision meldet sich nicht als Fehler, sondern als plausibles falsches Ergebnis):
 
    ```bash
-   osascript -e 'quit app "Obsidian"'
-   open -a Obsidian --args --remote-debugging-port=9222
+   UD=/tmp/obs-test-local-image-generator                 # Profil je Repo
+   pgrep -f "user-data-dir=$UD"                           # leer, sonst ausweichen
+   lsof -nP -iTCP:<port> -sTCP:LISTEN                     # leer
+   cp ~/Library/Application\ Support/obsidian/obsidian-*.asar "$UD"/
+   # $UD/obsidian.json: Vault ($STAGING_VAULTS_DIR/local-image-generator) und "language":"en" eintragen
+   /Applications/Obsidian.app/Contents/MacOS/Obsidian --user-data-dir="$UD" --remote-debugging-port=<port> &
+   python3 ~/.claude/hooks/obsidian-cdp-lock.py acquire --label local-image-generator \
+     --intent "GUI-Smoke" --exclusive focus --port <port> --ttl 900     # danach: … release
    ```
+
+   Vertrauensdialog und Restricted Mode des frischen Profils erledigt der Treiber selbst (`bereiteInstanzVor`). Je Messlauf ein frischer Prozess; der erste Lauf nach der Profilanlage ist ein Aufwärmlauf und zählt nicht.
 
 2. **Ein laufender A1111-kompatibler Bildserver** auf dem Endpunkt aus den Plugin-Settings
    (Draw Things, AUTOMATIC1111, Forge, SD.Next) — ein abwesender Server ist kein
@@ -84,8 +69,7 @@ Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt
      `yijing-oracle` — durchweg `shots.ts`, wo eine falsch erkannte Sprache falsch beschriftete
      README-Bilder erzeugt statt nur roter Prüfpunkte).
 
-   Übersprungene Punkte stehen in der Abschlusszeile (`… · N übersprungen (NICHT gemessen)`),
-   damit ein Teil-Lauf nicht als bestandener Smoke zitiert wird. Antwortet der Server dagegen
+   Die Bilanz hat seit 2026-10-12 vier Zustände (grün · rot · übersprungen · nichts gemessen, Soll-Liste 44 Punkte als Nenner): „übersprungen“ ist nur, was in dieser Lage nicht angefordert oder nicht anwendbar ist (`--builtin` fehlt, `--quick`, kein WebGPU). Fehlt eine Vorbedingung (Server, Mock, Zustand nicht herstellbar), steht der Punkt als „nichts gemessen“ da und der Lauf endet mit Exit 1. Antwortet der Server dagegen
    **falsch** (HTTP-Fehler, kein Modellname), bleibt es ein Abbruch: das ist ein Befund.
 
 3. **Deployter Stand:**
@@ -138,10 +122,10 @@ Erst wenn nichts läuft — oder nach Absprache mit dem, der es benutzt — gilt
 Dann:
 
 ```bash
-npm run smoke:gui -- --vault <vault-name>
-npm run smoke:gui -- --vault <name> --steps 8 --timeout 1200 --keep
-npm run smoke:gui -- --vault <name> --builtin          # + 13–16, braucht npm run smoke:assets
-npm run smoke:gui -- --vault <name> --comfy http://127.0.0.1:8199   # abweichender Mock-Port
+npm run smoke:gui -- --port <port> --vault <vault-name>
+npm run smoke:gui -- --port <port> --vault <name> --steps 8 --timeout 1200 --keep
+npm run smoke:gui -- --port <port> --vault <name> --builtin          # + 13–16, braucht npm run smoke:assets
+npm run smoke:gui -- --port <port> --vault <name> --comfy http://127.0.0.1:8199   # abweichender Mock-Port
 ```
 
 `--steps` (Default 4) und die fest kleinste Größe halten den Lauf kurz: geprüft wird die

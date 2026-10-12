@@ -13,40 +13,34 @@
  * `model: unknown` in JEDER Ergebnis-Notiz landete, zeigte erst der Blick auf das Produkt.
  * Genau diese Kette prüft Punkt 3 und 8.
  *
- * ## Voraussetzung
+ * ## Voraussetzung: eine Zweitinstanz, nie die laufende Instanz
  *
- * Obsidian muss mit offenem Debug-Port laufen. ⚠️ **Zuerst pruefen, ob schon eines laeuft —
- * Obsidian ist geteilte Infrastruktur, nicht das eigene Werkzeug:**
- *
- * ```bash
- * lsof -nP -iTCP:9222 -sTCP:LISTEN
- * ```
- *
- * **Hoert der Port, wird MITGENUTZT statt neu gestartet.** Ein `quit` trifft die Instanz, an
- * der moeglicherweise eine andere Session arbeitet, und zerstoert deren Zustand (offene
- * Fenster, laufende Indizierung, Messreihe) — der eigene Lauf ist danach sauber gruen, der
- * Schaden entsteht woanders und faellt nicht auf. Anders als `scripts/shots.ts` braucht dieses
- * Rezept den frischen Start NICHT: der Treiber deployt und laedt das Plugin selbst neu.
- * Mitnutzen geht so — eigenes Fenster oeffnen, danach waehlt `--vault <name>` es aus (der
- * Vault-Name waehlt, nicht die Reihenfolge der Fenster):
+ * Obsidian ist geteilte Infrastruktur: ein `quit` trifft die Instanz, an der moeglicherweise eine
+ * andere Session arbeitet. Dieser Treiber laeuft deshalb gegen eine eigene Instanz mit eigenem
+ * Profil und eigenem Port; `--port` ist Pflicht, es gibt keinen Standardport.
  *
  * ```bash
- * open "obsidian://open?vault=local-image-generator"   # Vault muss in obsidian.json stehen
- * open "obsidian://open?path=<datei im vault>"         # sonst: registriert ihn dabei
+ * UD=/tmp/obs-test-local-image-generator                 # Profil je Repo
+ * pgrep -f "user-data-dir=$UD"                           # leer, sonst auf ein anderes Profil ausweichen
+ * lsof -nP -iTCP:<port> -sTCP:LISTEN                     # leer
+ * cp ~/Library/Application\ Support/obsidian/obsidian-*.asar "$UD"/   # aktuelle Version, Pflicht
+ * # $UD/obsidian.json: Vault ($STAGING_VAULTS_DIR/local-image-generator) und "language":"en" eintragen
+ * /Applications/Obsidian.app/Contents/MacOS/Obsidian --user-data-dir="$UD" --remote-debugging-port=<port> &
+ * python3 ~/.claude/hooks/obsidian-cdp-lock.py acquire --label local-image-generator \
+ *   --intent "GUI-Smoke" --exclusive focus --port <port> --ttl 900     # danach: … release
  * ```
  *
- * ⚠️ **NICHT der IPC-Weg**, der hier bis 2026-09-02 stand: `window.electron.ipcRenderer.send(
- * "vault-open", pfad, true)` aus dem Renderer eines FREMDEN Fensters bewirkt gemessen nichts —
- * die Fensterliste blieb unveraendert (deckt sich mit dem Dach-AGENTS-Nachtrag vom 2026-09-01;
- * dort ist auch belegt, dass ein Handeintrag in `obsidian.json` bei laufendem Obsidian nichts
- * bewirkt, weil die Datei nur beim Start gelesen wird).
+ * Vertrauensdialog und Restricted Mode eines frischen Profils erledigt der Treiber selbst
+ * (`bereiteInstanzVor`); je Messlauf ein frischer Prozess, der erste Lauf nach der Profilanlage ist
+ * ein Aufwaermlauf. Der Treiber deployt und laedt das Plugin selbst neu.
  *
- * Erst wenn NICHTS laeuft, ist der Neustart der richtige Griff:
+ * ## Bilanz
  *
- * ```bash
- * osascript -e 'quit app "Obsidian"'
- * open -a Obsidian --args --remote-debugging-port=9222
- * ```
+ * Vier Zustaende (CORE-TEST-19): gruen · rot · uebersprungen · nichts gemessen. `PUNKTE` ist der
+ * Nenner. „Uebersprungen" heisst nur: in dieser Lage nicht angefordert oder nicht anwendbar
+ * (`--builtin` fehlt, `--quick`, kein WebGPU). Fehlt eine Vorbedingung (Server, Mock, Zustand
+ * nicht herstellbar), ist der Punkt „nichts gemessen" und der Lauf endet mit Exit 1; ein Abbruch
+ * des Treibers ist Exit 2.
  *
  * ⚠️ **Gefahren wird gegen den eigenen Staging-Vault (`$STAGING_VAULTS_DIR/<repo>`), nicht
  * gegen den Produktivvault.** Dort liegt der installierte Store-Build, und `manifest.version`
@@ -58,10 +52,10 @@
  * SD.Next) auf dem Endpunkt, der in den Plugin-Settings steht — ein fehlender Server ist kein
  * Plugin-Defekt, und der Treiber behandelt ihn auch nicht so: er prüft die Erreichbarkeit
  * vorab und sagt an, was fehlt. Ein vollständiger Lauf bricht dann ab (die Punkte 5–11
- * erzeugen ein echtes Bild); `--quick` läuft weiter und überspringt die Punkte 2, 3 und 4 —
- * sie vergleichen gegen den Server oder hängen an einer bestehenden Verbindung. Übersprungene
- * Punkte stehen in der Abschlusszeile, damit ein Teil-Lauf nicht als bestandener Smoke
- * zitiert wird.
+ * erzeugen ein echtes Bild); `--quick` läuft weiter, misst die Punkte 2, 3, 4 und 18e/19 aber
+ * nicht („nichts gemessen", Exit 1) — sie vergleichen gegen den Server oder hängen an einer
+ * bestehenden Verbindung — und überspringt 5–11 per Flag. Ein Teil-Lauf steht so in der
+ * Abschlusszeile und endet nicht grün.
  *
  * Antwortet der Server dagegen FALSCH (HTTP-Fehler, kein Modellname), bleibt es ein Abbruch:
  * das ist ein Befund, keine fehlende Umgebung.
@@ -69,9 +63,9 @@
  * Dann, mit deployter Plugin-Version (`npm run deploy`):
  *
  * ```bash
- * npm run smoke:gui -- --vault <name>
- * npm run smoke:gui -- --vault <name> --port 9222 --steps 8 --keep
- * npm run smoke:gui -- --vault <name> --builtin                # + Punkte 13–16, 20–25 (eingebaute Engine)
+ * npm run smoke:gui -- --port <port> --vault <name>
+ * npm run smoke:gui -- --port <port> --vault <name> --steps 8 --keep
+ * npm run smoke:gui -- --port <port> --vault <name> --builtin                # + Punkte 13–16, 20–25 (eingebaute Engine)
  *
  * Punkt 17 (modusabhängige Regler, gerendert gemessen) läuft in JEDEM Lauf — er braucht weder
  * Server noch Assets noch Generierung, nur einen Moduswechsel und `getComputedStyle`.
@@ -80,18 +74,19 @@
  *    Plugin-Caches neu — deshalb nur gegen den lokalen Server, nie gegen das HF-Repo.)
  * ```
  *
- * ⚠️ Chromium drosselt das Rendering nicht-fokussierter Fenster: ohne `Page.bringToFront`
- * plus `osascript activate` bleibt die View leer und man debuggt ein Phantom (CORE-TEST-02).
+ * ⚠️ Chromium drosselt das Rendering nicht-fokussierter Fenster: ohne `requireVisible` bleibt die
+ * View leer und man debuggt ein Phantom (CORE-TEST-02). Nicht `osascript activate`: das holt die
+ * laufende Instanz nach vorn statt der Zweitinstanz.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 // Die CDP-Brücke liegt seit 2026-08-16 zentral im Dach (tools/obsidian-cdp/) und wird
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
-import { Cdp, attachTo, clickReal } from "../../tools/obsidian-cdp/cdp.js";
+import { Cdp, attachTo, bereiteInstanzVor, clickReal, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
+import { createBilanz, parseArgs, runDriver } from "../../tools/obsidian-cdp/bilanz.js";
 // Der Build-Guard liegt ebenfalls zentral: `requireEigenerBuild` bricht ab, wenn der Build im
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
@@ -124,27 +119,75 @@ const SMOKE_PROMPT = "gui smoke test, a single grey pebble on white paper";
 
 // --- Prüfpunkte -------------------------------------------------------------
 
-interface Check {
-  name: string;
-  passed: boolean;
-  detail: string;
-}
+/** Soll-Liste aller Pruefpunkte = der Nenner der Bilanz (CORE-TEST-19). Ein Punkt, der hier
+ *  steht und nie aufgezeichnet wird, zaehlt als „nichts gemessen" — auch einer, den eine
+ *  Vorbedingung stillschweigend ausliess; ein Name, der hier fehlt, laesst `createBilanz` werfen
+ *  (Abbruch, Exit 2). Aus einem vollstaendigen Lauf und dem Quelltext abgeleitet. */
+const PUNKTE = [
+  "1. Hub öffnet sich mit dem Generate-Panel",
+  "2. „Verbindung testen“ meldet den Modellnamen des Servers",
+  "3. Generate-Panel zeigt den echten Modellnamen (Bug 1d1c046)",
+  "4. „Generieren“ ist mit gesetztem Prompt bedienbar",
+  "5. Der Klick auf „Generieren“ startet einen sichtbaren Lauf",
+  "6. Die Statuszeile bewegt sich während des Laufs",
+  "7. Die Generierung liefert ein Bild in die Karte",
+  "8. Die Ergebnis-Notiz trägt den echten Modellnamen im Frontmatter",
+  "9. Die Ergebnis-Notiz bettet das Bild ein",
+  "10. Ein Klick in der Historie stellt Prompt UND Seed wieder her",
+  "11. „Reroll“ würfelt einen neuen Seed und startet einen Lauf",
+  "12. Die Einstellungen erscheinen in Obsidians Settings-Suche",
+  "13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand",
+  "14. Download über den Panel-Knopf endet auf „bereit“",
+  "15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo",
+  "16. Zurück auf „Server“ bringt die Regler zurück",
+  "17. Die modusabhängigen Regler sind auch GERENDERT weg — und kommen zurück",
+  "18a. Die Provider-API ist registriert und formtreu",
+  "18b. status() meldet Faehigkeiten typgerecht",
+  "18c. Ein gescheiterter Fremdlauf hinterlaesst keine Spur im Panel",
+  "18d. generate() im builtin-Modus laedt ohne Klick KEIN Byte",
+  "18e. recheck() heilt einen veralteten unreachable-Zustand",
+  "19. Ein Lauf mit Vorlage geht an /sdapi/v1/img2img",
+  "20. Modellwechsel im Settings-Tab ändert die Download-Zeile",
+  "21. Panel-Modell-Picker zeigt sich erst ab zwei geladenen Modellen",
+  "22. Die Größen-Zeile folgt dem gewählten Modell",
+  "23. Abbruch am Bestätigungsdialog lädt kein Byte",
+  "24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform",
+  "25. SDXL-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform (VAE-fp16-Wächter)",
+  "26. builtin-img2img (SD-Turbo): das Ergebnis bleibt nah an der Vorlage — str 1.0 entfernt sich",
+  "27. builtin-img2img (SDXL-Turbo): fp32-Encoder-Wächter — nah an der Vorlage, Inhalt echt",
+  "28. Eine Teil-Nachladung nennt die FEHLENDEN Bytes, nicht die Gesamtgroesse",
+  "29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1)",
+  "30. Denoise-Wert (0.6) kommt UNVERAENDERT in der Ergebnis-Notiz an",
+  "35. Modus-Wechsel zu ComfyUI blendet Negativ-Prompt/CFG richtig um (drei Modi, eigene Erwartungstabelle)",
+  "36. Ein kaputter Workflow zeigt seinen Klartext — eine gueltige Datei bringt is-ok",
+  "37. Ein echter Lauf gegen den ComfyUI-Mock liefert ein Bild",
+  "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl",
+  "39. Die comfy-Notiz traegt KEINE cfg-Zeile (der Workflow bestimmt den Wert)",
+  "40. Die grossen Formate stehen im Server-Dropdown und NICHT im builtin",
+  "41. Die Hilfe-Zeile steht als erste Zeile oben im Settings-Tab",
+  "42. Backend-Wahl bietet Image Playground im Dropdown an und blendet Negativ-Prompt/CFG/Groesse/Steps/Seed/Reroll aus",
+  "43. Settings zeigen die Kurzbefehl-Name-Zeile nur im playground-Modus",
+  "44. Fehlerpfad: leerer Kurzbefehl-Name ist ein Fehler, ein gesetzter Name ist sofort bereit",
+] as const;
 
-const results: Check[] = [];
+const bilanz = createBilanz({ punkte: PUNKTE });
 
 function record(name: string, passed: boolean, detail: string): void {
-  results.push({ name, passed, detail });
-  console.log(`${passed ? "  ✓" : "  ✗"} ${name}${detail ? ` — ${detail}` : ""}`);
+  bilanz.record(name as (typeof PUNKTE)[number], passed, detail);
+  // createBilanz gibt selbst eine Zeile aus.
 }
 
-/** Nicht gemessene Prüfpunkte — getrennt von `results`, weil sie weder grün noch rot sind.
- *  Sie stehen trotzdem in der Abschlusszeile: ein Lauf, der die Hälfte auslässt, darf sich
- *  nicht wie ein vollständiger lesen. */
-const skipped: Check[] = [];
-
+/** „In dieser Lage nicht angefordert / nicht anwendbar" — Flag abgewaehlt (`--builtin` fehlt,
+ *  `--quick`) oder das Geraet kann es nicht (kein WebGPU). Zaehlt als uebersprungen, Exit 0. */
 function skip(name: string, grund: string): void {
-  skipped.push({ name, passed: false, detail: grund });
-  console.log(`  – ${name} — übersprungen: ${grund}`);
+  bilanz.skipped(name as (typeof PUNKTE)[number], grund);
+}
+
+/** Der Gegenstand wurde nicht erreicht (Vorbedingung fehlt, Server oder Mock nicht erreichbar,
+ *  Zustand nicht herstellbar) — „nichts gemessen", Exit 1. Vorher stand das als „uebersprungen"
+ *  in einer getrennten Liste und liess den Lauf gruen enden. */
+function nichtGemessen(name: string, grund: string): void {
+  bilanz.unmeasured(name as (typeof PUNKTE)[number], grund);
 }
 
 /**
@@ -384,13 +427,13 @@ async function runPartialDownloadCheck(cdp: Cdp): Promise<void> {
   const files = filesFor(DEFAULT_BUILTIN_MODEL_ID);
   const encoder = assetsFor(DEFAULT_BUILTIN_MODEL_ID).find((f) => f.key.includes("vae_encoder"));
   if (!encoder) {
-    skip(NAME_28, `kein vae_encoder in assetsFor(${DEFAULT_BUILTIN_MODEL_ID}) — Manifest umbenannt?`);
+    nichtGemessen(NAME_28, `kein vae_encoder in assetsFor(${DEFAULT_BUILTIN_MODEL_ID}) — Manifest umbenannt?`);
     return;
   }
   const gesamtText = formatBytes(totalBytes(files));
   const fehlendText = formatBytes(encoder.bytes);
   if (gesamtText === fehlendText) {
-    skip(NAME_28, `Gesamt- und Teilgroesse formatieren gleich (${gesamtText}) — der Punkt koennte nichts unterscheiden`);
+    nichtGemessen(NAME_28, `Gesamt- und Teilgroesse formatieren gleich (${gesamtText}) — der Punkt koennte nichts unterscheiden`);
     return;
   }
 
@@ -543,13 +586,13 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         : `Status „${status13}" · Negativ-Prompt ausgeblendet: ${negHidden} · CTA „${ctaLabel}"${ctaLabel === ctaErwartet ? "" : ` (erwartet „${ctaErwartet}")`}`,
     );
     if (st?.kind !== "not-downloaded") {
-      skip("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
-      skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 13 nicht erreicht");
-      skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
-      skip(NAME_18D, "Vorbedingung 13 nicht erreicht");
-      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
-      skip(NAME_28, "Vorbedingung 13 nicht erreicht");
-      skip(NAME_30, "Vorbedingung 13 nicht erreicht");
+      nichtGemessen("14. Download über den Panel-Knopf endet auf „bereit“", "Vorbedingung 13 nicht erreicht");
+      nichtGemessen("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 13 nicht erreicht");
+      nichtGemessen("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 13 nicht erreicht");
+      nichtGemessen(NAME_18D, "Vorbedingung 13 nicht erreicht");
+      nichtGemessen("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 13 nicht erreicht");
+      nichtGemessen(NAME_28, "Vorbedingung 13 nicht erreicht");
+      nichtGemessen(NAME_30, "Vorbedingung 13 nicht erreicht");
       return;
     }
 
@@ -593,11 +636,11 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
           : `Engine-Zustand ${JSON.stringify(done14)}`,
     );
     if (done14?.kind !== "ready") {
-      skip("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 14 nicht erreicht");
-      skip("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
-      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
-      skip(NAME_28, "Vorbedingung 14 nicht erreicht");
-      skip(NAME_30, "Vorbedingung 14 nicht erreicht");
+      nichtGemessen("15. Die eingebaute Engine liefert ein Bild und eine Notiz mit model: sd-turbo", "Vorbedingung 14 nicht erreicht");
+      nichtGemessen("16. Zurück auf „Server“ bringt die Regler zurück", "Vorbedingung 14 nicht erreicht");
+      nichtGemessen("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "Vorbedingung 14 nicht erreicht");
+      nichtGemessen(NAME_28, "Vorbedingung 14 nicht erreicht");
+      nichtGemessen(NAME_30, "Vorbedingung 14 nicht erreicht");
       return;
     }
 
@@ -684,7 +727,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
           : `${stats15.width}×${stats15.height} · Luma-Stddev ${stats15.stddev.toFixed(1)} (Grenze ${CONTENT_STDDEV_MIN}) · ${stats15.distinctLuma} distinkte Luma-Stufen (Grenze ${CONTENT_LUMA_BUCKETS_MIN})`,
       );
     } else {
-      skip(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
+      nichtGemessen(NAME24, "Vorbedingung 15 nicht erreicht (kein Bild)");
     }
 
     // --- 30. Denoise-Wert kommt UNVERAENDERT in der Ergebnis-Notiz an ----------
@@ -799,7 +842,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         }
       }
     } else {
-      skip(NAME_30, "Vorbedingung 15 nicht erreicht (kein Bild)");
+      nichtGemessen(NAME_30, "Vorbedingung 15 nicht erreicht (kein Bild)");
     }
 
     // --- 28. Teil-Nachladung ---------------------------------------------------
@@ -1198,12 +1241,12 @@ async function runApiFailureCheck(cdp: Cdp, endpoint: string): Promise<void> {
     500,
   );
   if (!before) {
-    skip(NAME, "Panel zeigt schon VOR dem Fremdlauf einen Fehler — sein eigener Fund waere nicht zuordenbar");
+    nichtGemessen(NAME, "Panel zeigt schon VOR dem Fremdlauf einen Fehler — sein eigener Fund waere nicht zuordenbar");
     return;
   }
 
   if (!(await setMockFailure(endpoint, true))) {
-    skip(
+    nichtGemessen(
       NAME,
       `kein Mock unter ${endpoint} (/mock/fail antwortet nicht) — einen echten Bild-Server kann der Treiber nicht zum Scheitern bringen`,
     );
@@ -1264,7 +1307,7 @@ async function runRecheckCheck(cdp: Cdp, endpoint: string, serverErreichbar: boo
   // „bekannt rot, betrifft den A1111-Pfad" die einzige Messung dieser Aenderung ausfallen
   // liess — mit einer Begruendung, die sich richtig anfuehlt.
   if (!serverErreichbar) {
-    skip(NAME, `Bild-Server unter ${endpoint} nicht erreichbar — ohne ihn kann recheck() nichts heilen`);
+    nichtGemessen(NAME, `Bild-Server unter ${endpoint} nicht erreichbar — ohne ihn kann recheck() nichts heilen`);
     return;
   }
   const zustand = () =>
@@ -1290,7 +1333,7 @@ async function runRecheckCheck(cdp: Cdp, endpoint: string, serverErreichbar: boo
       return { reason: p.api.status().reason };
     `);
     if (stale.reason !== "unreachable") {
-      skip(NAME, `toter Endpunkt ergab reason=${JSON.stringify(stale.reason)} statt "unreachable" — Vorbedingung nicht herstellbar`);
+      nichtGemessen(NAME, `toter Endpunkt ergab reason=${JSON.stringify(stale.reason)} statt "unreachable" — Vorbedingung nicht herstellbar`);
       return;
     }
 
@@ -1431,7 +1474,7 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
   // Mock-Prozess, ein Altbestand liest sich also als „Mock laeuft", und der Punkt wird rot,
   // weil niemand antwortet (gemessen 2026-09-06, CORE-TEST-02 (g)).
   if (!serverErreichbar) {
-    skip(NAME, `Bild-Server unter ${endpoint} nicht erreichbar — der Lauf haette keinen Adressaten`);
+    nichtGemessen(NAME, `Bild-Server unter ${endpoint} nicht erreichbar — der Lauf haette keinen Adressaten`);
     return;
   }
   await cdp
@@ -1443,7 +1486,7 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
     .catch(() => undefined);
   const vorher = mockCounts();
   if (vorher === null) {
-    skip(NAME, "kein Mock-Server (Zählerdatei fehlt) — am echten Server nicht messbar");
+    nichtGemessen(NAME, "kein Mock-Server (Zählerdatei fehlt) — am echten Server nicht messbar");
     return;
   }
 
@@ -1726,7 +1769,7 @@ async function runModelPickerCheck(cdp: Cdp, assetsBase: string, generateTimeout
   // messbar (auch nicht "Toggle aus" — s. u.), der ganze Punkt wird also übersprungen, nicht
   // nur die dritte Stufe.
   if (geladen.length < 2 && !assetsUp) {
-    skip(
+    nichtGemessen(
       NAME,
       `weniger als zwei geladene Modelle (${geladen.length}) UND Asset-Mock unter ${assetsBase} nicht erreichbar (npm run smoke:assets) — der Zwei-Modell-Zustand ist ohne ihn nicht herstellbar, keine der drei Stufen ist damit ehrlich messbar`,
     );
@@ -1822,7 +1865,7 @@ async function runConfirmNoBytesCheck(cdp: Cdp, generateTimeoutMs: number): Prom
   const NAME = "23. Abbruch am Bestätigungsdialog lädt kein Byte";
   const startDatei = mockAssetCounts();
   if (startDatei === null) {
-    skip(NAME, "kein Asset-Mock (Zählerdatei fehlt) — am HF-Repo nicht messbar, ohne echten Download zu riskieren");
+    nichtGemessen(NAME, "kein Asset-Mock (Zählerdatei fehlt) — am HF-Repo nicht messbar, ohne echten Download zu riskieren");
     return;
   }
 
@@ -2515,7 +2558,7 @@ async function runComfyRealRunCheck(cdp: Cdp, comfyEndpoint: string, generateTim
     .then(async (r) => (r.status === 200 ? Buffer.from(await r.arrayBuffer()).toString("base64") : null))
     .catch(() => null);
   if (expected === null) {
-    skip(NAME, `Mock unter ${comfyEndpoint} beantwortet /view nicht — Vorbedingung nicht herstellbar`);
+    nichtGemessen(NAME, `Mock unter ${comfyEndpoint} beantwortet /view nicht — Vorbedingung nicht herstellbar`);
     return null;
   }
 
@@ -2585,8 +2628,8 @@ async function runComfyRealRunCheck(cdp: Cdp, comfyEndpoint: string, generateTim
 async function runComfyNoteChecks(cdp: Cdp, vorbedingungErreicht: boolean): Promise<void> {
   const NAME = NAME_38;
   if (!vorbedingungErreicht) {
-    skip(NAME, "Vorbedingung 37 nicht erreicht (Mock/Lauf nicht messbar)");
-    skip(NAME_39, "Vorbedingung 37 nicht erreicht (Mock/Lauf nicht messbar)");
+    nichtGemessen(NAME, "Vorbedingung 37 nicht erreicht (Mock/Lauf nicht messbar)");
+    nichtGemessen(NAME_39, "Vorbedingung 37 nicht erreicht (Mock/Lauf nicht messbar)");
     return;
   }
 
@@ -2605,7 +2648,7 @@ async function runComfyNoteChecks(cdp: Cdp, vorbedingungErreicht: boolean): Prom
     record(NAME, false, grund);
     // 39 ebenfalls melden statt weglassen: ein Punkt, der aus der Bilanz verschwindet, sieht
     // aus wie einer, der nie existierte (CORE-TEST-19).
-    skip(NAME_39, grund);
+    nichtGemessen(NAME_39, grund);
     return;
   }
 
@@ -2681,7 +2724,7 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     .then((r) => r.status === 200)
     .catch(() => false);
   if (!up) {
-    for (const n of NAMEN) skip(n, `ComfyUI-Mock unter ${comfyEndpoint} antwortet nicht (npm run smoke:comfy)`);
+    for (const n of NAMEN) nichtGemessen(n, `ComfyUI-Mock unter ${comfyEndpoint} antwortet nicht (npm run smoke:comfy)`);
     return;
   }
 
@@ -2905,15 +2948,15 @@ function manifestVersion(pfad: string): string | null {
 }
 
 async function main(): Promise<void> {
-  const argv = process.argv.slice(2);
-  const flag = (name: string): string | undefined => {
-    const index = argv.indexOf(`--${name}`);
-    return index === -1 ? undefined : argv[index + 1];
-  };
-  const port = Number(flag("port") ?? 9222);
-  const keep = argv.includes("--keep");
-  const quick = argv.includes("--quick");
-  const builtin = argv.includes("--builtin");
+  const args = parseArgs(process.argv.slice(2));
+  const flag = (name: string): string | undefined => args.value(name);
+  const port = Number(flag("port"));
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+    throw new Error("--port <1024-65535> ist Pflicht (Port deiner Zweitinstanz, vom Lock gehalten) — es gibt keinen Standardport.");
+  }
+  const keep = args.has("--keep");
+  const quick = args.has("--quick");
+  const builtin = args.has("--builtin");
   const assetsBase = flag("assets") ?? "http://127.0.0.1:7862";
   const comfyEndpoint = flag("comfy") ?? "http://127.0.0.1:8189";
   const vault = flag("vault");
@@ -2947,15 +2990,13 @@ async function main(): Promise<void> {
     // Ohne Fokus drosselt Chromium den Renderer. `Page.bringToFront` allein genuegt auf
     // macOS NICHT: es holt das Fenster innerhalb der App nach vorn, nicht die App nach
     // vorn. Man debuggt sonst ein Phantom: Zustand richtig, Anzeige nicht da.
-    await cdp.send("Page.bringToFront");
-    if (process.platform === "darwin") {
-      try {
-        execFileSync("osascript", ["-e", 'tell application "Obsidian" to activate']);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      } catch {
-        console.log("  (Hinweis: `osascript activate` schlug fehl — Fenster ggf. von Hand nach vorn holen)");
-      }
-    }
+    // `requireVisible` zielt auf das VERBUNDENE Fenster; `osascript activate` holte die laufende
+    // Instanz nach vorn statt der Zweitinstanz (gemessen von kl-w19, 2026-10-12).
+    await requireVisible(cdp);
+    // Frisches Profil: Vertrauensdialog bestaetigen, Restricted Mode aufheben, Plugin laden.
+    // Wirft nicht; ein nicht geladenes Plugin meldet der Abbruch unten mit diesem Hinweis.
+    const instanz = await bereiteInstanzVor(cdp, { pluginIds: [PLUGIN_ID], nurVault: PLUGIN_ID, sprache: "en" });
+    console.log(`Instanz: ${instanz.hinweis}`);
 
     // Der Pfad des gemessenen Vaults kommt aus der LAUFENDEN Instanz, nicht aus
     // `stagingVaultDir(...)`: ein Treiber dockt per `--vault` an ein beliebiges Fenster an, und
@@ -3009,7 +3050,7 @@ async function main(): Promise<void> {
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
       return p ? { ok: true, version: p.manifest.version } : { ok: false };
     `);
-    if (!plugin.ok) throw new Error(`Plugin ${PLUGIN_ID} ist nicht aktiv. Erst \`npm run deploy\`.`);
+    if (!plugin.ok) throw new Error(`Plugin ${PLUGIN_ID} ist nicht aktiv (${instanz.hinweis}). Erst \`npm run deploy\`.`);
     // ⚠️ `plugin.manifest.version` meldet den VAULT-START, nicht die Datei auf Platte:
     // `enablePlugin` laedt den Code neu, das Manifest NICHT (gemessen 2026-09-02 im Dach —
     // der Renderer sagte 1.3.0, waehrend `manifest.json` im selben Vault 1.4.0 trug). Der
@@ -3170,8 +3211,8 @@ async function main(): Promise<void> {
     // Punkt 2 und 3 vergleichen gegen das, was der SERVER meldet — ohne ihn haben sie
     // keinen Gegenstand. Übersprungen, nicht rot: der Prüfling ist hier nicht gefragt.
     if (expectedModel === null) {
-      skip("2. „Verbindung testen“ meldet den Modellnamen des Servers", "Bild-Server nicht erreichbar");
-      skip("3. Generate-Panel zeigt den echten Modellnamen (Bug 1d1c046)", "Bild-Server nicht erreichbar");
+      nichtGemessen("2. „Verbindung testen“ meldet den Modellnamen des Servers", "Bild-Server nicht erreichbar");
+      nichtGemessen("3. Generate-Panel zeigt den echten Modellnamen (Bug 1d1c046)", "Bild-Server nicht erreichbar");
     } else {
       // --- 2. „Verbindung testen" meldet den Modellnamen ----------------------
       // Der echte Klick im echten Settings-Tab, nicht plugin.checkServer(): geprüft wird die
@@ -3317,7 +3358,7 @@ async function main(): Promise<void> {
     // ZURECHT gesperrt — ihn dann rot zu melden, hiesse dem Plugin vorzuwerfen, dass es die
     // fehlende Umgebung korrekt abbildet. Beim ersten Lauf mit dem Guard genau so passiert.
     if (expectedModel === null) {
-      skip(
+      nichtGemessen(
         "4. „Generieren“ ist mit gesetztem Prompt bedienbar",
         "Bild-Server nicht erreichbar — ohne Verbindung ist der Knopf zurecht gesperrt",
       );
@@ -3448,7 +3489,7 @@ async function main(): Promise<void> {
             return { gesucht: vorbereitung.namen, gefunden, fehlend, negativkontrolle };
           })();
     if (searchable.skip) {
-      skip(NAME_12, searchable.skip);
+      nichtGemessen(NAME_12, searchable.skip);
     } else if (searchable.befund) {
       record(NAME_12, false, searchable.befund);
     } else {
@@ -3471,6 +3512,7 @@ async function main(): Promise<void> {
     // während einer UI-Änderung. Ein Freigabe-Smoke läuft IMMER vollständig.
     if (quick) {
       console.log("\n(--quick: Punkte 5–11 übersprungen — sie brauchen eine echte Generierung)");
+      for (const n of PUNKTE.filter((n) => /^(5|6|7|8|9|10|11)\. /.test(n))) skip(n, "--quick: keine Generierung");
     } else {
       // --- 5. Der Lauf startet sichtbar ---------------------------------------
       const readyText = t("status.ready");
@@ -3708,18 +3750,18 @@ async function main(): Promise<void> {
       NAME_26,
       NAME_27,
     ];
+    // Flag abgewaehlt = „nicht angefordert", also uebersprungen — und zwar JEDER builtin-Punkt
+    // einzeln: bis 2026-10-12 standen hier nur drei (24, 28, 18d), die anderen dreizehn
+    // (13–16, 20–23, 25–27, 29, 30) tauchten in keiner Zeile und keiner Zahl auf.
+    const BUILTIN_PUNKTE = PUNKTE.filter((n) => /^(13|14|15|16|18d|20|21|22|23|24|25|26|27|28|29|30)\. /.test(n));
     if (!builtin) {
-      console.log("\n(ohne --builtin: Punkte 13–16, 18d, 20–27 übersprungen — sie brauchen den lokalen Asset-Server)");
-      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "ohne --builtin nicht erreicht");
-      skip(NAME_28, "ohne --builtin nicht erreicht");
+      console.log("\n(ohne --builtin: Punkte 13–16, 18d, 20–30 übersprungen — sie brauchen den lokalen Asset-Server)");
       // 18d haengt am geprueften Zustand „not-downloaded", den nur Punkt 13 herstellt — ohne
       // ihn koennte der Punkt nur eine unbekannte Cache-Lage messen.
-      skip(NAME_18D, "ohne --builtin nicht erreicht (braucht den von Punkt 13 hergestellten Zustand)");
+      for (const n of BUILTIN_PUNKTE) skip(n, "ohne --builtin nicht angefordert");
     } else if (quick) {
       console.log("\n(--quick: Punkte 13–16, 18d, 20–27 übersprungen — sie brauchen Download und/oder Generierung)");
-      skip("24. SD-Turbo liefert ein Bild mit echtem Inhalt, nicht Schwarz/uniform", "--quick: keine Generierung");
-      skip(NAME_28, "--quick: keine Generierung");
-      skip(NAME_18D, "--quick: kein builtin-Zweig");
+      for (const n of BUILTIN_PUNKTE) skip(n, "--quick: keine Generierung");
     } else {
       const assetsUp = await fetch(`${assetsBase.replace(/\/+$/, "")}/sd-turbo/tokenizer/vocab.json`, { method: "HEAD", signal: AbortSignal.timeout(3000) })
         .then((r) => r.status === 200)
@@ -3737,7 +3779,7 @@ async function main(): Promise<void> {
           NAME_30,
           ...ZWEITE_STUFE,
         ])
-          skip(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);
+          nichtGemessen(n, `Asset-Server unter ${assetsBase} antwortet nicht (npm run smoke:assets)`);
       } else {
         await runBuiltinChecks(cdp, assetsBase, generateTimeoutMs);
         await runModelStageChecks(cdp, assetsBase, generateTimeoutMs);
@@ -3823,26 +3865,10 @@ async function main(): Promise<void> {
     cdp.close();
   }
 
-  const failed = results.filter((check) => !check.passed);
-  // Die Übersprungenen gehören in dieselbe Zeile wie die grünen. Sonst wird aus „3/3 grün"
-  // beim Zitieren ein bestandener Smoke, obwohl ein Drittel nie gemessen wurde.
-  const summe = `${results.length - failed.length}/${results.length} grün`;
-  console.log(`\n${summe}${skipped.length > 0 ? ` · ${skipped.length} übersprungen (NICHT gemessen)` : ""}`);
   if (herkunftsWarnung !== null) {
     console.log("⚠️  Herkunft des gemessenen Builds UNGEPRUEFT — s. Warnung oben. Der Lauf belegt den Repo-Stand nicht.");
   }
-  if (skipped.length > 0) {
-    console.log("Übersprungen:");
-    for (const check of skipped) console.log(`  – ${check.name}: ${check.detail}`);
-  }
-  if (failed.length > 0) {
-    console.log("Rot:");
-    for (const check of failed) console.log(`  - ${check.name}: ${check.detail}`);
-    process.exitCode = 1;
-  }
+  bilanz.abschluss();
 }
 
-main().catch((error: unknown) => {
-  console.error(`\nAbbruch: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
-});
+runDriver(main);
