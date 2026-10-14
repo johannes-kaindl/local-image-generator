@@ -326,6 +326,7 @@ Keine. (Bis 2026-10-14 stand hier eine `endpoint-list`-Deklaration: Das Plugin h
   nach dem **ersten 404 nicht mehr** — Draw Things kennt den Endpunkt nicht, und ~240
   vergebliche Anfragen pro Bild sind Last auf einem rechnenden Server. Nur 404 schaltet ab;
   Timeout und 5xx sind voruebergehend und pollen weiter. Nicht "vereinheitlichen".
+- **Die Gewichte des builtin-Modus liegen in der Browser-Cache-API (`caches.open("local-image-generator-assets")`), nicht im Vault — und ein Satz gilt für alle Vaults eines Obsidian-Profils** (gemessen 2026-10-14, Welle 22: Zweitinstanz mit zwei Vaults, beide Fenster `app://obsidian.md`, ein in Vault A geschriebener Cache-Eintrag war in Vault B lesbar). Ein „Modellpfad je Vault“ oder eine Ablage „über mehrere Vaults“ löst deshalb kein Platzproblem; ein sichtbarer Pfad oder eine externe Platte ginge nur über Node-`fs` und kostet die Store-Note (Behavior `medium`). Nur auf ausdrücklichen Wunsch neu aufmachen.
 - **GUI-Smoke ohne echten Bild-Server:** `node scripts/mock-a1111.mjs` stellt die drei
   Endpunkte auf Port 7861 (`/progress` → 404, zaehlt Anfragen in `.mock-a1111-counts.json`);
   Plugin-Endpunkt darauf stellen, `npm run smoke:gui` fahren. Draw Things' API-Server ist ein
