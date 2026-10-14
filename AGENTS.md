@@ -347,6 +347,8 @@ erlaubt, stillschweigend abzuweichen nicht.
   Endpunkte auf Port 7861 (`/progress` → 404, zaehlt Anfragen in `.mock-a1111-counts.json`);
   Plugin-Endpunkt darauf stellen, `npm run smoke:gui` fahren. Draw Things' API-Server ist ein
   Schalter in der App-Oberflaeche — `open -a "Draw Things"` allein oeffnet Port 7860 nicht.
+- ⚠️ **Nach einem abgebrochenen Smoke-Lauf (Ctrl-C) den Bild-Mock neu starten, bevor ein Nachlauf misst** (gemessen 2026-10-14, Welle 21): Der Mock zählt seine Anfragen in `.mock-a1111-counts.json`, und Anfragen des abgebrochenen Laufs standen noch im Zählerstand. Ein Nachlauf direkt auf demselben Mock war bei Punkt 19 rot (`txt2img-Anfragen: -2`), mit frischem Mock 29 grün. n=1.
+- **Der Treiber läuft nur in einem Vault, dessen Name mit `local-image-generator` beginnt** (Vault-Guard seit Welle 21, Selbsttest im Treiber): Er schreibt Einstellungen und legt `_lig-gui-smoke` an. Ein fremder Name (Arbeits-Vault) bricht vor dem ersten Schreibzugriff ab.
 - ⚠️ **`scripts/mock-a1111.mjs` hat seit 2026-09-02 einen FREMDEN Konsumenten.** Der Naht-Lauf
   von `epub-exporter` (`npm run smoke:e2e` dort) startet den Mock selbst und faehrt die
   Provider-API v1 ueber die Plugin-Grenze — er belegt damit, was beide Halbe-Seite-Smokes
