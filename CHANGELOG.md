@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-10-14
+
 ### Added
 
 - **Other plugins can read your style presets.** The plugin API's `status()` now carries `presets` (`{ id, label, suffix }` of the style chips under the prompt), so a plugin such as a slide editor can offer them instead of keeping a second list. A copy; the list can change between two calls. The API version stays 1.
