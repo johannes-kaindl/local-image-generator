@@ -85,8 +85,8 @@ import { join } from "node:path";
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
-import { Cdp, attachTo, bereiteInstanzVor, clickReal, entferneFakeManager, installFakeManager, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
-import { createBilanz, parseArgs, runDriver } from "../../tools/obsidian-cdp/bilanz.js";
+import { Cdp, attachTo, bereiteInstanzVor, entferneFakeManager, installFakeManager, klicke, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
+import { createBilanz, parseArgs, runDriver, type KlickModusArgs } from "../../tools/obsidian-cdp/bilanz.js";
 // Der Build-Guard liegt ebenfalls zentral: `requireEigenerBuild` bricht ab, wenn der Build im
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
@@ -170,6 +170,13 @@ const PUNKTE = [
   "44. Fehlerpfad: leerer Kurzbefehl-Name ist ein Fehler, ein gesetzter Name ist sofort bereit",
   "45. Mit Fake-Manager (Capability image) steht die Endpunkt-Sektion in den Settings, aber keine Modell-Zeile",
 ] as const;
+
+/** Klick-Modus des Laufs (`--halten <ms>`, `--klick-gegenprobe`); Default 0 ms ohne Gegenprobe (Welle 21). */
+let klickModus: KlickModusArgs = { haltenMs: 0, gegenprobe: false };
+/** Duenne Huelle ueber `klicke` der Bruecke: gibt wie `clickReal` zurueck, ob der Klick ankam (`gegenprobe` zaehlt als ja, es unterbleibt nur der Klick). */
+async function klick(cdp: Cdp, ausdruck: string): Promise<boolean> {
+  return (await klicke(cdp, ausdruck, klickModus)).ok;
+}
 
 const bilanz = createBilanz({ punkte: PUNKTE });
 
@@ -611,7 +618,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // (sd-turbo) ETABLIERT, hier nicht erneut aus data.json lesen. Siehe downloadDeadlineMs()
     // für die Herleitung.
     const downloadDeadline14 = downloadDeadlineMs(totalBytes(filesFor(DEFAULT_BUILTIN_MODEL_ID)));
-    await clickReal(cdp, `document.querySelector(".lig-empty button")`);
+    await klick(cdp, `document.querySelector(".lig-empty button")`);
     let sawProgress = false;
     const done14 = await pollUntil(
       async () => {
@@ -657,7 +664,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     const t1 = Date.now();
     // Wie Punkt 7: es zählt nur ein NEUES Bild, nicht das aus dem Reroll von Punkt 11.
     const imageBefore15 = await cdp.evaluate<string>(`const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`);
-    await clickReal(cdp, `document.querySelector(".lig-generate")`);
+    await klick(cdp, `document.querySelector(".lig-generate")`);
     let sawLoading = false;
     const image15 = await pollUntil(
       async () => {
@@ -741,7 +748,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // der Denoise-Regler sichtbar (`controls.denoising` haengt an einer gesetzten Vorlage).
     if (image15 !== null && !istFehler(image15.status)) {
       try {
-        await clickReal(cdp, `document.querySelector(".lig-init-from-result")`);
+        await klick(cdp, `document.querySelector(".lig-init-from-result")`);
         const denoiseSichtbar = await pollUntil(
           () =>
             cdp.evaluate<boolean>(`
@@ -768,7 +775,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
             `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
           );
           const t30 = Date.now();
-          await clickReal(cdp, `document.querySelector(".lig-generate")`);
+          await klick(cdp, `document.querySelector(".lig-generate")`);
           const image30 = await pollUntil(
             () =>
               cdp.evaluate<{ length: number; status: string; sig: string }>(`
@@ -826,7 +833,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         // Reihenfolge-Abhaengigkeit, vor der der Kommentar in runSdxlContentCheck warnt.
         // Aufgeraeumt wird im finally-Muster der Nachbarpunkte, nicht am Ende des Erfolgspfads:
         // ein Abbruch mittendrin hinterliesse den Zustand sonst erst recht.
-        await clickReal(cdp, `document.querySelector(".lig-init-clear")`).catch(() => undefined);
+        await klick(cdp, `document.querySelector(".lig-init-clear")`).catch(() => undefined);
         const vorlageWeg = await pollUntil(
           () =>
             cdp.evaluate<boolean>(`
@@ -2090,7 +2097,7 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
     const imageBefore = await cdp.evaluate<string>(
       `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
     );
-    await clickReal(cdp, `document.querySelector(".lig-generate")`);
+    await klick(cdp, `document.querySelector(".lig-generate")`);
     const image25 = await pollUntil(
       () =>
         cdp.evaluate<{ length: number; status: string; sig: string }>(`
@@ -2999,6 +3006,7 @@ function manifestVersion(pfad: string): string | null {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+  klickModus = args.klickModus();
   const flag = (name: string): string | undefined => args.value(name);
   const port = Number(flag("port"));
   if (!Number.isInteger(port) || port < 1024 || port > 65535) {
