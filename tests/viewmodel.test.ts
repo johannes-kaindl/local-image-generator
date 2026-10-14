@@ -375,10 +375,19 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     });
   });
 
-  it("formatBytes", () => {
+  it("formatBytes (Kit, 1000er-Einheiten): ab 100 ganz, darunter eine Stelle, unter 1 MB in KB", () => {
     expect(formatBytes(812e6)).toBe("812 MB");
     expect(formatBytes(1733e6)).toBe("1.7 GB");
-    expect(formatBytes(530e3)).toBe("1 MB");
+    expect(formatBytes(85e6)).toBe("85.0 MB");
+    expect(formatBytes(530e3)).toBe("530 KB");
+  });
+
+  it("formatBytes nimmt das Dezimalzeichen der Oberflaechensprache", () => {
+    setLang("de");
+    try {
+      expect(formatBytes(1733e6)).toBe("1,7 GB");
+      expect(formatBytes(85e6)).toBe("85,0 MB");
+    } finally { setLang("en"); }
   });
 });
 

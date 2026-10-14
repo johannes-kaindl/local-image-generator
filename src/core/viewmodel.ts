@@ -1,6 +1,7 @@
 // State → ViewModel als pure Funktion (UI-STANDARD §6). Die View rendert nur das
 // ViewModel, trifft keine Entscheidungen.
-import { t } from "../vendor/kit/i18n";
+import { getLang, t } from "../vendor/kit/i18n";
+import { formatBytes as kitFormatBytes } from "../vendor/kit/format-bytes";
 import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
 import { slotsOf, type WorkflowProblem, type WorkflowState } from "./comfy/state";
@@ -195,9 +196,9 @@ export function partialDownloadLabel(missingBytes: number | null, totalBytesOfMo
   return fehlend === formatBytes(totalBytesOfModel) ? null : fehlend;
 }
 
+/** Dateigroessen in 1000er-Einheiten (B/KB/MB/GB, eine Stelle unter 100) — die Darstellung kommt aus dem Kit; hier nur das Dezimalzeichen der Oberflaechensprache. */
 export function formatBytes(n: number): string {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)} GB`;
-  return `${Math.round(n / 1e6)} MB`;
+  return kitFormatBytes(n, { decimalSeparator: getLang() === "de" ? "," : "." });
 }
 
 /** Sekunden als "m:ss" (kein echter Fortschritt — nur ein Lebensbeweis während der

@@ -1,8 +1,7 @@
+import { localFileStamp, localIso } from "../vendor/kit/local-stamp";
 // Dateinamens-Schema (Spec §7): lig-<YYYYMMDD-HHmmss>-s<seed>.png
 export function buildImageFilename(d: Date, seed: number): string {
-  const p = (n: number, l = 2) => String(n).padStart(l, "0");
-  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  return `lig-${stamp}-s${seed}.png`;
+  return `lig-${localFileStamp(d, { compact: true, seconds: true })}-s${seed}.png`;
 }
 
 // Kollisions-Dedup für explizite Output-Ordner (Spec §7): hängt -2, -3, … vor
@@ -44,7 +43,5 @@ export function dirOf(path: string): string {
 // Lokaler ISO-8601-Zeitstempel ohne Zeitzone für das Frontmatter-Feld `created`.
 // Bewusst lokal, nicht UTC: die Notiz dokumentiert, wann JAY das Bild gemacht hat.
 export function isoStamp(d: Date): string {
-  const p = (n: number): string => String(n).padStart(2, "0");
-  const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  return `${date}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return localIso(d, { seconds: true, offset: false });
 }

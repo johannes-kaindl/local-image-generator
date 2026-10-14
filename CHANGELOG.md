@@ -12,7 +12,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- Kit pins raised again, to `obsidian-kit` 0.60.1 and `code-kit` 0.27.1. Of the skipped kit releases nothing reaches this plugin's settings, panels or notes (the new modules are not vendored here).
+- Kit pins raised again, to `obsidian-kit` 0.60.1 and `code-kit` 0.27.1. Of the skipped kit releases only the modules named in the next entries reach this plugin; settings, panels and notes are otherwise unchanged.
+- **File sizes in the download status and the empty state count in thousands, as the kit does:** below 100 they carry one decimal ("85.0 MB" instead of "85 MB"), a size under 1 MB reads in KB ("530 KB" instead of "1 MB"), and the German interface uses a decimal comma ("1,7 GB"). Gigabytes and sizes from 100 MB up look as before.
+- The image bytes of a generated picture are decoded by the kit (`dataUrlToBytes`, `base64ToBytes`) and the file-name and `created` timestamps come from the kit's local-time helpers; both give the same output as before. A broken data URL now stops with a message saying what is wrong instead of producing garbage bytes.
 - Kit pins raised to `obsidian-kit` 0.59.0 and `code-kit` 0.24.0 (from 0.56.0 and 0.23.0). Nothing in the plugin's settings, panels or generated notes changes. Of the skipped kit releases, the endpoint list (adjusted buttons per row, 0.59.0), the streaming answer area, the "Request" section and the embedding list do not exist in this plugin; the new test helpers, build step and busy guard of 0.57.0 to 0.59.0 and code-kit 0.24.0 are not used here.
 - With the LLM Endpoint Manager installed, the endpoint row in Settings is now built without the model row by the shared endpoint source itself (`modelRow: false`, obsidian-kit 0.59.0) instead of removing it from the page afterwards. The Settings page looks the same: the server chooses the model, so there is nothing to pick. The four texts only that row used are gone from the plugin.
 

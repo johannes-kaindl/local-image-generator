@@ -13,10 +13,13 @@
       "source": "code-kit",
       "from": "src/ts/pure",
       "modules": [
+        "data-url",
         "endpoint",
         "endpoint_config",
         "endpoint_diagnostics",
+        "format-bytes",
         "i18n",
+        "local-stamp",
         "model-choice",
         "model-list-cache",
         "num",

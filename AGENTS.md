@@ -101,24 +101,7 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
 
 ## UI-Abweichungen
 
-Deklaration nach `UI-STANDARD.md` §1a — von einem verbindlichen §8-Baustein abzuweichen ist
-erlaubt, stillschweigend abzuweichen nicht.
-
-- **endpoint-list** — Grund: Dieses Plugin hat gar keine Endpunkt-LISTE, sondern EIN
-  Textfeld (`settings.endpoint`, geteilt zwischen Server- und Comfy-Modus) — schlanker als
-  selbst yijing-oracles/lingotuners eigener `string[]`-Editor, der bereits als
-  `endpoint-list`-Abweichung geführt wird. Seit der Endpunkt-Manager-Anbindung (Welle 7,
-  2026-09-17, `203a074`) zeigt `tools/ui_adoption_check.py` das Repo trotzdem als
-  `[rueckstand]` — gemessen: der Treffer kommt über die UND-Indikatoren
-  (`endpoint_config` aus dem neu vendorten `../vendor/kit/endpoint_config`-Importpfad in
-  `src/core/resolve-endpoint.ts` **plus** zufällig `trash-2` aus dem Löschen-Icon der
-  History-Zeile in `src/obsidian/history-panel.ts`, unabhängig vom Endpunkt-Feld) — keine
-  echte Adoption-Lücke. Bei installiertem LLM Endpoint Manager zeigt die Endpunkt-Zeile
-  dessen Kit-Baustein `buildEndpointSourceSection` (`src/obsidian/settings-tab.ts::renderServer`)
-  statt `endpoint-list.ts`; ohne Manager bleibt das einzelne Textfeld
-  (`renderServerFallback`) der Fallback. Eine Migration auf eine echte Liste (mehrere
-  Server-Presets) ist kein offener Bruch, sondern schlicht nie Teil der Spec gewesen.
-  — gilt-solange: `src/obsidian/settings-tab.ts` enthaelt-nicht `EndpointConfig[]`
+Keine. (Bis 2026-10-14 stand hier eine `endpoint-list`-Deklaration: Das Plugin hat nur EIN Endpunkt-Textfeld, `tools/ui_adoption_check.py` zählte es aber über zwei zufällige Indikatoren als Rückstand. Seit Dach `272ebfc` misst der Check lig nicht mehr als betroffen — nachgemessen 2026-10-14, 0 Befunde, deshalb entfernt. Bei installiertem LLM Endpoint Manager zeigt die Endpunkt-Zeile dessen Kit-Baustein `buildEndpointSourceSection` (`src/obsidian/settings-tab.ts::renderServer`), ohne Manager bleibt das einzelne Textfeld `renderServerFallback`.)
 
 ## Memory + logs
 

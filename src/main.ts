@@ -46,7 +46,8 @@ import { PlaygroundBackend } from "./obsidian/playground-backend";
 import { createShortcutsBridge, type ShortcutsBridge } from "./vendor/kit-obsidian/shortcuts-bridge";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
-import { base64OfDataUrl, dataUrlToBytes, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
+import { base64OfDataUrl, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
+import { dataUrlToBytes } from "./vendor/kit/data-url";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { ImagePickerModal } from "./obsidian/image-picker";
 import { GeneratorView, VIEW_TYPE, type PanelRecipe, type ViewHost } from "./obsidian/view";
@@ -402,7 +403,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     let file: TFile;
     try {
       const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
-      file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl).buffer as ArrayBuffer);
     } catch (e) {
       new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
       return;
@@ -425,7 +426,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     let file: TFile;
     try {
       const path = await this.resolveImagePath(buildImageFilename(new Date(params.date), params.seed));
-      file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${image.base64}`));
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${image.base64}`).buffer as ArrayBuffer);
     } catch (e) {
       return { ok: false, reason: "write-failed", message: e instanceof Error ? e.message : String(e) };
     }
@@ -466,7 +467,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         normalizePath(clean === "" ? filename : `${clean}/${filename}`),
         (p) => this.app.vault.getAbstractFileByPath(p) !== null,
       );
-      const file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${base64}`));
+      const file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${base64}`).buffer as ArrayBuffer);
       return file.path;
     } catch (e) {
       return { ok: false, message: e instanceof Error ? e.message : String(e) };
@@ -1095,7 +1096,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // liefert lokale Zeit ohne Offset — new Date() parst das als lokale Zeit zurück,
       // der Round-Trip ist verlustfrei.
       const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
-      file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl));
+      file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl).buffer as ArrayBuffer);
     } catch (e) {
       new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
       return;
