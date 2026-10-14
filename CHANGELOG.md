@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Other plugins can read your style presets.** The plugin API's `status()` now carries `presets` (`{ id, label, suffix }` of the style chips under the prompt), so a plugin such as a slide editor can offer them instead of keeping a second list. A copy; the list can change between two calls. The API version stays 1.
+
 ### Changed
 
 - Kit pins raised to `obsidian-kit` 0.59.0 and `code-kit` 0.24.0 (from 0.56.0 and 0.23.0). Nothing in the plugin's settings, panels or generated notes changes. Of the skipped kit releases, the endpoint list (adjusted buttons per row, 0.59.0), the streaming answer area, the "Request" section and the embedding list do not exist in this plugin; the new test helpers, build step and busy guard of 0.57.0 to 0.59.0 and code-kit 0.24.0 are not used here.

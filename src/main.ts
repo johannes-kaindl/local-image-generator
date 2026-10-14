@@ -112,6 +112,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Closure ueber `this`, keine braucht die geladenen Settings zum Bauzeitpunkt.
     this.api = createImageGenerationApi({
       getMode: () => this.settings.engine,
+      presets: () => this.settings.presets,
       builtinModel: () => this.settings.builtinModel,
       workflowSlots: () => slotsOf(this.state.workflow),
       readiness: () => this.apiReadiness(),

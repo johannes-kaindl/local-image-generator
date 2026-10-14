@@ -146,6 +146,7 @@ const PUNKTE = [
   "18c. Ein gescheiterter Fremdlauf hinterlaesst keine Spur im Panel",
   "18d. generate() im builtin-Modus laedt ohne Klick KEIN Byte",
   "18e. recheck() heilt einen veralteten unreachable-Zustand",
+  "18f. status().presets traegt die Stil-Presets der Einstellungen als Kopie",
   "19. Ein Lauf mit Vorlage geht an /sdapi/v1/img2img",
   "20. Modellwechsel im Settings-Tab ändert die Download-Zeile",
   "21. Panel-Modell-Picker zeigt sich erst ab zwei geladenen Modellen",
@@ -1195,6 +1196,21 @@ async function runApiCheck(cdp: Cdp, endpoint: string, serverErreichbar: boolean
     "18b. status() meldet Faehigkeiten typgerecht",
     caps !== undefined && typeof caps["negativePrompt"] === "boolean" && typeof caps["maxSteps"] === "number",
     JSON.stringify(caps ?? null),
+  );
+
+  // 18f — die Stil-Presets stehen im Status, und es ist eine KOPIE: wer die Liste veraendert, veraendert die Einstellungen nicht.
+  const presets = await cdp.evaluate<{ gleich: boolean; kopie: boolean; anzahl: number }>(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    const s = p.api.status();
+    const gleich = JSON.stringify(s.presets) === JSON.stringify(p.settings.presets.map(({ id, label, suffix }) => ({ id, label, suffix })));
+    const vorher = JSON.stringify(p.settings.presets);
+    if (Array.isArray(s.presets) && s.presets[0]) s.presets[0].suffix = "VERAENDERT-DURCH-KONSUMENT";
+    return { gleich, kopie: JSON.stringify(p.settings.presets) === vorher, anzahl: Array.isArray(s.presets) ? s.presets.length : -1 };
+  `);
+  record(
+    "18f. status().presets traegt die Stil-Presets der Einstellungen als Kopie",
+    presets.gleich && presets.kopie && presets.anzahl > 0,
+    `${presets.anzahl} Preset(s), gleich den Einstellungen: ${String(presets.gleich)}, Kopie: ${String(presets.kopie)}`,
   );
 
   await runApiFailureCheck(cdp, endpoint);

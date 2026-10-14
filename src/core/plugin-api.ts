@@ -116,6 +116,9 @@ export type ApiResult =
    *  unsichtbar (`apiVersion` bleibt 1, additiv wie `recheck()` in 0.10.0). */
   | { ok: false; reason: "aborted" };
 
+/** Ein Stil-Baustein des Nutzers (`StylePreset` der Einstellungen) — `suffix` wird an den Prompt gehaengt. */
+export interface ImageStylePreset { id: string; label: string; suffix: string }
+
 export interface ApiStatus {
   apiVersion: number;
   /** Deskriptiv, keine Steuerung — ein Konsument liest `capabilities` und `ready`/`reason`,
@@ -133,6 +136,12 @@ export interface ApiStatus {
   /** Was das Backend WIRKLICH kann. Ohne dieses Feld baut ein Konsument im builtin-Modus
    *  einen CFG-Regler, der nichts tut — genau die Attrappe, die dieses Plugin bei sich
    *  selbst verboten hat (Keine-Attrappen-Linie, bewacht von Smoke-Punkt 17). */
+  /** Die Stil-Presets des Nutzers (Einstellungen → Stil-Bausteine), damit ein Konsument sie anbieten kann, statt eine zweite Liste zu pflegen.
+   *  **Zusage: die Liste ist nutzerpflegbar und darf sich zwischen zwei Aufrufen aendern** (anlegen, aendern, loeschen) — ein Konsument liest sie
+   *  bei jedem Bedarf neu und merkt sich hoechstens die `id`; eine gemerkte `id` kann inzwischen fehlen. Anders als `capabilities` beschreibt sie
+   *  nichts, was das Backend strukturell kann. Eine Kopie: der Konsument kann die Einstellungen darueber nicht veraendern. Optional im Typ, weil
+   *  aeltere Staende des Plugins das Feld nicht tragen (additiv, `apiVersion` bleibt 1 wie bei `recheck()` in 0.10.0). */
+  presets?: readonly ImageStylePreset[];
   capabilities: {
     negativePrompt: boolean;
     cfg: boolean;
@@ -189,6 +198,8 @@ export interface ImageGenerationApi extends ImageGenProviderApi {
  *  testbar ist (Muster: LocalEngineDeps). */
 export interface ApiDeps {
   getMode(): EngineChoice;
+  /** Die Stil-Presets des Nutzers (`settings.presets`). Pflicht, nicht optional: ein optionales Feld waere wieder ein stiller Default. */
+  presets(): readonly ImageStylePreset[];
   /** Welches eingebaute Modell aktiv ist (`settings.builtinModel`) — `backendCapabilities`
    *  braucht es, um zwischen SD-Turbos einer Größe und SDXL-Turbos zweien zu unterscheiden.
    *  Im Server-Modus ungenutzt (der Server waehlt selbst). */
@@ -283,6 +294,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
         engine: deps.getMode(),
         ready: r.ready && !busy,
         reason: busy ? "busy" : r.ready ? null : r.reason,
+        presets: deps.presets().map((p) => ({ id: p.id, label: p.label, suffix: p.suffix })),
         capabilities: {
           negativePrompt: caps.negativePrompt,
           cfg: caps.cfg,

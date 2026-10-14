@@ -130,6 +130,8 @@ if (api?.apiVersion === 1) {
 }
 ```
 
+`status().presets` lists the user's style presets (`{ id, label, suffix }`), so you can offer them next to your own choices instead of keeping a second list. The list belongs to the user and can change between two calls — read it when you need it and keep at most the `id`; a stored `id` may have been deleted since. It is a copy; changing it does not touch the plugin's settings. Older versions of the plugin do not carry the field.
+
 `status().capabilities` tells you what the active backend can honour. The built-in engine
 is guidance-free and fixed at 512×512, so a CFG or size control in your UI would be a prop.
 `capabilities.initImage` is `true` for the built-in engine and for a server, and `false` in

@@ -14,6 +14,7 @@ const params = {
 function deps(over: Partial<ApiDeps> = {}): ApiDeps {
   return {
     getMode: () => "builtin",
+    presets: () => [],
     builtinModel: () => "sd-turbo",
     workflowSlots: () => null,
     readiness: () => ({ ready: true }),
@@ -27,6 +28,36 @@ function deps(over: Partial<ApiDeps> = {}): ApiDeps {
     ...over,
   };
 }
+
+describe("status().presets", () => {
+  const PRESETS = [{ id: "sumi-e", label: "Sumi-e", suffix: "sumi-e painting" }, { id: "photo", label: "Photo", suffix: "photograph" }];
+
+  it("reicht die Stil-Presets des Nutzers durch (id, label, suffix)", () => {
+    expect(createImageGenerationApi(deps({ presets: () => PRESETS })).status().presets).toEqual(PRESETS);
+  });
+
+  it("liefert eine Kopie: eine Aenderung durch den Konsumenten erreicht die Einstellungen nicht", () => {
+    const settings = PRESETS.map((p) => ({ ...p }));
+    const out = createImageGenerationApi(deps({ presets: () => settings })).status().presets as { id: string; label: string; suffix: string }[];
+    out[0]!.suffix = "veraendert";
+    (out as unknown[]).pop();
+    expect(settings).toEqual(PRESETS);
+  });
+
+  it("die Liste darf sich zwischen zwei Aufrufen aendern — jeder Aufruf liest den aktuellen Stand", () => {
+    let now = PRESETS.map((p) => ({ ...p }));
+    const api = createImageGenerationApi(deps({ presets: () => now }));
+    expect(api.status().presets).toHaveLength(2);
+    now = now.slice(1);
+    expect(api.status().presets).toEqual([PRESETS[1]]);
+    now = [];
+    expect(api.status().presets).toEqual([]);
+  });
+
+  it("apiVersion bleibt 1 (additiv)", () => {
+    expect(createImageGenerationApi(deps()).status().apiVersion).toBe(1);
+  });
+});
 
 describe("status()", () => {
   it("meldet Version, Modus und die Faehigkeiten des Backends", () => {
