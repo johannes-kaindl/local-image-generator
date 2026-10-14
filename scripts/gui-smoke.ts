@@ -85,7 +85,7 @@ import { join } from "node:path";
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
-import { Cdp, attachTo, bereiteInstanzVor, entferneFakeManager, installFakeManager, klicke, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
+import { Cdp, attachTo, beimAbbruch, bereiteInstanzVor, entferneFakeManager, istAbgebrochen, installFakeManager, klicke, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
 import { createBilanz, parseArgs, runDriver, type KlickModusArgs } from "../../tools/obsidian-cdp/bilanz.js";
 // Der Build-Guard liegt ebenfalls zentral: `requireEigenerBuild` bricht ab, wenn der Build im
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
@@ -3044,6 +3044,44 @@ async function main(): Promise<void> {
   /** Gesetzt, wenn der Build-Guard die Herkunft nicht belegen konnte — s. Abschlusszeile. */
   let herkunftsWarnung: string | null = null;
 
+  // Wirt-Zustand zurückschreiben (Einstellungen, Smoke-Ordner, Einstellungsfenster): idempotent, im Abbruch ohne Warten.
+  // Im Normalweg läuft er über `schliesse()` im `finally`, nach Ctrl-C ruft ihn das Abbruch-Modul (Welle 21).
+  const zustandZurueck = async (): Promise<void> => {
+    await cdp.evaluate(`app.setting.close?.(); return true;`).catch(() => undefined);
+    if (previous !== null) {
+      await cdp
+        .evaluate(`
+          const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+          const before = ${JSON.stringify(previous)};
+          p.settings.createMode = before.createMode;
+          p.settings.outputFolder = before.outputFolder;
+          p.settings.noteFolder = before.noteFolder;
+          p.settings.history = before.history;
+          p.settings.assetBaseUrl = before.assetBaseUrl;
+          p.settings.builtinModel = before.builtinModel;
+          p.settings.showModelPicker = before.showModelPicker;
+          p.settings.playgroundShortcutName = before.playgroundShortcutName;
+          await p.saveSettings();
+          if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
+          p.refreshViews();
+          return true;
+        `)
+        .catch(() => undefined);
+    }
+    if (createdFolder && !keep) {
+      await cdp
+        .evaluate(`
+          const folder = app.vault.getAbstractFileByPath(${JSON.stringify(SMOKE_FOLDER)});
+          if (folder) await app.vault.delete(folder, true);
+          return true;
+        `)
+        .catch(() => undefined);
+    } else if (keep) {
+      console.log(`\n(--keep: ${SMOKE_FOLDER} bleibt liegen, Settings sind zurückgesetzt)`);
+    }
+  };
+  const zustand = beimAbbruch(zustandZurueck, "Plugin-Einstellungen, Smoke-Ordner und Einstellungsfenster zurücksetzen");
+
   try {
     // Ohne Fokus drosselt Chromium den Renderer. `Page.bringToFront` allein genuegt auf
     // macOS NICHT: es holt das Fenster innerhalb der App nach vorn, nicht die App nach
@@ -3891,38 +3929,8 @@ async function main(): Promise<void> {
   } finally {
     // Aufräumen darf nie am Ergebnis hängen: auch ein abgebrochener Lauf gibt den Vault
     // so zurück, wie er ihn vorgefunden hat.
-    await cdp.evaluate(`app.setting.close?.(); return true;`).catch(() => undefined);
-    if (previous !== null) {
-      await cdp
-        .evaluate(`
-          const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-          const before = ${JSON.stringify(previous)};
-          p.settings.createMode = before.createMode;
-          p.settings.outputFolder = before.outputFolder;
-          p.settings.noteFolder = before.noteFolder;
-          p.settings.history = before.history;
-          p.settings.assetBaseUrl = before.assetBaseUrl;
-          p.settings.builtinModel = before.builtinModel;
-          p.settings.showModelPicker = before.showModelPicker;
-          p.settings.playgroundShortcutName = before.playgroundShortcutName;
-          await p.saveSettings();
-          if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
-          p.refreshViews();
-          return true;
-        `)
-        .catch(() => undefined);
-    }
-    if (createdFolder && !keep) {
-      await cdp
-        .evaluate(`
-          const folder = app.vault.getAbstractFileByPath(${JSON.stringify(SMOKE_FOLDER)});
-          if (folder) await app.vault.delete(folder, true);
-          return true;
-        `)
-        .catch(() => undefined);
-    } else if (keep) {
-      console.log(`\n(--keep: ${SMOKE_FOLDER} bleibt liegen, Settings sind zurückgesetzt)`);
-    }
+    await zustand.schliesse();
+    if (istAbgebrochen()) return;
     cdp.close();
   }
 
