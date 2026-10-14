@@ -198,6 +198,12 @@ function nichtGemessen(name: string, grund: string): void {
   bilanz.unmeasured(name as (typeof PUNKTE)[number], grund);
 }
 
+/** Vault-Guard (Welle 21, Pallas-Task): der Treiber schreibt Einstellungen und legt einen Ordner an, laeuft also nur in
+ *  einem Staging-Vault dieses Repos (`local-image-generator`, `local-image-generator-shots`, …), nie im Arbeits-Vault. */
+function vaultNameErlaubt(name: string): boolean {
+  return name.startsWith(PLUGIN_ID);
+}
+
 /**
  * Meldet die Statuszeile einen Fehlschlag?
  *
@@ -3025,6 +3031,10 @@ async function main(): Promise<void> {
   /** Obergrenze pro Bild. Großzügig: ein langsamer Server ist kein Defekt. */
   const generateTimeoutMs = Number(flag("timeout") ?? 900) * 1000;
 
+  // Selbsttest des Vault-Guards: ein fremder Name MUSS abgewiesen, ein eigener angenommen werden.
+  if (vaultNameErlaubt("Pallas") || vaultNameErlaubt("ghostline") || !vaultNameErlaubt(PLUGIN_ID) || !vaultNameErlaubt(`${PLUGIN_ID}-shots`)) {
+    throw new Error("Selbsttest des Vault-Guards fehlgeschlagen: er unterscheidet eigene und fremde Vault-Namen nicht.");
+  }
   console.log(`GUI-Smoke — Obsidian auf Port ${port}`);
   // `attachTo` unterscheidet Haupt- und Einstellungen-Fenster an der Sache (nur das
   // Hauptfenster trägt einen Workspace), nicht am lokalisierten Titel.
@@ -3104,6 +3114,9 @@ async function main(): Promise<void> {
       return { name: app.vault.getName(), basePath: app.vault.adapter.basePath, configDir: app.vault.configDir };
     `);
     if (!vaultInfo) throw new Error("Obsidians `app` ist im Renderer nicht erreichbar.");
+    if (!vaultNameErlaubt(vaultInfo.name)) {
+      throw new Error(`Vault „${vaultInfo.name}“ ist kein Staging-Vault von ${PLUGIN_ID} — der Treiber schreibt Einstellungen und legt einen Ordner an und läuft nie in einem fremden Vault (Abbruch vor dem ersten Schreibzugriff).`);
+    }
     console.log(`Vault: ${vaultInfo.name}`);
 
     // Misst dieser Lauf ueberhaupt DIESEN Checkout? Die Frage, gegen die die Versionszeile
