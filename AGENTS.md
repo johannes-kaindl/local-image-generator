@@ -3,7 +3,7 @@
 Conventions for AI assistants working in this repo.
 
 > **Workspace-Standards (maintainer-lokal):** Die verbindliche Leitkonvention steht in `_docs/CONVENTIONS.md`
-> im Multi-Projekt-Workspace des Maintainers, ../../_docs relativ zu diesem Repo — nicht Teil dieses Repos,
+> im Multi-Projekt-Workspace des Maintainers, ../../workspace/_docs relativ zu diesem Repo — nicht Teil dieses Repos,
 > ignorieren falls im Klon nicht vorhanden. Modell comply-or-explain.
 
 ## What this is
@@ -711,30 +711,11 @@ Keine. (Bis 2026-10-14 stand hier eine `endpoint-list`-Deklaration: Das Plugin h
   redundant geworden und entfernt. Re-vendor gegen einen neuen Tag: `ref` in
   `tools/kit-sync.json` anheben, `node ../tools/kit-sync/kit-sync.mjs` laufen lassen.
 
-## Vertrieb: Sideloader statt Community-Store (seit 2026-09-02)
+## Vertrieb: Community-Store und Sideloader (Stand 2026-10-16)
 
-Das GitHub-Konto ist geflaggt (anonym 404), alle Plugins sind aus dem Community-Store geflogen.
-**Der Vertriebsweg ist seither der eigene:** `anysource-sideloader` installiert aus Releases
-jeder Forge, dieses Plugin steht im Katalog
-`git.jkaindl.de/jkaindl/obsidian-plugin-catalog` (`catalog.json`), und `npm run release`
-erzeugt den noetigen Forgejo-Release mit `main.js`/`manifest.json`/`styles.css`/`checksums.sha256`
-von sich aus. **Ein Release ist deshalb NICHT mehr zu blockieren, nur weil GitHub zu ist** —
-0.11.1 und 0.11.2 sind so ausgeliefert worden.
+Der Ausstieg aus GitHub und dem Community-Store vom 02. bis 24.09.2026 ist aufgehoben (Dach-AGENTS § Store-Einreichung): Das GitHub-Konto ist wieder frei, das `github`-Remote steht (`git@github.com:johannes-kaindl/local-image-generator.git`), `npm run release` läuft ohne `--no-github`, das Repo steht nicht mehr in `tools/mirror_drift_check.py::AUSNAHMEN`, das GitHub-Repo ist öffentlich und `local-image-generator` steht in `community-plugins.json` (alles gemessen 2026-10-16).
 
-**Seit 2026-09-04 ist der Ausstieg vollzogen, nicht nur beschrieben:** das `github`-Remote ist
-entfernt und `npm run release` faehrt fest mit `--no-github` (im `package.json` verdrahtet, nicht
-als Tipp-Disziplin). ⚠️ **Die Reihenfolge ist Teil der Sache:** ohne das Flag ist ein fehlendes
-`github`-Remote ein HARTER ABBRUCH von `release.mjs` — wer nur das Remote loescht, zerstoert die
-Releases. Erst das Flag, dann das Remote. Im Dach steht das Repo dafuer in
-`tools/mirror_drift_check.py::AUSNAHMEN`; ein fehlender Mirror ist hier kein Drift, sondern der
-Zielzustand. `.github/workflows/release.yml` bleibt liegen (Byte-Gleichheit bewacht
-`tools/template_drift_check.py`) — sie laeuft nur nicht mehr.
-
-⚠️ **Was weiterhin gesperrt bleibt: der Rescan im Developer Dashboard.** Ein Scan ohne
-GitHub-Release meldet „Unable to find a release with the tag" und gilt als DURCHGEFALLEN — das
-nimmt das Plugin binnen 24 h aus der Store-Suche. Der Abschnitt unten beschreibt also einen Weg,
-der derzeit nicht offen ist; er bleibt stehen, weil die gemessenen Kostensaetze weiter gelten,
-falls das Konto wieder freigegeben wird.
+GitHub bekommt Branch und Tag nur über den Dual-Push von `release.mjs`, es gibt keinen Forgejo-Push-Mirror; der Tag stößt `release.yml` an. Daneben bleibt der eigene Weg: `anysource-sideloader` installiert aus Releases jeder Forge, das Plugin steht im Katalog `obsidian-catalog` (Generator `tools/catalog/build_catalog.py` im Dach). Der Rescan im Developer Dashboard ist eine URL (`store_rescan.py`, Dach-AGENTS); öffnen muss ihn Johannes.
 
 ## Store-Scorecard (gemessen 2026-08-30, Release 0.10.0)
 
