@@ -53,10 +53,7 @@ Kindprozess), 0.5 war reiner Thin-Client** — Details unter *Historie* unten; d
   Settings-Zeile „Download source" im Bild, und wer 2,6 GB laedt, gleicht den Namen mit dem
   Plugin-Autor ab — er wurde deshalb am 2026-08-21 auf `johannes-kaindl` gezogen, damals
   identisch mit dem GitHub-Profil.
-  ⚠️ **Diese Kopplung ist seit 2026-09-03 gebrochen, und das ist in Ordnung:** `authorUrl` zeigt
-  seit 2026-09-04 auf `https://jkaindl.de`, weil das GitHub-Konto geflaggt und anonym 404 ist
-  (Zwischenstand 2026-09-03 war `git.jkaindl.de/jkaindl` — die Domain gewinnt, weil sie nicht an
-  einem Git-Host-Pfad haengt; gemessen 2026-09-04: 200).
+  ✅ **Die Kopplung gilt wieder (seit 2026-09-24, gemessen 2026-10-16):** `authorUrl` zeigt auf `https://github.com/johannes-kaindl` und damit auf denselben Account wie der HF-Namespace. Vom 03. bis 24.09.2026 zeigte sie auf `https://jkaindl.de`, weil das GitHub-Konto geflaggt war; das ist Chronik.
   **HuggingFace ist davon NICHT betroffen** — eigener Dienst, eigenes Konto; das Modell-Repo
   antwortet unveraendert (gemessen 2026-09-03: 200 auf das Repo, 307 aufs CDN). Der HF-Namespace
   bleibt deshalb, wie er ist: ein Umzug wuerde jede Bestandsinstallation ins Leere laden
