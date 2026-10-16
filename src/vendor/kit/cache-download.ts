@@ -1,4 +1,4 @@
-// vendored from code-kit@0.27.1, src/ts/web/cache-download.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.28.0, src/ts/web/cache-download.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /** Eine Datei gestreamt in die Cache API laden — speicherkonstant, abbrechbar, und mit der
  *  Zusicherung, dass nach einem Fehlschlag KEIN Teil-Eintrag im Cache zurückbleibt.
  *

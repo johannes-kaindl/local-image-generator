@@ -1,4 +1,4 @@
-// vendored from code-kit@0.27.1, src/ts/pure/format-bytes.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.28.0, src/ts/pure/format-bytes.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 // Origin: audio-interface `src/core/engine-manifest.ts:150` (`formatBytes`, base 1024, comma as a parameter),
 // local-image-generator `src/core/viewmodel.ts:198` (`formatBytes`, base 1e9/1e6, MB and GB only) and mailstone
 // `src/core/render/frontmatter.ts:32` (`humanSize`, base 1024, B/KB/MB). Welle 22, 2026-10-14.

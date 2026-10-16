@@ -1,13 +1,13 @@
 {
   "source": "code-kit",
-  "version": "0.27.1",
-  "sha": "ac89f10",
+  "version": "0.28.0",
+  "sha": "642b791",
   "vendored": "data-url.ts, endpoint.ts, endpoint_config.ts, endpoint_diagnostics.ts, format-bytes.ts, i18n.ts, local-stamp.ts, model-choice.ts, model-list-cache.ts, num.ts, reasoning.ts, sampling-profiles.ts, secrets.ts, settings.ts, settings_schema.ts, sha256.ts, think-splitter.ts, timeout.ts, cache-download.ts",
   "note": "Verbatim snapshot aus ZWEI Quellen (obsidian-kit + code-kit); welche Datei woher stammt, sagt ihr eigener Kopf. Never hand-edit. Pins in tools/kit-sync.json, re-vendor via tools/sync-kit.sh (zentrales kit-sync im Dach). version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; abweichende Einzelpins stehen dort inline (Datei (quelle@version, sha)). num.ts kommt nur als Abhaengigkeit mit: settings_schema.ts importiert clampInt daraus. kit-obsidian/ siehe dortige VENDOR.json.",
   "code_kit_version": "0.6.0",
   "code_kit_sha": "918ed85",
   "code_kit_vendored": "endpoint_config.ts, model-choice.ts",
-  "obsidian_kit_version": "0.60.1",
-  "obsidian_kit_sha": "4dfbd4e",
+  "obsidian_kit_version": "0.61.0",
+  "obsidian_kit_sha": "9afb096",
   "obsidian_kit_vendored": "frontmatter.ts, image-gen-provider.ts, endpoint-source.ts, endpoint-secret-hook.ts"
 }
