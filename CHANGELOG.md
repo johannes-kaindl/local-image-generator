@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.1] — 2026-10-16
+
 ### Changed
 
 - Vendored `obsidian-kit` 0.61.0 (was 0.60.1) and `code-kit` 0.28.0 (was 0.27.1). Nothing is visible: this plugin has no chat; the changes in these releases concern the language-model plugins (Gemma 4 thinking, Claude profile, tool-argument check), the Endpoint Manager subscription (the plugin does not subscribe to it) and the keychain adapter (not used here).
