@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Other plugins that ask this plugin whether it is ready (for example the image button in Yijing Oracle) now get the real answer right after Obsidian starts. Before, the first answer said "server unreachable" (or "not set up") while the plugin was still checking the server and reading the ComfyUI workflow, although everything was set up; it turned to "ready" a moment later. The plugin now waits for that check for up to one second when it loads. A server that does not answer holds the start back for that second at most.
+
 ## [0.19.0] — 2026-10-14
 
 ### Added

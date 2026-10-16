@@ -55,6 +55,9 @@ import { mergeSettings } from "./vendor/kit/settings";
 import { validateSettings } from "./vendor/kit/settings_schema";
 import { pickLang, setLang, t } from "./vendor/kit/i18n";
 
+/** Wie lange `onload` auf Server-Pruefung und Workflow-Lesen wartet, damit `api.status()` gleich nach dem Start den echten Stand kennt. */
+const START_PRUEFUNG_MS = 1000;
+
 export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
   private settingTab!: LigSettingTab;
@@ -264,11 +267,26 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Awaited, damit refreshEngineState() gleich danach den migrierten Stand sieht statt eine
     // Race gegen die eigene Migration zu laufen und einen 2,5-GB-Neudownload anzubieten.
     await this.modelStore.migrateLegacyKeys(assetsFor("sd-turbo"));
+    // Server-Pruefung und Workflow-Lesen laufen parallel, `onload` wartet aber kurz darauf (gedeckelt): `api.status()` ist netzfrei und
+    // liest nur den zuletzt ermittelten Zustand, und ein Konsument fragt es gleich nach dem Start. Ohne das Warten steht dort
+    // `checking` (gemeldet als `unreachable`) oder `unconfigured`, obwohl alles eingerichtet ist (Welle 23, gemessen: erste Antwort
+    // `unreachable`, nach 51 ms bereit). Ein toter Server haelt den Start hoechstens `START_PRUEFUNG_MS` auf.
+    const startPruefungen: Promise<unknown>[] = [];
     if (this.settings.engine === "builtin") void this.refreshEngineState();
     // playground hat keinen Server-Begriff — nichts zu pruefen, der Kurzbefehl-Name allein
     // entscheidet ueber die Bereitschaft (apiReadiness()/getPanelState() lesen ihn direkt).
-    else if (this.settings.engine !== "playground") void this.checkServer();
-    if (this.settings.engine === "comfy") void this.loadWorkflow();
+    else if (this.settings.engine !== "playground") startPruefungen.push(this.checkServer());
+    if (this.settings.engine === "comfy") {
+      startPruefungen.push(this.loadWorkflow());
+      // Beim Start kann der Vault noch nicht indiziert sein (`getAbstractFileByPath` liefert dann `null`): nach Layout-Ready noch einmal.
+      this.app.workspace.onLayoutReady(() => { if (this.state.workflow.kind !== "ok") void this.loadWorkflow(); });
+    }
+    if (startPruefungen.length > 0) {
+      await Promise.race([
+        Promise.allSettled(startPruefungen),
+        new Promise<void>((resolve) => { window.setTimeout(resolve, START_PRUEFUNG_MS); }),
+      ]);
+    }
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
     // Settings-Tab-Öffnung): Bestandsinstallationen können noch ~2,5 GB alte SD-Turbo-
     // Gewichte im Cache-API-Speicher haben (0.x, In-Process-Engine). Hinweis statt

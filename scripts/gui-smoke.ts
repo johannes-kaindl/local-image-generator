@@ -109,6 +109,7 @@ const NAME_29 = "29. Steps-Regler erreicht 8 (Katalog-Erweiterung Task 1)";
 const NAME_30 = "30. Denoise-Wert (0.6) kommt UNVERAENDERT in der Ergebnis-Notiz an";
 /** Namen von Punkt 38/39 — je an zwei Stellen gebraucht (Messung + die Auslass-Liste in
  *  `runComfyChecks`), aus demselben Grund wie NAME_18D. */
+const NAME_46 = "46. Nach dem Neuladen meldet status() mit eingerichtetem ComfyUI bereit, ohne dass ein Panel offen ist";
 const NAME_38 = "38. Die Notiz traegt die vom Mock EMPFANGENE Schrittzahl";
 const NAME_39 = "39. Die comfy-Notiz traegt KEINE cfg-Zeile (der Workflow bestimmt den Wert)";
 const NAME_40 = "40. Die grossen Formate stehen im Server-Dropdown und NICHT im builtin";
@@ -170,6 +171,7 @@ const PUNKTE = [
   "43. Settings zeigen die Kurzbefehl-Name-Zeile nur im playground-Modus",
   "44. Fehlerpfad: leerer Kurzbefehl-Name ist ein Fehler, ein gesetzter Name ist sofort bereit",
   "45. Mit Fake-Manager (Capability image) steht die Endpunkt-Sektion in den Settings, aber keine Modell-Zeile",
+  "46. Nach dem Neuladen meldet status() mit eingerichtetem ComfyUI bereit, ohne dass ein Panel offen ist",
 ] as const;
 
 /** Klick-Modus des Laufs (`--halten <ms>`, `--klick-gegenprobe`); Default 0 ms ohne Gegenprobe (Welle 21). */
@@ -2749,6 +2751,7 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     "37. Ein echter Lauf gegen den ComfyUI-Mock liefert ein Bild",
     NAME_38,
     NAME_39,
+    NAME_46,
   ];
   const up = await fetch(`${comfyEndpoint.replace(/\/+$/, "")}/system_stats`, { signal: AbortSignal.timeout(3000) })
     .then((r) => r.status === 200)
@@ -2788,6 +2791,7 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     await runComfyWorkflowStatusCheck(cdp, brokenPath, validPath);
     const base64 = await runComfyRealRunCheck(cdp, comfyEndpoint, generateTimeoutMs);
     await runComfyNoteChecks(cdp, base64 !== null);
+    await runComfyReadinessCheck(cdp);
   } finally {
     await cdp
       .evaluate(`
@@ -2802,6 +2806,48 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
         return true;
       `)
       .catch(() => undefined);
+  }
+}
+
+/**
+ * Punkt 46 (Task „readiness not-configured bis loadWorkflow läuft“, Welle 23): Ein Konsument (yijing-oracle) fragt `api.status()`
+ * gleich nach dem Start und ohne Oberfläche. Steht `engine: "comfy"`, ein erreichbarer Endpunkt und ein vorhandener Workflow-Pfad in
+ * den Einstellungen, muss er „bereit“ lesen. `status()` ist netzfrei und synchron und liest `state.workflow`, das `onload` mit einem
+ * nicht abgewarteten `loadWorkflow()` füllt. Gemessen wird deshalb VOR jedem Warten: das Plugin wird neu geladen (Panels zu), die erste
+ * Antwort von `status()` zählt, danach die Zeit bis „bereit“ als Nebenbefund. Zustand (Panels) kommt im finally zurück.
+ */
+async function runComfyReadinessCheck(cdp: Cdp): Promise<void> {
+  const geoeffnet = await cdp.evaluate<number>(`return app.workspace.getLeavesOfType("local-image-generator").length;`).catch(() => 0);
+  try {
+    await cdp.evaluate(`
+      for (const l of app.workspace.getLeavesOfType("local-image-generator")) l.detach();
+      return true;
+    `);
+    const r = await cdp.evaluate<{ erste: unknown; nachMs: number | null; zustandEnde: unknown }>(`
+      const id = ${JSON.stringify(PLUGIN_ID)};
+      await app.plugins.disablePlugin(id);
+      await app.plugins.enablePlugin(id);
+      const p = app.plugins.plugins[id];
+      const erste = p.api.status();
+      const t0 = Date.now();
+      let nachMs = null;
+      for (let i = 0; i < 60; i += 1) {
+        if (p.api.status().ready === true) { nachMs = Date.now() - t0; break; }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return { erste, nachMs, zustandEnde: p.api.status() };
+    `);
+    const erstBereit = (r.erste as { ready?: boolean }).ready === true;
+    record(NAME_46, erstBereit,
+      `erste Antwort ${JSON.stringify(r.erste)}; bereit nach ${r.nachMs === null ? "nie (3 s)" : `${r.nachMs} ms`}`);
+  } finally {
+    if (geoeffnet > 0) {
+      await cdp.evaluate(`
+        const leaf = app.workspace.getRightLeaf(false);
+        if (leaf) await leaf.setViewState({ type: "local-image-generator", active: false });
+        return true;
+      `).catch(() => undefined);
+    }
   }
 }
 
