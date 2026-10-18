@@ -34,6 +34,8 @@ export interface ViewHost {
   /** Vorlage aus dem Vault waehlen (oeffnet den Bild-Picker). */
   pickInitImage(): void;
   clearInitImage(): void;
+  /** Ausschnitt der Vorlage waehlen (oeffnet das CropModal). */
+  pickInitCrop(): void;
   /** Das gerade erzeugte Bild ablegen und ALS VORLAGE setzen. Speichert bewusst zuerst:
    *  eine Vorlage ohne Vault-Pfad haette in der Ergebnis-Notiz keine benennbare Herkunft
    *  (Spec §4). Legt nur das Bild an, nie eine Notiz. */

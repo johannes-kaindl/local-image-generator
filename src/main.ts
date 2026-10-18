@@ -46,7 +46,9 @@ import { PlaygroundBackend } from "./obsidian/playground-backend";
 import { createShortcutsBridge, type ShortcutsBridge } from "./vendor/kit-obsidian/shortcuts-bridge";
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
-import { base64OfDataUrl, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
+import { base64OfDataUrl, cropImageToBase64, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
+import { CropModal } from "./obsidian/crop-modal";
+import type { Crop } from "./core/crop";
 import { dataUrlToBytes } from "./vendor/kit/data-url";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { ImagePickerModal } from "./obsidian/image-picker";
@@ -88,6 +90,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // die fruehere Intersection ist damit aufgeloest.
   private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker" | "playgroundShortcutName"> = {
     initImage: null,
+    initCrop: null,
     denoising: null,
     missingBytes: null,
     downloadedModels: [],
@@ -196,7 +199,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       },
       clearInitImage: () => {
         this.state.initImage = null;
+        this.state.initCrop = null;
         this.refreshViews();
+      },
+      pickInitCrop: () => {
+        const init = this.state.initImage;
+        if (init === null) return;
+        new CropModal(this.app, init.dataUrl, this.state.initCrop, (crop) => {
+          this.state.initCrop = crop;
+          this.refreshViews();
+        }).open();
       },
       useResultAsInitImage: () => void this.useResultAsInitImage(),
       recheckServer: () => void this.checkServer(),
@@ -215,8 +227,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         // Sorte Luege, die die Keine-Attrappen-Linie verbietet (Spec §7): der Nutzer sieht
         // die leere Vorlagen-Zeile und weiss, dass er sie neu waehlen muss.
         const quelle = entry.initImage !== null ? this.app.vault.getAbstractFileByPath(entry.initImage) : null;
-        if (quelle instanceof TFile) void this.setInitImage(quelle);
-        else this.state.initImage = null;
+        if (quelle instanceof TFile) void this.setInitImage(quelle, entry.initCrop);
+        else {
+          this.state.initImage = null;
+          this.state.initCrop = null;
+        }
         // Rezept direkt in die DOM-Felder des Generate-Panels füllen und dorthin wechseln —
         // ohne neuen globalen Zustand (die Panels halten ihre eigenen Felder).
         for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE)) {
@@ -399,12 +414,15 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *  Vorschaubild braucht sie, und der naechste Lauf schickt genau diese Bytes. Ein zweites
    *  Lesen zum Generier-Zeitpunkt koennte eine inzwischen geaenderte Datei erwischen — die
    *  Notiz naennte dann einen Pfad, dessen Inhalt nie ins Bild eingegangen ist. */
-  private async setInitImage(file: TFile): Promise<void> {
+  private async setInitImage(file: TFile, crop: Crop | null = null): Promise<void> {
     try {
       const bytes = await this.app.vault.readBinary(file);
       const ext = file.extension.toLowerCase();
       const mime = ext === "jpg" ? "image/jpeg" : `image/${ext}`;
       this.state.initImage = { path: file.path, dataUrl: `data:${mime};base64,${arrayBufferToBase64(bytes)}` };
+      // Ein Ausschnitt gehoert zu GENAU dieser Vorlage: eine neue Wahl setzt ihn zurueck,
+      // nur ein wiederhergestelltes Rezept bringt ihn mit.
+      this.state.initCrop = crop;
       this.refreshViews();
     } catch (e) {
       new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
@@ -440,7 +458,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const { created, ...rest } = image.params;
     // `initImage` (der Vault-Pfad) bleibt null: ein API-Konsument schickt Bytes, keine
     // Vault-Datei. `denoising` kommt aus dem Vertrag — die Notiz nennt die Staerke.
-    const params: GenParams = { ...rest, date: created, initImage: null };
+    const params: GenParams = { ...rest, date: created, initImage: null, initCrop: rest.initCrop };
     let file: TFile;
     try {
       const path = await this.resolveImagePath(buildImageFilename(new Date(params.date), params.seed));
@@ -971,7 +989,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       });
     }, 1000);
     try {
-      const png = await backend.generate({ ...params, initImageData, signal: opts?.signal });
+      // Server (und ComfyUI/Playground, falls sie je img2img koennen): das Plugin schneidet den
+      // gewaehlten Ausschnitt VOR dem Absenden zu — sonst entschiede der Server selbst, welchen
+      // Teil des Bildes er rechnet (Spec img2img-Steuerung §4.4). builtin schneidet beim Dekodieren.
+      const sentInit = !builtin && initImageData !== null && params.initCrop !== null
+        ? await cropImageToBase64(initImageData, params.initCrop)
+        : initImageData;
+      const png = await backend.generate({ ...params, initImageData: sentInit, signal: opts?.signal });
       phase = "done";
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
       // keine State-Mutation, kein refreshViews — nur das finally räumt den Timer ab.
@@ -1049,6 +1073,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         cfg: r.cfg,
         // REZEPT: nur die Herkunft. Die Anwesenheit des Objekts ist das img2img-Signal.
         initImage: init !== null ? { ref: init.path } : undefined,
+        initCrop: this.state.initCrop,
         denoising: r.denoising ?? undefined,
       },
       this.hardenContext(),
@@ -1067,7 +1092,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       this.settings.history = pushHistory(this.settings.history, {
         prompt: params.prompt, negativePrompt: params.negativePrompt, seed: params.seed, steps: params.steps,
         cfg: params.cfg, model: params.model, width: params.width, height: params.height, created: params.date,
-        denoising: params.denoising, initImage: params.initImage,
+        denoising: params.denoising, initImage: params.initImage, initCrop: params.initCrop,
       });
       this.refreshViews();
       void this.saveSettings();

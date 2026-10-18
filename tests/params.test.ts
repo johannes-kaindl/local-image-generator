@@ -22,7 +22,7 @@ describe("hardenParams", () => {
     expect(p).toEqual({
       prompt: "a cat", negativePrompt: "blurry", width: 768, height: 512,
       steps: 30, seed: 7, cfg: 9, model: "someModel.safetensors", date: "2026-08-22T22:15:00",
-      initImage: null, denoising: null,
+      initImage: null, initCrop: null, denoising: null,
     });
   });
 
@@ -338,5 +338,20 @@ describe("hardenParams — playground blendet Negativ-Prompt und Vorlage aus", (
     expect(p.negativePrompt).toBe("");
     expect(p.initImage).toBeNull();
     expect(p.cfg).toBeNull();
+  });
+
+  describe("initCrop (Teil C)", () => {
+    const CROP = { x: 0.1, y: 0, w: 0.5, h: 1 };
+    it("wird mit der Vorlage durchgereicht, in beiden Modi", () => {
+      expect(hardenParams({ prompt: "x", initImage: { ref: "a.png" }, initCrop: CROP }, ctx("server")).initCrop).toEqual(CROP);
+      expect(hardenParams({ prompt: "x", initImage: { ref: "a.png" }, initCrop: CROP }, ctx("builtin")).initCrop).toEqual(CROP);
+    });
+    it("faellt ohne Vorlage weg (Keine-Attrappen-Linie wie denoising)", () => {
+      expect(hardenParams({ prompt: "x", initCrop: CROP }, ctx("server")).initCrop).toBeNull();
+    });
+    it("ungueltige Werte aus einem Fremdplugin werden null, nicht ein Fehler", () => {
+      expect(hardenParams({ prompt: "x", initImage: { ref: null }, initCrop: { x: 2, y: 0, w: 1, h: 1 } }, ctx("server")).initCrop).toBeNull();
+      expect(hardenParams({ prompt: "x", initImage: { ref: null }, initCrop: "mitte" }, ctx("server")).initCrop).toBeNull();
+    });
   });
 });

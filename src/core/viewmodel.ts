@@ -6,6 +6,7 @@ import { backendCapabilities, toBackendContext, type SizeOption } from "./genera
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
 import { slotsOf, type WorkflowProblem, type WorkflowState } from "./comfy/state";
 import type { EngineChoice } from "./settings";
+import { cropEquals, type Crop } from "./crop";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -67,6 +68,10 @@ export interface GenParams {
    *  ein API-Lauf, dessen Bytes gar keine Vault-Datei haben. Ob img2img gerechnet wurde,
    *  sagt `denoising`, nicht dieses Feld. */
   initImage: string | null;
+  /** Welcher Bildbereich der Vorlage gerechnet wurde, normalisiert auf [0,1] (Spec img2img-
+   *  Steuerung §4.2, Teil C). `null` = nicht gewaehlt: builtin rechnet zentriert, der Server
+   *  entscheidet selbst. Teil des Rezepts wie `initImage`, aber ohne Bilddaten. */
+  initCrop: Crop | null;
   /** Nicht-null ⇔ es war ein img2img-Lauf. Nie ein Vorgabewert bei txt2img — das waere
    *  eine Angabe ueber etwas, das nicht stattgefunden hat. */
   denoising: number | null;
@@ -95,6 +100,9 @@ export interface PanelState {
    *  Vorschaubild UND den naechsten Lauf — die Bytes werden EINMAL gelesen, damit eine
    *  inzwischen geaenderte Datei das Rezept nicht unterlaeuft). null = txt2img. */
   initImage: { path: string; dataUrl: string } | null;
+  /** Gewaehlter Ausschnitt der Vorlage (CropModal), null = nicht gewaehlt. Gehoert zur
+   *  Vorlage: wird mit ihr gesetzt und geloescht, im Rezept verglichen. */
+  initCrop: Crop | null;
   /** Bytes, die dem GEWAEHLTEN Modell noch fehlen — `null`, solange der Cache nicht gemessen
    *  wurde (dann wird die Gesamtgroesse genannt, keine erfundene Teilzahl). Seit 0.11 ist der
    *  Unterschied fuehlbar: eine Bestandsinstallation ist `not-downloaded`, obwohl ihr nur der
@@ -241,7 +249,8 @@ function recipeUnchanged(s: PanelState): boolean {
     // dem Setzen einer Vorlage gesperrt — das Feature waere aus dem Panel heraus
     // unbenutzbar, sobald einmal ein Ergebnis dasteht.
     p.denoising === s.denoising &&
-    p.initImage === (s.initImage?.path ?? null)
+    p.initImage === (s.initImage?.path ?? null) &&
+    cropEquals(p.initCrop, s.initCrop)
   );
 }
 

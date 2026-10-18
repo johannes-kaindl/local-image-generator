@@ -43,6 +43,7 @@ export class GeneratePanel implements HubPanel<TabId> {
   private initThumbEl!: HTMLImageElement;
   private initPathEl!: HTMLElement;
   private initClearBtn!: HTMLButtonElement;
+  private initCropBtn!: HTMLButtonElement;
   private denoiseLabelEl!: HTMLElement;
   private denoiseEl!: HTMLInputElement;
   private denoiseValueEl!: HTMLElement;
@@ -105,6 +106,9 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.initPathEl = this.initRowEl.createSpan({ cls: "lig-init-path" });
     const initPickBtn = this.initRowEl.createEl("button", { text: t("generate.initImagePick") });
     initPickBtn.addEventListener("click", () => this.host.pickInitImage());
+    // Ausschnitt-Wahl (Teil C). Eigene Klasse: der GUI-Smoke oeffnet das Modal darueber.
+    this.initCropBtn = this.initRowEl.createEl("button", { text: t("generate.initCrop"), cls: "lig-init-crop" });
+    this.initCropBtn.addEventListener("click", () => this.host.pickInitCrop());
     // Eigene Klasse wie bei .lig-init-from-result: der GUI-Smoke muss die Vorlage nach einem
     // img2img-Punkt wieder WEGRAEUMEN koennen (state.initImage ueberlebt Moduswechsel per
     // Design), sonst laufen alle spaeteren Panel-Erzeugungen still als img2img weiter.
@@ -429,8 +433,9 @@ export class GeneratePanel implements HubPanel<TabId> {
     const init = state.initImage;
     this.initThumbEl.toggleClass("is-hidden", init === null);
     this.initClearBtn.toggleClass("is-hidden", init === null);
+    this.initCropBtn.toggleClass("is-hidden", init === null);
     if (init !== null) this.initThumbEl.src = init.dataUrl;
-    this.initPathEl.setText(init?.path ?? t("generate.initImageNone"));
+    this.initPathEl.setText(init === null ? t("generate.initImageNone") : state.initCrop !== null ? t("generate.initPathCrop", init.path) : init.path);
     if (this.stepsRange?.min !== vm.controls.stepsMin || this.stepsRange.max !== vm.controls.stepsMax) {
       this.stepsRange = { min: vm.controls.stepsMin, max: vm.controls.stepsMax };
       // Vor dem Setzen der Grenzen lesen — danach hat der Browser bereits geklemmt.

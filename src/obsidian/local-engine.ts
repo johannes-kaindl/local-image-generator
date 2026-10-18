@@ -2,6 +2,7 @@
 // Implementiert dasselbe ImageBackend wie der A1111Client — der Router in main.ts sieht keinen
 // Unterschied. Alles Schwere ist injiziert (Store, Session-Fabrik, Runtime-Init, GPU-Check,
 // PNG-Encoder), damit die Ladeschritte in Node testbar sind. Kein obsidian-Import nötig.
+import type { Crop } from "../core/crop";
 import { SdTurboEngine, type BuiltinEngine, type Session } from "../core/engine";
 import { SdxlTurboEngine } from "../core/engine-sdxl";
 import { RUNTIME_WASM, type BuiltinModel, type ModelPart } from "../core/model-manifest";
@@ -50,7 +51,7 @@ export interface LocalEngineDeps {
   /** Base64 (initImageData, img2img) → CHW-Float32-Pixel in Zielgroesse — DOM-Wandlung,
    *  injiziert wie encodePng, damit sie in Node per Fake testbar bleibt (echt: `decodeInitImage`
    *  aus `./png`, Canvas + createImageBitmap). Pflicht-Dep, auch wenn txt2img sie nie ruft. */
-  decodeImage: (base64: string, size: number) => Promise<Float32Array>;
+  decodeImage: (base64: string, size: number, crop: Crop | null) => Promise<Float32Array>;
   /** Timer-Port für den Session-Build-Wachhund (`SESSION_BUILD_TIMEOUT_MS`). Default
    *  `window.setTimeout`/`clearTimeout` (Store-Regel prefer-window-timers, Muster wie
    *  `StoreDeps.timer` in model-store.ts) — ein Test kann hier einen Fake einsetzen, der
@@ -113,7 +114,7 @@ export class LocalEngineBackend implements ImageBackend {
     const engine = await this.ensureLoaded();
     const steps = Math.min(this.model.steps.max, Math.max(this.model.steps.min, Math.round(req.steps)));
     const size = this.pickSize(req);
-    const init = req.initImageData !== null ? await this.deps.decodeImage(req.initImageData, size) : undefined;
+    const init = req.initImageData !== null ? await this.deps.decodeImage(req.initImageData, size, req.initCrop ?? null) : undefined;
     const res = await engine.generate(
       // `signal` gehoert VOR den Fortschritts-Callback in die Kette: hier ist der Abbruch
       // echt (die Diffusionsschleife prueft ihn zwischen zwei Schritten), anders als in den

@@ -2,6 +2,7 @@
 // yijing-oracle/src/obsidian/image-client.ts. Deckt Draw Things, A1111, Forge, SD.Next.
 // Spricht ZWEI Endpunkte: txt2img und (seit 0.8) img2img. Der Auftrag entscheidet, nicht
 // der Aufrufer — deshalb heisst die Klasse nicht mehr Txt2ImgClient.
+import type { Crop } from "./crop";
 import { normalizeEndpoint } from "../vendor/kit/endpoint";
 import type { EngineChoice } from "./settings";
 
@@ -35,6 +36,10 @@ export interface ImageRequest {
    *  `{ ...params, … }` in runGeneration still einen Pfad als Bilddaten verschickt; als
    *  Pflichtfeld mit eigenem Namen faengt das der Typecheck ab. */
   initImageData: string | null;
+  /** Gewaehlter Ausschnitt der Vorlage (normalisiert), null = nicht gewaehlt. Die eingebaute
+   *  Engine rechnet damit (`decodeImage`); fuer die HTTP-Backends schneidet der Wirt das Bild
+   *  VOR dem Auftrag zu — `initImageData` ist dort schon der Ausschnitt, der Client sieht ihn nicht. */
+  initCrop?: Crop | null;
   /** Nur bei img2img gesetzt (A1111: `denoising_strength`). */
   denoising: number | null;
   /** Abbruch durch den Aufrufer (Provider-API `signal`, seit 2026-09-06). **Was ein Backend damit tun

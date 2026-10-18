@@ -2,6 +2,7 @@
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
+import { parseCrop, type Crop } from "./crop";
 import { DEFAULT_ASSET_BASE_URL, DEFAULT_BUILTIN_MODEL_ID, type BuiltinModelId } from "./model-manifest";
 import {
   arrayOf,
@@ -48,6 +49,8 @@ export interface HistoryEntry {
   /** Vault-Pfad der Vorlage, nicht ihre Bytes — die Historie liegt in data.json. null heisst
    *  „keine benennbare Herkunft": txt2img, oder ein API-Lauf ohne Vault-Datei. */
   initImage: string | null;
+  /** Ausschnitt der Vorlage, normalisiert (Teil des Rezepts, ohne Bilddaten). null = nicht gewaehlt. */
+  initCrop: Crop | null;
 }
 
 export interface LigSettings {
@@ -157,13 +160,14 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
     .filter(
       (
         h,
-      ): h is Omit<HistoryEntry, "width" | "height" | "negativePrompt" | "cfg" | "denoising" | "initImage"> & {
+      ): h is Omit<HistoryEntry, "width" | "height" | "negativePrompt" | "cfg" | "denoising" | "initImage" | "initCrop"> & {
         width?: unknown;
         height?: unknown;
         negativePrompt?: unknown;
         cfg?: unknown;
         denoising?: unknown;
         initImage?: unknown;
+        initCrop?: unknown;
       } =>
         isPlainObject(h) &&
         typeof h["prompt"] === "string" &&
@@ -190,6 +194,8 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
       // eine Angabe ueber einen Lauf, der nie stattgefunden hat (Spec §1).
       denoising: typeof h.denoising === "number" ? h.denoising : null,
       initImage: typeof h.initImage === "string" ? h.initImage : null,
+      // Seit Teil C neu: Alt-Eintraege kannten keinen Ausschnitt (= nicht gewaehlt).
+      initCrop: parseCrop(h.initCrop),
     }));
 }
 

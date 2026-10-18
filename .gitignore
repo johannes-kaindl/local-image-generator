@@ -10,6 +10,7 @@ main.js
 
 # Zaehler des A1111-Mocks (scripts/mock-a1111.mjs)
 .mock-a1111-counts.json
+.mock-a1111-last.json
 
 # Zaehler + letzter Graph des ComfyUI-Mocks (scripts/mock-comfy.mjs)
 .mock-comfy-counts.json

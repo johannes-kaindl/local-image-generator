@@ -3,7 +3,7 @@ import { buildImageNote } from "../src/core/note";
 import type { GenParams } from "../src/core/viewmodel";
 
 const params = (over: Partial<GenParams> = {}): GenParams => ({
-  initImage: null,
+  initImage: null, initCrop: null,
   denoising: null,
   prompt: "an apple",
   seed: 199801046,
@@ -100,7 +100,7 @@ describe("buildImageNote", () => {
   it("Frontmatter enthält width/height zwischen model und created", () => {
     const note = buildImageNote(
       {
-        initImage: null,
+        initImage: null, initCrop: null,
         denoising: null,
         prompt: "a",
         seed: 1,
@@ -134,7 +134,7 @@ describe("buildImageNote — img2img", () => {
   // Ein Fremdplugin schickt Bytes ohne Vault-Datei. Dann ist der Lauf trotzdem img2img —
   // nur die Herkunft ist nicht benennbar. Die Notiz behauptet dann keine.
   it("schreibt denoising ohne init_image, wenn die Vorlage keinen Pfad hat", () => {
-    const md = buildImageNote(params({ denoising: 0.4, initImage: null }), "Bilder/neu.png");
+    const md = buildImageNote(params({ denoising: 0.4, initImage: null, initCrop: null }), "Bilder/neu.png");
     expect(md).toContain("denoising: 0.4");
     expect(md).not.toContain("init_image");
   });

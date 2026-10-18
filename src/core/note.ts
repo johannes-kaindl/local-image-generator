@@ -4,6 +4,7 @@
 // kommt aus dem vendorten Serializer.
 import { serializeFrontmatter, type FmValue } from "../vendor/kit/frontmatter";
 import type { GenParams } from "./viewmodel";
+import { formatCrop } from "./crop";
 
 const FM_ORDER = [
   "prompt",
@@ -13,6 +14,7 @@ const FM_ORDER = [
   "cfg",
   "denoising",
   "init_image",
+  "init_crop",
   "model",
   "width",
   "height",
@@ -39,6 +41,8 @@ export function buildImageNote(params: GenParams, imageLink: string): string {
     // behauptet dann keine Quelle, nennt aber sehr wohl die Aenderungsstaerke.
     ...(params.denoising !== null ? { denoising: params.denoising } : {}),
     ...(params.initImage !== null ? { init_image: `[[${params.initImage}]]` } : {}),
+    // Der gerechnete Bildbereich der Vorlage (x, y, Breite, Hoehe, relativ zum Original).
+    ...(params.initCrop !== null ? { init_crop: formatCrop(params.initCrop) } : {}),
     model: params.model,
     width: params.width,
     height: params.height,

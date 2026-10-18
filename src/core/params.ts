@@ -3,6 +3,7 @@ import type { BuiltinModelId } from "./model-manifest";
 import { isoStamp } from "./filename";
 import type { EngineChoice } from "./settings";
 import type { GenParams } from "./viewmodel";
+import { parseCrop } from "./crop";
 import type { WorkflowSlots } from "./comfy/workflow";
 import { clampInt } from "../vendor/kit/num";
 
@@ -20,6 +21,8 @@ export interface HardenInput {
    *  das Bytes ohne Vault-Datei schickt. Waere das Signal der Pfad, verlore jeder API-Lauf
    *  sein `denoising`. */
   initImage?: { ref: string | null };
+  /** Ausschnitt der Vorlage, normalisiert. Ungueltiges (aus einem Fremdplugin) wird zu `null`. */
+  initCrop?: unknown;
   denoising?: number;
 }
 
@@ -144,6 +147,8 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
     model: ctx.model,
     date: isoStamp(ctx.now),
     initImage: wanted?.ref ?? null,
+    // Ohne Vorlage kein Ausschnitt (Keine-Attrappen-Linie wie bei `denoising`).
+    initCrop: wanted === undefined ? null : parseCrop(input.initCrop),
     denoising,
   };
 }

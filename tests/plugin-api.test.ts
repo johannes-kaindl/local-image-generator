@@ -7,7 +7,7 @@ import { isImageGenProviderApi } from "../src/vendor/kit/image-gen-provider";
 
 const params = {
   prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
-  initImage: null, denoising: null,
+  initImage: null, initCrop: null, denoising: null,
   model: BUILTIN_MODELS["sd-turbo"].id, width: 512, height: 512, date: "2026-08-22T22:15:00",
 };
 
@@ -182,7 +182,7 @@ describe("generate()", () => {
         params: {
           prompt: "a cat", negativePrompt: "", seed: 7, steps: 4, cfg: 1,
           model: BUILTIN_MODELS["sd-turbo"].id, width: 512, height: 512,
-          created: "2026-08-22T22:15:00",
+          created: "2026-08-22T22:15:00", initCrop: null,
           // `denoising` gehoert zum Vertrag (null = es war kein img2img); der interne
           // Vault-PFAD `initImage` gehoert NICHT hinein — er heisst im Vertrag etwas anderes.
           denoising: null,
@@ -314,6 +314,13 @@ describe("generate() — img2img", () => {
     expect((gesehen as { initImage: unknown }).initImage).toEqual({ ref: null });
     expect((gesehen as { denoising: unknown }).denoising).toBe(0.4);
     expect(JSON.stringify(gesehen)).not.toContain("AAAA");
+  });
+
+  it("initCrop: der Ausschnitt des Aufrufers erreicht die Haertung (ohne Vorlage gibt es keinen)", async () => {
+    const seen: { initCrop?: unknown }[] = [];
+    const api = createImageGenerationApi(deps({ harden: (i) => { seen.push(i); return params; } }));
+    await api.generate({ prompt: "x", initImage: "AAAA", initCrop: { x: 0, y: 0, w: 0.5, h: 0.5 } });
+    expect(seen[0]!.initCrop).toEqual({ x: 0, y: 0, w: 0.5, h: 0.5 });
   });
 
   it("reicht die Bytes am Rezept vorbei ans Backend", async () => {

@@ -152,6 +152,26 @@ describe("LocalEngineBackend", () => {
     expect(seen[0]!.denoising).toBe(0.5);
   });
 
+  it("initCrop: der Ausschnitt geht unveraendert als dritter Parameter an decodeImage; ohne Ausschnitt ist es null", async () => {
+    const crops: unknown[] = [];
+    const deps = makeDeps([]);
+    deps.decodeImage = async (_b64, _size, crop) => {
+      crops.push(crop);
+      return new Float32Array(3 * 512 * 512);
+    };
+    const spy = vi.spyOn(SdTurboEngine.prototype, "generate").mockImplementation(async (r: GenerateRequest): Promise<GenerateResult> => (
+      { rgba: new Uint8ClampedArray(512 * 512 * 4), width: 512, height: 512, seed: r.seed }
+    ));
+    try {
+      const be = new LocalEngineBackend(deps, BUILTIN_MODELS["sd-turbo"]);
+      await be.generate({ ...req, initImageData: "QUJD", denoising: 0.5, initCrop: { x: 0.1, y: 0, w: 0.5, h: 1 } });
+      await be.generate({ ...req, initImageData: "QUJD", denoising: 0.5 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(crops).toEqual([{ x: 0.1, y: 0, w: 0.5, h: 1 }, null]);
+  });
+
   it("txt2img (initImageData: null) ruft decodeImage nicht auf", async () => {
     let calls = 0;
     const deps = makeDeps([]);

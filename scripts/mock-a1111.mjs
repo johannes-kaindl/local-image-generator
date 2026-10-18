@@ -26,6 +26,7 @@ import { writeFileSync } from "node:fs";
 const PORT = Number(process.env.MOCK_PORT ?? 7861);
 const DELAY_MS = Number(process.env.MOCK_DELAY_MS ?? 6000);
 const COUNTS_FILE = new URL("../.mock-a1111-counts.json", import.meta.url);
+const LAST_FILE = new URL("../.mock-a1111-last.json", import.meta.url);
 
 function crc32(buf) {
   let c, crc = 0xffffffff;
@@ -97,6 +98,15 @@ http.createServer((req, res) => {
         // Plugins, den ein reiner Endpunkt-Zaehler nicht sehen wuerde.
         if (img2img && !Array.isArray(parsed.init_images)) {
           return json(res, 400, { detail: "img2img without init_images" });
+        }
+        // Seit Welle 24: Groesse der empfangenen Vorlage (PNG-Kopf) in eine EIGENE Datei — nicht
+        // in die Zaehlerdatei, deren Form der fremde Konsument (epub-exporter) kennt. Punkt 48
+        // misst daran, dass der Server den vorgeschnittenen Ausschnitt bekam, nicht das Ganze.
+        if (img2img && typeof parsed.init_images[0] === "string") {
+          const head = Buffer.from(parsed.init_images[0].slice(0, 64), "base64");
+          if (head.length >= 24 && head.toString("latin1", 1, 4) === "PNG") {
+            writeFileSync(LAST_FILE, JSON.stringify({ initW: head.readUInt32BE(16), initH: head.readUInt32BE(20) }));
+          }
         }
       } catch { /* kein JSON → Default */ }
       setTimeout(() => json(res, 200, { images: [pngFor(seed)] }), DELAY_MS);

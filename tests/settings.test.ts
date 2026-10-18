@@ -66,7 +66,7 @@ describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
           negativePrompt: "blurry, low quality",
           cfg: 8,
           denoising: null,
-          initImage: null,
+          initImage: null, initCrop: null,
         },
       ],
       historyView: "grouped",
@@ -197,7 +197,7 @@ describe("Historie-Migration", () => {
       negativePrompt: "",
       cfg: 7,
       denoising: null,
-      initImage: null,
+      initImage: null, initCrop: null,
     };
     const s = validate({ history: [entry] });
     expect(s.history).toEqual([entry]);

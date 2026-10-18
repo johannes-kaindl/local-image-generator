@@ -173,6 +173,7 @@ const PUNKTE = [
   "45. Mit Fake-Manager (Capability image) steht die Endpunkt-Sektion in den Settings, aber keine Modell-Zeile",
   "46. Nach dem Neuladen meldet status() mit eingerichtetem ComfyUI bereit, ohne dass ein Panel offen ist",
   "47. ComfyUI meldet den Fortschritt per Socket — Prozentwerte steigen, der Socket gehört zur clientId des POST",
+  "48. Ausschnitt-Wahl: Rahmen ziehen und skalieren, OK — der Server bekommt nur den Ausschnitt",
 ] as const;
 
 /** Klick-Modus des Laufs (`--halten <ms>`, `--klick-gegenprobe`); Default 0 ms ohne Gegenprobe (Welle 21). */
@@ -1570,6 +1571,158 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
   if (lauf.ok && lauf.denoising !== 0.4) teile.push(`params.denoising: ${String(lauf.denoising)} (erwartet 0.4)`);
 
   record(NAME, teile.length === 0, teile.length === 0 ? `img2img +${img2img}, txt2img +${txt2img}, denoising ${String(lauf.denoising)}` : teile.join(" · "));
+}
+
+
+const NAME_48 = "48. Ausschnitt-Wahl: Rahmen ziehen und skalieren, OK — der Server bekommt nur den Ausschnitt";
+
+/** Gedrueckte Maus von `von` nach `nach` ziehen: echte CDP-Mausereignisse (vertrauenswuerdige
+ *  pointer*-Ereignisse im Renderer), in Schritten und mit Pause nach dem Druecken — ein Ziehen
+ *  ohne Haltedauer misst am Zeiger-Handling vorbei (Spec img2img-Steuerung R3). */
+async function ziehe(cdp: Cdp, von: { x: number; y: number }, nach: { x: number; y: number }): Promise<void> {
+  const common = { button: "left", clickCount: 1 } as const;
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: von.x, y: von.y, buttons: 0 });
+  await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: von.x, y: von.y, buttons: 1, ...common });
+  await new Promise((r) => setTimeout(r, 150));
+  const SCHRITTE = 8;
+  for (let i = 1; i <= SCHRITTE; i++) {
+    const x = von.x + ((nach.x - von.x) * i) / SCHRITTE;
+    const y = von.y + ((nach.y - von.y) * i) / SCHRITTE;
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, buttons: 1 });
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: nach.x, y: nach.y, buttons: 0, ...common });
+}
+
+/** Letzte vom Mock empfangene Vorlagen-Groesse (`.mock-a1111-last.json`), null ohne Datei. */
+function mockLastInit(): { initW: number; initH: number } | null {
+  const file = join(process.cwd(), ".mock-a1111-last.json");
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as { initW: number; initH: number };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Punkt 48 (Welle 24, img2img Teil C): das CropModal am laufenden Wirt, mit echtem Ziehen.
+ * Vorlage ist ein 400×200-Bild (nicht quadratisch, sonst gaebe es nichts zu waehlen). Gemessen
+ * wird an drei Stellen, jede fuer sich nicht ausreichend: (1) der Rahmen BEWEGT sich unter den
+ * gedrueckten Mausereignissen (getBoundingClientRect vorher/nachher) und skaliert an der Ecke,
+ * (2) nach OK steht ein Ausschnitt im Zustand und die Vorlagen-Zeile sagt es, (3) ein Lauf mit
+ * diesem Ausschnitt erreicht den Server als vorgeschnittenes, QUADRATISCHES Bild kleiner als das
+ * Original (der Mock liest den PNG-Kopf). Der Rahmen-Ausgangszustand ist das zentrierte
+ * Quadrat 200×200 — Verschieben nach rechts ist also moeglich, Verschieben nach links nicht.
+ */
+async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichbar: boolean, endpoint: string): Promise<void> {
+  const NAME = NAME_48;
+  if (!serverErreichbar || mockCounts() === null) {
+    nichtGemessen(NAME, `Bild-Mock unter ${endpoint} nicht erreichbar — der Lauf haette keinen Adressaten`);
+    return;
+  }
+  const quelle = `${SMOKE_FOLDER}/crop-quelle.png`;
+  try {
+    await cdp.evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== "server") await p.setEngine("server");
+      const c = document.createElement("canvas"); c.width = 400; c.height = 200;
+      const g = c.getContext("2d");
+      const grad = g.createLinearGradient(0, 0, 400, 0); grad.addColorStop(0, "#c33"); grad.addColorStop(1, "#33c");
+      g.fillStyle = grad; g.fillRect(0, 0, 400, 200);
+      const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+      const bytes = await blob.arrayBuffer();
+      const alt = app.vault.getAbstractFileByPath(${JSON.stringify(quelle)});
+      if (alt) await app.vault.modifyBinary(alt, bytes); else await app.vault.createBinary(${JSON.stringify(quelle)}, bytes);
+      await p.setInitImage(app.vault.getAbstractFileByPath(${JSON.stringify(quelle)}));
+      p.refreshViews();
+      return true;
+    `);
+    const sichtbar = await cdp.evaluate<boolean>(`
+      const b = document.querySelector(".lig-init-crop");
+      return !!b && b.getClientRects().length > 0;
+    `);
+    if (!sichtbar) {
+      nichtGemessen(NAME, "Knopf „Crop…“ (.lig-init-crop) nicht sichtbar — Panel offen und Server-Modus?");
+      return;
+    }
+    const geklickt = await klick(cdp, `document.querySelector(".lig-init-crop")`);
+    const modal = await pollUntil(
+      () => cdp.evaluate<boolean>(`const f = document.querySelector(".lig-crop-frame"); return !!f && f.getClientRects().length > 0 && document.querySelector(".lig-crop-img")?.naturalWidth > 0;`),
+      (v) => v === true, 5000, "warte auf das CropModal", 100,
+    );
+    if (!geklickt || modal !== true) {
+      nichtGemessen(NAME, `CropModal nicht erschienen (Klick angekommen: ${String(geklickt)})`);
+      return;
+    }
+    const rect = (sel: string): Promise<{ x: number; y: number; w: number; h: number }> =>
+      cdp.evaluate(`const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height };`);
+    const info = (): Promise<string> => cdp.evaluate(`return document.querySelector(".lig-crop-info")?.textContent ?? ""`);
+
+    const f0 = await rect(".lig-crop-frame");
+    const i0 = await info();
+    await ziehe(cdp, { x: f0.x + f0.w / 2, y: f0.y + f0.h / 2 }, { x: f0.x + f0.w / 2 + 60, y: f0.y + f0.h / 2 });
+    const f1 = await rect(".lig-crop-frame");
+    const h1 = await rect(".lig-crop-handle");
+    await ziehe(cdp, { x: h1.x + h1.w / 2, y: h1.y + h1.h / 2 }, { x: h1.x + h1.w / 2 - 30, y: h1.y + h1.h / 2 - 30 });
+    const f2 = await rect(".lig-crop-frame");
+    const i2 = await info();
+    const bewegt = f1.x > f0.x + 20 && Math.abs(f1.w - f0.w) < 1;
+    const skaliert = f2.w < f1.w - 10 && Math.abs(f2.w - f2.h) < 2 && Math.abs(f2.x - f1.x) < 1;
+    const ok = await klick(cdp, `document.querySelector(".lig-crop-ok")`);
+    await new Promise((r) => setTimeout(r, 300));
+
+    const zustand = await cdp.evaluate<{ crop: { x: number; y: number; w: number; h: number } | null; pfadText: string; modalOffen: boolean }>(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      return { crop: p.state.initCrop, pfadText: document.querySelector(".lig-init-path")?.textContent ?? "", modalOffen: !!document.querySelector(".lig-crop-frame") };
+    `);
+    const zustandOk = ok && !zustand.modalOffen && zustand.crop !== null && zustand.crop.x > 0.2 && /crop chosen|Ausschnitt gewählt/.test(zustand.pfadText);
+
+    let server = "kein Lauf";
+    let serverOk = false;
+    if (zustand.crop !== null) {
+      const vorher = mockLastInit();
+      await cdp.evaluate(`
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        window.__ligCropRun = { fertig: false };
+        (async () => {
+          const bytes = await app.vault.readBinary(app.vault.getAbstractFileByPath(${JSON.stringify(quelle)}));
+          let bin = ""; const u = new Uint8Array(bytes); for (let i = 0; i < u.length; i++) bin += String.fromCharCode(u[i]);
+          const r = await p.api.generate({ prompt: "smoke crop 48", initImage: btoa(bin), initCrop: p.state.initCrop, denoising: 0.4, steps: 1 });
+          window.__ligCropRun = { fertig: true, ok: r.ok, crop: r.ok ? r.image.params.initCrop : null, reason: r.ok ? null : r.reason };
+        })().catch((e) => { window.__ligCropRun = { fertig: true, ok: false, reason: String(e) }; });
+        return true;
+      `);
+      const lauf = (await pollUntil(
+        () => cdp.evaluate<{ fertig: boolean; ok?: boolean; crop?: unknown; reason?: string | null }>(`return window.__ligCropRun ?? { fertig: false };`),
+        (v) => v.fertig, generateTimeoutMs, "warte auf den Crop-Lauf", 500,
+      )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
+      await cdp.evaluate(`delete window.__ligCropRun; return true;`).catch(() => undefined);
+      const nachher = mockLastInit();
+      const quadratisch = nachher !== null && nachher.initW === nachher.initH;
+      const kleiner = nachher !== null && nachher.initW < 400;
+      const erwartet = Math.round(zustand.crop.w * 400);
+      serverOk = lauf.ok === true && nachher !== null && quadratisch && kleiner && Math.abs(nachher.initW - erwartet) <= 1 && lauf.crop !== null && lauf.crop !== undefined;
+      server = `Lauf ${lauf.ok === true ? "ok" : `fehlgeschlagen (${String(lauf.reason)})`} · Server sah ${nachher === null ? "?" : `${nachher.initW}×${nachher.initH}`} (erwartet ${erwartet}×${erwartet}, Original 400×200; vorher ${vorher === null ? "?" : `${vorher.initW}×${vorher.initH}`}) · params.initCrop ${lauf.crop ? "gesetzt" : "fehlt"}`;
+    }
+    record(
+      NAME,
+      bewegt && skaliert && zustandOk && serverOk,
+      `Rahmen ${bewegt ? "bewegt" : "NICHT bewegt"} (x ${Math.round(f0.x)}→${Math.round(f1.x)}) · ${skaliert ? "skaliert" : "NICHT skaliert"} (Breite ${Math.round(f1.w)}→${Math.round(f2.w)}, Höhe ${Math.round(f2.h)}) · ` +
+        `Info „${i0}“ → „${i2}“ · OK ${zustandOk ? "übernommen" : `NICHT übernommen (${JSON.stringify(zustand)})`} · ${server}`,
+    );
+  } finally {
+    await cdp
+      .evaluate(`
+        document.querySelectorAll(".lig-crop-frame").forEach(() => document.querySelector(".lig-crop-cancel")?.click());
+        const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+        p.state.initImage = null; p.state.initCrop = null; p.refreshViews();
+        const f = app.vault.getAbstractFileByPath(${JSON.stringify(quelle)});
+        if (f) await app.vault.delete(f);
+        return true;
+      `)
+      .catch(() => undefined);
+  }
 }
 
 // --- Zweite Modellstufe (SDXL-Turbo, Spec 0.9): Punkte 20–23 --------------------------------
@@ -4043,6 +4196,9 @@ async function main(): Promise<void> {
     // Braucht den Server-Modus (die eingebaute Engine kann kein img2img) UND einen
     // antwortenden Endpunkt — beides, nicht nur das erste.
     await runImg2ImgCheck(cdp, generateTimeoutMs, probe.reachable, endpoint);
+
+    // --- 48. Ausschnitt-Wahl der Vorlage (Welle 24, Teil C) ------------------
+    await runCropCheck(cdp, generateTimeoutMs, probe.reachable, endpoint);
 
     // --- 35–38. ComfyUI-Backend (Task 10) ------------------------------------
     // Eigener Mock (scripts/mock-comfy.mjs, `npm run smoke:comfy`), eigener Zustand — die

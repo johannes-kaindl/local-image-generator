@@ -11,7 +11,7 @@ beforeEach(() => {
 });
 
 const baseParams: GenParams = {
-  initImage: null,
+  initImage: null, initCrop: null,
   denoising: null,
   prompt: "a cat",
   negativePrompt: "",
@@ -25,7 +25,7 @@ const baseParams: GenParams = {
 };
 
 const base: PanelState = {
-  initImage: null,
+  initImage: null, initCrop: null,
   denoising: null,
   missingBytes: null,
   downloadedModels: [],
@@ -403,7 +403,7 @@ describe("Regler fuer img2img — zwei Fragen, nicht eine", () => {
   // zu aendern gibt. Ein Denoise-Regler ohne Vorlage ist dieselbe Attrappe wie ein
   // CFG-Regler im builtin-Modus — nur eine Ebene tiefer.
   it("der Denoise-Regler erscheint erst mit einer Vorlage", () => {
-    expect(buildViewModel({ ...base, mode: "server", initImage: null }).controls.denoising).toBe(false);
+    expect(buildViewModel({ ...base, mode: "server", initImage: null, initCrop: null }).controls.denoising).toBe(false);
     expect(buildViewModel({ ...base, mode: "server", initImage: vorlage }).controls.denoising).toBe(true);
   });
 
@@ -459,7 +459,7 @@ describe("generateEnabled kennt img2img", () => {
   it("das Entfernen der Vorlage zaehlt ebenfalls als neues Rezept", () => {
     const gerechnet = { ...baseParams, initImage: "Bilder/a.png", denoising: 0.4 };
     const stand: PanelState = { ...fertig, image: { dataUrl: "data:,", params: gerechnet },
-                                initImage: null, denoising: null };
+                                initImage: null, initCrop: null, denoising: null };
     expect(buildViewModel(stand).generateEnabled).toBe(true);
   });
 });

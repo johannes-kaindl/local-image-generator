@@ -70,10 +70,13 @@ In jedem Fall verlassen Prompts und Bilder deinen Rechner nie.
   dem Vault wählen — oder am gerade erzeugten Bild auf **Speichern & als Vorlage**
   klicken — und einstellen, wie weit sich das Modell davon entfernen darf. Der
   Stärke-Regler ist in beiden Modi ein stufenloser Bereich von 0 bis 1 und erscheint
-  erst, wenn wirklich eine Vorlage gesetzt ist. Der eingebaute Modus schneidet die
-  Vorlage per Center-Crop auf die quadratische Eingabegröße des Modells zu (ein
+  erst, wenn wirklich eine Vorlage gesetzt ist. Ohne Auswahl schneidet der eingebaute
+  Modus die Vorlage per Center-Crop auf die quadratische Eingabegröße des Modells zu (ein
   16:9-Bild wird beschnitten, nicht verzerrt); der Server-Modus reicht die Datei
-  unverändert weiter und der Server skaliert selbst. Mehr Schritte geben auch dem
+  unverändert weiter und der Server skaliert selbst. **Ausschnitt…** zeigt das Bild mit
+  einem quadratischen Rahmen: zum gewünschten Teil ziehen, an der Ecke skalieren. Beide
+  Modi rechnen dann genau diesen Teil (der Server bekommt das ausgeschnittene Bild), die
+  Ergebnis-Notiz hält ihn als `init_crop` fest. Mehr Schritte geben auch dem
   Denoise-Regler mehr Spielraum. Achtung: der eingestellte Wert *bedeutet* bei anderer
   Schrittzahl etwas anderes — ein bei 4 Schritten gespeichertes Rezept sieht bei 8
   Schritten anders aus.

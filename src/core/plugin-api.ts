@@ -5,6 +5,7 @@
 import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
 import type { BuiltinModelId } from "./model-manifest";
 import type { HardenInput } from "./params";
+import type { Crop } from "./crop";
 import type { GenParams } from "./viewmodel";
 import type { EngineChoice } from "./settings";
 import type { WorkflowSlots } from "./comfy/workflow";
@@ -40,6 +41,13 @@ export interface ApiRequest {
    *  txt2img. Seit 0.11 in BEIDEN Modi wirksam — `capabilities.initImage` sagt vorher, ob
    *  das aktuelle Backend es ueberhaupt anbietet. */
   initImage?: string;
+  /** Bildbereich der Vorlage, der gerechnet werden soll: `{ x, y, w, h }` normalisiert auf [0,1]
+   *  relativ zur Originalgroesse, quadratisch in Bildpunkten (`w * breite === h * hoehe`). Ohne
+   *  `initImage` oder bei ungueltigen Werten ohne Wirkung (zurueck kommt `null`). Fehlt es, gilt
+   *  das bisherige Verhalten: builtin rechnet das zentrierte Quadrat, der Server bekommt das
+   *  Bild unveraendert. **Mit** Ausschnitt schneidet das Plugin vor und schickt dem Server nur
+   *  diesen Bereich. */
+  initCrop?: Crop;
   /** Bricht den Lauf ab. Ergebnis ist dann `{ ok: false, reason: "aborted" }`.
    *
    *  ⚠️ **Was „abbrechen" heisst, haengt am Modus — und das ist eine Zusage, keine
@@ -101,6 +109,11 @@ export interface ApiParams {
    *  hat das Bild selbst geschickt, bekommt es also nicht zurueck — wohl aber die Staerke,
    *  mit der es geaendert wurde, sonst schreibt er falsche Metadaten in seine Notiz. */
   denoising: number | null;
+  /** Der gerechnete Bildbereich der Vorlage, normalisiert auf [0,1] (`ApiRequest.initCrop`).
+   *  `null`: kein Ausschnitt gewaehlt (builtin rechnet zentriert, der Server entscheidet selbst)
+   *  oder kein img2img. Additiv, `apiVersion` bleibt 1: ein Konsument, der es nicht liest,
+   *  merkt nichts. */
+  initCrop: Crop | null;
 }
 
 export interface ApiImage { base64: string; params: ApiParams }   // PNG ohne data:-Präfix
@@ -367,6 +380,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
       const params = deps.harden({
         ...req,
         initImage: req.initImage !== undefined ? { ref: null } : undefined,
+        initCrop: req.initCrop,
       });
       const out = await deps.run(params, req.onProgress, req.initImage ?? null, req.signal);
       if (!out.ok) {

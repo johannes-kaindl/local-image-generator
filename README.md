@@ -69,10 +69,12 @@ In every case, your prompts and images never leave your machine.
 - **Start from an existing image** (img2img, both engines): pick a reference image
   from your vault — or hit **Save & use as reference** on a result you just made —
   and set how far the model may move away from it. The strength slider is a continuous
-  0–1 range in both modes and only appears once a reference is actually set. Built-in
-  mode center-crops the reference to the model's square input size (a 16:9 image gets
-  cropped, not squished); server mode hands the file over unchanged and lets the server
-  scale it. More steps also give the slider more room: the entry point is interpolated,
+  0–1 range in both modes and only appears once a reference is actually set. Without
+  a choice, built-in mode center-crops the reference to the model's square input size
+  (a 16:9 image gets cropped, not squished) and server mode hands the file over unchanged
+  and lets the server scale it. **Crop…** opens the picture with a square frame: drag it
+  to the part you want, drag its corner to resize. Both modes then work on exactly that
+  part (the server gets the cut-out image), and the result note records it as `init_crop`. More steps also give the slider more room: the entry point is interpolated,
   but the *meaning* of a given denoising value shifts with the step count — a recipe
   saved at 4 steps will not look the same at 8.
   One honest caveat for the built-in **SD-Turbo** at low step counts: turning the slider up
