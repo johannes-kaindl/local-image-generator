@@ -20,9 +20,10 @@ account. Four ways to do it, chosen in the settings:
   workflow you exported in the API format — the plugin patches your prompt,
   seed, steps and size into that workflow before every run and leaves
   everything else (sampler, scheduler, LoRAs, upscalers) exactly as you built
-  it. No img2img, no progress bar (ComfyUI's own server refuses a
-  WebSocket connection from inside Obsidian, so the status line counts
-  seconds instead), no CFG slider — see the changelog for the full list of
+  it. The status line shows a percentage when your ComfyUI accepts a
+  WebSocket connection from Obsidian (ComfyUI 0.37 started with
+  `--enable-cors-header app://obsidian.md` does); otherwise it counts
+  seconds. No img2img, no CFG slider — see the changelog for the full list of
   what this mode does not do.
 - **Image Playground (mobile):** the only mode that works on your phone —
   everything else needs a desktop Obsidian with either a GPU or a reachable

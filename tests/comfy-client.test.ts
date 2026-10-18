@@ -238,4 +238,63 @@ describe("ComfyClient", () => {
     expect(body).not.toContain("denoising");
     expect(body).not.toContain("cfg");
   });
+
+  describe("Fortschritts-Socket (optional, nur der Balken)", () => {
+    /** Socket-Double: merkt sich Adresse und Reihenfolge gegenueber dem POST. */
+    function mitSocket(opts: { wirft?: boolean } = {}) {
+      const { transport, calls } = stub({ historySteps: [DONE] });
+      const ereignisse: string[] = [];
+      let onMessage: (data: string) => void = () => {};
+      let geschlossen = 0;
+      const post = transport.postJson;
+      transport.postJson = async (u, b) => { ereignisse.push("post"); return post(u, b); };
+      transport.openProgress = (url, cb) => {
+        ereignisse.push(`open ${url}`);
+        if (opts.wirft) throw new Error("Socket nicht moeglich");
+        onMessage = cb;
+        return { close: () => { geschlossen++; } };
+      };
+      return { transport, calls, ereignisse, senden: (d: string) => onMessage(d), geschlossen: () => geschlossen };
+    }
+
+    it("oeffnet den Socket VOR dem POST, mit derselben clientId, und schliesst ihn danach", async () => {
+      const m = mitSocket();
+      await new ComfyClient("http://127.0.0.1:8000", WORKFLOW, m.transport, { clientId: "CID", onProgress: () => {} }).generate(REQ);
+      expect(m.ereignisse).toEqual(["open ws://127.0.0.1:8000/ws?clientId=CID", "post"]);
+      expect(m.geschlossen()).toBe(1);
+    });
+
+    it("meldet value/max des eigenen Auftrags an onProgress, fremde nicht", async () => {
+      const m = mitSocket();
+      const got: unknown[] = [];
+      const client = new ComfyClient("http://x", WORKFLOW, m.transport, { clientId: "CID", onProgress: (p) => got.push(p) });
+      const hist = m.transport.getJson;
+      m.transport.getJson = async (u) => {
+        m.senden(JSON.stringify({ type: "progress", data: { value: 2, max: 6, prompt_id: "PID" } }));
+        m.senden(JSON.stringify({ type: "progress", data: { value: 5, max: 6, prompt_id: "FREMD" } }));
+        return hist(u);
+      };
+      await client.generate(REQ);
+      expect(got).toEqual([{ value: 2, max: 6 }]);
+    });
+
+    it("schliesst den Socket auch, wenn der Lauf scheitert", async () => {
+      const m = mitSocket();
+      m.transport.postJson = async () => ({ status: 500, json: {} });
+      await expect(new ComfyClient("http://x", WORKFLOW, m.transport, { clientId: "CID", onProgress: () => {} }).generate(REQ)).rejects.toThrow();
+      expect(m.geschlossen()).toBe(1);
+    });
+
+    it("ein Socket, der sich nicht oeffnen laesst, beendet den Lauf nicht (Fallback: Polling)", async () => {
+      const m = mitSocket({ wirft: true });
+      const png = await new ComfyClient("http://x", WORKFLOW, m.transport, { clientId: "CID", onProgress: () => {} }).generate(REQ);
+      expect(png).toBe("QkFTRTY0");
+    });
+
+    it("ohne clientId oder ohne openProgress im Transport wird kein Socket versucht", async () => {
+      const m = mitSocket();
+      await new ComfyClient("http://x", WORKFLOW, m.transport).generate(REQ);
+      expect(m.ereignisse).toEqual(["post"]);
+    });
+  });
 });

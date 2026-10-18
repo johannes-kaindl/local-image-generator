@@ -24,7 +24,7 @@ import {
 } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
 import { slotsOf, workflowStateFrom, type WorkflowState } from "./core/comfy/state";
-import { ComfyClient } from "./core/comfy/client";
+import { ComfyClient, type ComfyProgress } from "./core/comfy/client";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
   createImageGenerationApi,
@@ -683,10 +683,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *
    *  `url` kommt vom Aufrufer (resolveEndpointFor("comfy")) statt hier erneut aufgeloest
    *  zu werden — ein Lauf braucht GENAU EINE Aufloesung, nicht eine je Backend-Baustein. */
-  private makeComfyClient(url: string): ImageBackend {
+  private makeComfyClient(url: string, onProgress: (p: ComfyProgress) => void): ImageBackend {
     const w = this.state.workflow;
     if (w.kind !== "ok") throw new Error("kein brauchbarer Workflow");
-    return new ComfyClient(url, w.json, comfyTransport(), { timeoutMs: 1_800_000 });
+    // clientId + onProgress schalten den Fortschritts-Socket ein (Welle 24); er ist optional,
+    // ohne ihn zaehlt die Statuszeile Sekunden.
+    return new ComfyClient(url, w.json, comfyTransport(), {
+      timeoutMs: 1_800_000,
+      clientId: activeWindow.crypto.randomUUID(),
+      onProgress,
+    });
   }
 
   /** Ein Backend pro Lauf, wie bei den anderen drei. Timeout **120 s**: der Spike maß
@@ -876,12 +882,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Non-null bewiesen durch die Rueckkehr oben: `!builtin && !playground && endpointUrl
     // === null` ist ausgeschlossen, TypeScript kann diese Korrelation zwischen zwei
     // Variablen aber nicht verfolgen (kein direkter Typ-Guard auf `endpointUrl` allein).
+    let comfyProgress: (p: ComfyProgress) => void = () => {};
     const backend: ImageBackend = builtin
       ? this.ensureLocalEngine()
       : playground
         ? this.makePlaygroundBackend()
         : this.settings.engine === "comfy"
-          ? this.makeComfyClient(endpointUrl!)
+          ? this.makeComfyClient(endpointUrl!, (p) => comfyProgress(p))
           : new A1111Client(endpointUrl!, httpPostJson);
     const external = opts?.external === true;
     // `phase` ist die WAHRE Phase und steuert den Kontrollfluss unten (Poller/Timer); im
@@ -901,16 +908,24 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     };
     setRun({ kind: "contacting" });
     this.refreshViews();
+    // ComfyUI-Balken: der Fortschritts-Socket (ComfyClient) meldet value/max; ohne Socket
+    // bleibt pct null und die Zeile zaehlt Sekunden. Nach dem Ende des Laufs (`phase` done)
+    // und nach dem Entladen des Plugins schreibt er nichts mehr.
+    comfyProgress = (p) => {
+      if (this.unloaded || (phase !== "generating" && phase !== "contacting")) return;
+      const pct = Math.round((p.value / p.max) * 100);
+      setRun({ kind: "generating", pct, elapsedSec: elapsed });
+      onProgress?.(pct, "generating");
+      this.refreshViews();
+    };
     // Fortschritt. Server: 1-s-Polling auf /sdapi/v1/progress; liefert der Server keins (404,
     // Timeout, fremde Form), bleibt pct null und die Statuszeile zählt Sekunden. Nach dem ersten
     // 404 fragt der Poller nicht mehr (Draw Things) — der Zähler läuft trotzdem.
     // Eingebaut: die Engine meldet Phasen selbst (loading-model einmal je Sitzung, dann Schritte);
     // der Timer trägt nur den Sekundenzähler der Ladephase.
     let elapsed = 0;
-    // Kein Poller im comfy-Modus: ComfyUIs Fortschritt laeuft ueber den WebSocket, und der
-    // wird bewusst nicht uebernommen (Spec §0 — ComfyUI 0.30.0 weist Verbindungen aus dem
-    // Renderer mit 403 ab, weil Origin app://obsidian.md nicht zum Host passt). Die
-    // Statuszeile zaehlt Sekunden, derselbe Pfad wie bei Draw Things.
+    // Kein Poller im comfy-Modus: ComfyUIs Fortschritt kommt ueber den Socket (`comfyProgress`
+    // oben), nicht ueber einen HTTP-Endpunkt.
     const poller = this.settings.engine === "server"
       ? new ProgressPoller(endpointUrl!, (u) => httpGetJson(u, 1000))
       : null;

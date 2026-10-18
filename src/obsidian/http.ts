@@ -3,6 +3,7 @@
 import { requestUrl } from "obsidian";
 import { withTimeout } from "../vendor/kit/timeout";
 import { type ComfyTransport } from "../core/comfy/client";
+import { openTextSocket } from "../vendor/kit-obsidian/text-socket";
 
 /** Passt zu HttpPostJson in core/txt2img.ts. Default-Timeout 30 min: große Bilder auf
  *  langsamen Servern können Minuten dauern (Spec §3) — der Timeout ist nur die Notbremse gegen
@@ -70,5 +71,10 @@ export function comfyTransport(): ComfyTransport {
     getBase64: (url) => httpGetBase64(url),
     sleep: (ms) => new Promise((r) => window.setTimeout(r, ms)),
     now: () => Date.now(),
+    // Renderer-WebSocket aus dem Kit (`text-socket`). Gemessen (Johannes, 2026-10-17; hier 2026-10-18
+    // gegen ein echtes ComfyUI 0.37): der Handshake aus Obsidian (`Origin: app://obsidian.md`) geht mit
+    // `--enable-cors-header app://obsidian.md` durch; ComfyUI 0.30.0 wies ihn mit 403 ab. Ein
+    // Fehlschlag ist kein Fehler des Laufs: die Statuszeile faellt auf den Sekundenzaehler zurueck.
+    openProgress: openTextSocket,
   };
 }

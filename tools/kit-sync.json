@@ -80,7 +80,11 @@
         "model-picker",
         "secrets",
         "settings_walker",
-        "shortcuts-bridge"
+        "shortcuts-bridge",
+        {
+          "name": "text-socket",
+          "ref": "0.63.1"
+        }
       ],
       "rewrite": [
         [

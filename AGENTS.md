@@ -28,7 +28,7 @@ Spec im Cockpit `_SDD/2026-08-19-eingebaute-engine-zwei-backends-design.md`; Com
   Seed, Steps und Groesse wandern in die vom Workflow selbst benannten Nodes, alles andere
   (Sampler, Scheduler, CFG, LoRAs, Upscaler) bleibt in der Hand des Nutzers. Ein Workflow ohne
   setzbare Steps oder Bildmasse wird abgewiesen, nicht stillschweigend mit Luecken uebernommen
-  (Begruendung unter Gotchas). Kein img2img, kein Fortschrittsbalken, kein CFG-Regler — Details
+  (Begruendung unter Gotchas). Kein img2img, kein CFG-Regler, Fortschrittsbalken nur über den optionalen Socket (seit Welle 24) — Details
   im CHANGELOG-Eintrag 0.13.0. Herkunft: Client und Workflow-Inspektion sind aus `yijing-oracle`
   uebernommen (Vendoring-Header in `src/core/comfy/client.ts`/`workflow.ts`), nicht neu gebaut.
 
@@ -475,6 +475,7 @@ Keine. (Bis 2026-10-14 stand hier eine `endpoint-list`-Deklaration: Das Plugin h
     **Zweite eigene Abweichung seit 2026-09-06: `generate` und `waitForImage` kennen ein
     `AbortSignal`** (Provider-API `signal`). Ein Re-Sync aus `yijing-oracle` entfernt sie —
     und damit die halbe Zusage des Vertrags fuer den comfy-Modus.
+    **Dritte eigene Abweichung seit Welle 24 (2026-10-18): der Fortschritts-Socket.** `ComfyTransport.openProgress` (optional) und `ComfyClient.openProgressSocket` öffnen `/ws?clientId=…` VOR dem POST (gleiche `client_id`), `core/comfy/progress.ts` liest nur `progress`-Nachrichten des eigenen `prompt_id`, der Transport ist das Kit-Modul `text-socket` (`openTextSocket`, obsidian-kit 0.63.1, einzeln gepinnt in `tools/kit-sync.json`; Herkunft war dieses Plugin, das Bibliothek-Gate hat es ins Kit verlegt). Der Socket liefert nur den Balken, der Ergebnisweg bleibt `/history`; öffnet er sich nicht (ComfyUI 0.30.0 wies Obsidians Origin mit 403 ab), zählt die Statuszeile Sekunden wie vorher. Gemessen 2026-10-18: Der Handshake aus dem Renderer gegen ein echtes ComfyUI 0.37 öffnet, der Mock-Lauf (Smoke-Punkt 47) liefert 25/50/75/100 %. Ein Re-Sync aus `yijing-oracle` entfernt auch das.
   - **`workflow.ts`:** vier zusammenhaengende inhaltliche Aenderungen, die zusammen die
     Keine-Attrappen-Zusage fuer Steps und Groesse TRAGEN — (1) `WorkflowSlots.stepsField` ist
     nicht mehr nullable, (2) das Feld `workflowSteps` ist neu (Startwert des Reglers), (3)

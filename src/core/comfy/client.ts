@@ -2,16 +2,14 @@
 // ComfyUI-Backend: Workflow absenden, auf das Ergebnis warten, Bild holen. Pure
 // (kein obsidian-Import) — der Transport wird injiziert, wie bei ChatClient/Txt2ImgClient.
 //
-// ⚠️ IN DIESEM REPO GIBT ES DEN WEBSOCKET NICHT: `obsidian/comfy-progress.ts` existiert hier
-// nicht, und `reportProgress()` wird von niemandem gefuettert. Der Socket ist bewusst
-// weggelassen — ComfyUI 0.30.0 weist eine aus Obsidians Renderer geoeffnete Verbindung mit
-// 403 ab, weil der Origin `app://obsidian.md` nicht zum Host passt. Die Statuszeile zaehlt
-// deshalb Sekunden, wie bei Draw Things ohne `/sdapi/v1/progress`. Der folgende Absatz stammt
-// aus der Quelle (yijing-oracle) und beschreibt DEREN Aufbau; er bleibt stehen, weil er die
-// Rollenverteilung erklaert, auf die der Code hier gebaut ist — hier faellt die eine Haelfte
-// einfach weg:
+// Fortschritt (seit Welle 24, lokale Abweichung von der Quelle): der Wirt kann ueber
+// `ComfyTransport.openProgress` einen Socket auf `/ws?clientId=…` anbieten (`obsidian/comfy-
+// progress.ts`); der Client oeffnet ihn VOR dem POST, damit keine Nachricht verloren geht, und
+// reicht `progress` des eigenen Auftrags an `onProgress`. Der Socket ist optional: oeffnet er
+// sich nicht (aelteres ComfyUI ohne passenden Origin, Fremdserver), zaehlt die Statuszeile
+// Sekunden wie bei Draw Things — Polling bleibt der Ergebnisweg, nie der Socket.
 //
-// Arbeitsteilung mit dem WebSocket (obsidian/comfy-progress.ts): der Socket liefert NUR
+// Arbeitsteilung mit dem WebSocket (Kit `openTextSocket`, verdrahtet in obsidian/http.ts): der Socket liefert NUR
 // die Fortschrittsanzeige. Ob der Lauf gelang, steht in /history — dort ist auch der
 // Fehlerfall vollständig abgebildet (status_str + messages, gemessen an ComfyUI 0.30.0).
 // Fällt der Socket aus, verliert der Nutzer den Balken, nicht das Bild.
@@ -23,6 +21,7 @@ import { normalizeEndpoint } from "../../vendor/kit/endpoint";
 // wieder — die Zusage in `ApiRequest.signal` haengt daran (s. AGENTS.md § Gotchas, Eintrag
 // zum Fork).
 import { type ImageBackend, type ImageRequest } from "../txt2img";
+import { comfyProgressSocketUrl, parseComfyProgress } from "./progress";
 import { inspectWorkflow, patchWorkflow, type ComfyGraph } from "./workflow";
 
 export interface ComfyProgress {
@@ -36,6 +35,9 @@ export interface ComfyTransport {
   getBase64: (url: string) => Promise<{ status: number; base64: string }>;
   sleep: (ms: number) => Promise<void>;
   now: () => number;
+  /** Optional: Fortschritts-Socket oeffnen (`ws://…/ws?clientId=…`). Wirft oder schweigt er,
+   *  laeuft der Lauf ohne Balken weiter. */
+  openProgress?: (url: string, onMessage: (data: string) => void) => { close(): void };
 }
 
 export interface ComfyOptions {
@@ -114,9 +116,34 @@ export class ComfyClient implements ImageBackend {
 
     // Vor dem Absenden: was noch nicht in ComfyUIs Queue liegt, muss auch nicht hinein.
     if (req.signal?.aborted === true) throw new Error("Lauf abgebrochen (aborted)");
-    const promptId = await this.submit(patched);
-    const image = await this.waitForImage(promptId, req.signal);
-    return this.fetchImage(image);
+    let promptId: string | null = null;
+    const socket = this.openProgressSocket(() => promptId);
+    try {
+      promptId = await this.submit(patched);
+      const image = await this.waitForImage(promptId, req.signal);
+      return await this.fetchImage(image);
+    } finally {
+      try { socket?.close(); } catch { /* schon zu */ }
+    }
+  }
+
+  /** Socket VOR dem POST oeffnen. Nachrichten gelten erst, wenn die prompt_id bekannt ist:
+   *  davor kaeme nur der Fortschritt fremder Auftraege der geteilten Queue an. */
+  private openProgressSocket(promptId: () => string | null): { close(): void } | null {
+    const { clientId, onProgress } = this.opts;
+    if (!clientId || !this.transport.openProgress || !onProgress) return null;
+    const url = comfyProgressSocketUrl(this.base, clientId);
+    if (url === null) return null;
+    try {
+      return this.transport.openProgress(url, (raw) => {
+        const id = promptId();
+        if (id === null) return;
+        const p = parseComfyProgress(raw, id);
+        if (p !== null) onProgress(p);
+      });
+    } catch {
+      return null;
+    }
   }
 
   private parseWorkflow(): ComfyGraph {

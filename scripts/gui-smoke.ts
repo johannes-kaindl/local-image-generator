@@ -172,6 +172,7 @@ const PUNKTE = [
   "44. Fehlerpfad: leerer Kurzbefehl-Name ist ein Fehler, ein gesetzter Name ist sofort bereit",
   "45. Mit Fake-Manager (Capability image) steht die Endpunkt-Sektion in den Settings, aber keine Modell-Zeile",
   "46. Nach dem Neuladen meldet status() mit eingerichtetem ComfyUI bereit, ohne dass ein Panel offen ist",
+  "47. ComfyUI meldet den Fortschritt per Socket — Prozentwerte steigen, der Socket gehört zur clientId des POST",
 ] as const;
 
 /** Klick-Modus des Laufs (`--halten <ms>`, `--klick-gegenprobe`); Default 0 ms ohne Gegenprobe (Welle 21). */
@@ -2738,6 +2739,61 @@ async function runComfyNoteChecks(cdp: Cdp, vorbedingungErreicht: boolean): Prom
   );
 }
 
+
+const NAME_47 = "47. ComfyUI meldet den Fortschritt per Socket — Prozentwerte steigen, der Socket gehört zur clientId des POST";
+
+/**
+ * Punkt 47 (Welle 24, ComfyUI-Fortschritt per WebSocket): ein Lauf gegen den Mock, dessen
+ * Socket `progress`-Nachrichten schickt (4 Schritte, dazu eine FREMDE Nachricht mit anderer
+ * prompt_id, die der Client ignorieren muss). Gemessen an zwei Seiten, weil jede allein
+ * taeuschen kann: im Renderer die Folge der gemeldeten Prozentwerte (`onProgress` der API),
+ * am Mock die Beobachtungen auf der LEITUNG (Origin des Handshakes, clientId des Sockets gleich
+ * der `client_id` des POST). Ohne Socket zaehlte die Statuszeile Sekunden, `onProgress` bekaeme
+ * nur `null` — genau dieser Unterschied ist der Punkt. Die Rueckfall-Haelfte (Handshake abgewiesen)
+ * decken die Unit-Tests des Clients; der Mock kann sie mit `MOCK_COMFY_WS=off` zeigen.
+ */
+async function runComfyProgressSocketCheck(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
+  const NAME = NAME_47;
+  const vorher = mockComfyState()?.counts.ws_progress ?? 0;
+  await cdp.evaluate(`
+    const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
+    window.__ligComfyPct = { fertig: false, pcts: [] };
+    api.generate({ prompt: "smoke comfy 47", steps: 3, seed: 4747, onProgress: (pct) => window.__ligComfyPct.pcts.push(pct) })
+      .then((r) => { window.__ligComfyPct.fertig = true; window.__ligComfyPct.ok = r.ok; })
+      .catch((e) => { window.__ligComfyPct.fertig = true; window.__ligComfyPct.ok = false; window.__ligComfyPct.fehler = String(e); });
+    return true;
+  `);
+  const lauf = (await pollUntil(
+    () => cdp.evaluate<{ fertig: boolean; ok?: boolean; pcts: (number | null)[]; fehler?: string }>(`return window.__ligComfyPct ?? { fertig: false, pcts: [] };`),
+    (v) => v.fertig,
+    generateTimeoutMs,
+    "warte auf den ComfyUI-Lauf mit Socket",
+    500,
+  )) ?? { fertig: false, ok: false, pcts: [] as (number | null)[] };
+  await cdp.evaluate(`delete window.__ligComfyPct; return true;`).catch(() => undefined);
+
+  const mock = mockComfyState();
+  const wsInfo = (mock as unknown as { ws?: { origin: string | null; clientId: string | null; postClientId: string | null } } | null)?.ws;
+  if (mock === null || wsInfo === undefined) {
+    nichtGemessen(NAME, "Mock liefert keine Socket-Beobachtungen (.mock-comfy-counts.json ohne ws) — alter Mock?");
+    return;
+  }
+  const echte = lauf.pcts.filter((p): p is number => typeof p === "number");
+  const gesendet = (mock.counts.ws_progress ?? 0) - vorher;
+  const steigend = echte.length >= 2 && echte.every((p, i) => i === 0 || p >= echte[i - 1]!) && echte[echte.length - 1]! > echte[0]!;
+  // Die fremde Nachricht des Mocks (prompt_id FREMD) ergaebe 99 % — sie darf nie ankommen.
+  const keinFremder = !echte.includes(99);
+  const leitungOk = wsInfo.clientId !== null && wsInfo.clientId === wsInfo.postClientId;
+  const originOk = wsInfo.origin === "app://obsidian.md";
+  const ok = lauf.ok === true && gesendet >= 1 && steigend && keinFremder && leitungOk && originOk;
+  record(
+    NAME,
+    ok,
+    `Lauf ${lauf.ok === true ? "ok" : `fehlgeschlagen (${lauf.fehler ?? "?"})`} · Mock schickte ${gesendet} Nachricht(en) · Prozentwerte [${echte.join(", ")}] ` +
+      `(steigend: ${String(steigend)}, fremde Nachricht ignoriert: ${String(keinFremder)}) · Socket-clientId ${leitungOk ? "= client_id des POST" : `„${String(wsInfo.clientId)}“ ≠ „${String(wsInfo.postClientId)}“`} · Origin „${String(wsInfo.origin)}“`,
+  );
+}
+
 /**
  * Orchestriert Punkte 35–39: EIGENER Zustand (Endpunkt, Workflow-Pfad, Modus), im `finally`
  * vollstaendig zurueckgesetzt — Konvention „Vorbedingung herstellen, nicht erben" (wie
@@ -2752,6 +2808,7 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     NAME_38,
     NAME_39,
     NAME_46,
+    NAME_47,
   ];
   const up = await fetch(`${comfyEndpoint.replace(/\/+$/, "")}/system_stats`, { signal: AbortSignal.timeout(3000) })
     .then((r) => r.status === 200)
@@ -2792,6 +2849,7 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     const base64 = await runComfyRealRunCheck(cdp, comfyEndpoint, generateTimeoutMs);
     await runComfyNoteChecks(cdp, base64 !== null);
     await runComfyReadinessCheck(cdp);
+    await runComfyProgressSocketCheck(cdp, generateTimeoutMs);
   } finally {
     await cdp
       .evaluate(`

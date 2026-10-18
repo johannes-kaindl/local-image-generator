@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **ComfyUI shows real progress.** In ComfyUI mode the status line now shows a percentage while the image is computed, instead of counting seconds. The plugin listens on ComfyUI's WebSocket for the progress of its own job (other jobs in a shared queue are ignored). It needs a ComfyUI that accepts the connection from Obsidian, for example version 0.37 started with `--enable-cors-header app://obsidian.md`; with an older or differently configured server nothing changes: the status line counts seconds as before and the image arrives as before. Measured against a real ComfyUI 0.37: the connection from Obsidian opens.
+
 ## [0.19.1] — 2026-10-16
 
 ### Changed
