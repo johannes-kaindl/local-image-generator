@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-10-18
+
 ### Added
 
 - **Choose which part of the reference image is used (img2img).** A new **Crop…** button next to the reference opens the picture with a square frame; drag the frame to move it, drag its corner to resize it, **OK** to apply, **Whole image** to go back to the old behaviour. Built-in engine and server now work on exactly the part you chose (the server receives the cut-out image instead of deciding for itself). The result note records it as `init_crop` (x, y, width, height relative to the original), and a history entry restores it with the reference. Without a choice nothing changes. Other plugins can pass `initCrop` to `generate()`; `status` stays at API version 1 (additive field, also reported back in the returned parameters).
