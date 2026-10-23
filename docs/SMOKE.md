@@ -128,6 +128,8 @@ npm run smoke:gui -- --port <port> --vault <name> --builtin          # + 13–16
 npm run smoke:gui -- --port <port> --vault <name> --comfy http://127.0.0.1:8199   # abweichender Mock-Port
 ```
 
+**Profilgröße bei `--builtin`:** Der Lauf lädt beide Modelle (2,6 + 7,1 GB) in die Cache API des Testprofils (`Service Worker/CacheStorage`), das Profil steht danach bei rund 9,8 GB. Das ist Inhalt, kein Wachstum (gemessen 2026-10-23, zwei Läufe im selben Profil: CacheStorage beide Male 9271,4 MB, Profil 9766,8 und 9766,9 MB). Der Treiber hebt die Profilgrenze der Brücke (`OBSIDIAN_CDP_PROFIL_GRENZE_MB`, Standard 1024) deshalb nur bei `--builtin` auf Summe der Modelle plus 1024 MB (10319 MB); ohne `--builtin` gilt der Standard. Wächst das Profil über diese Grenze, legt etwas je Lauf neue Einträge an und der Lauf endet mit Exit 1. Nach der Welle das Profil unter `/tmp` löschen, es braucht niemand.
+
 `--steps` (Default 4) und die fest kleinste Größe halten den Lauf kurz: geprüft wird die
 Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 

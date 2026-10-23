@@ -59,7 +59,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { argv, cwd, env, exit } from "node:process";
 
-import { Cdp, attachTo, openExisting, setPluginSetting } from "../../tools/obsidian-cdp/cdp.js";
+import { Cdp, attachTo, openExisting, schliesseEinstellungen, setPluginSetting } from "../../tools/obsidian-cdp/cdp.js";
 import { boxAround, capture, setWindowSize, withMetrics, writeShot } from "../../tools/obsidian-cdp/shot.js";
 import { buildVault, stagingVaultDir } from "../../tools/obsidian-cdp/vault.js";
 
@@ -662,7 +662,7 @@ async function settingsBild(port: number, outDir: string, modus: "builtin" | "se
       });
     });
   } finally {
-    await fenster.evaluate("app.setting?.close?.(); return true;").catch(() => undefined);
+    await schliesseEinstellungen(fenster).catch(() => undefined);
     fenster.close();
     // Den Auslieferungszustand wiederherstellen: ein zurueckgelassener Server-Modus liesse
     // jedes Panel-Bild eines Folgelaufs das falsche Backend zeigen.

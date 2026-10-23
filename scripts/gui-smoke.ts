@@ -85,7 +85,7 @@ import { join } from "node:path";
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
 // sechs Repos. Fehlt das Dach (fremder Checkout), bricht esbuild beim Auflösen ab — das
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
-import { Cdp, attachTo, beimAbbruch, bereiteInstanzVor, entferneFakeManager, istAbgebrochen, installFakeManager, klicke, requireVisible } from "../../tools/obsidian-cdp/cdp.js";
+import { Cdp, attachTo, beimAbbruch, bereiteInstanzVor, entferneFakeManager, istAbgebrochen, installFakeManager, klicke, requireVisible, schliesseEinstellungen } from "../../tools/obsidian-cdp/cdp.js";
 import { createBilanz, parseArgs, runDriver, type KlickModusArgs } from "../../tools/obsidian-cdp/bilanz.js";
 // Der Build-Guard liegt ebenfalls zentral: `requireEigenerBuild` bricht ab, wenn der Build im
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
@@ -1648,7 +1648,7 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
     }
     const geklickt = await klick(cdp, `document.querySelector(".lig-init-crop")`);
     const modal = await pollUntil(
-      () => cdp.evaluate<boolean>(`const f = document.querySelector(".lig-crop-frame"); return !!f && f.getClientRects().length > 0 && document.querySelector(".lig-crop-img")?.naturalWidth > 0;`),
+      () => cdp.evaluate<boolean>(`const f = document.querySelector(".okit-crop-frame"); return !!f && f.getClientRects().length > 0 && document.querySelector(".okit-crop-img")?.naturalWidth > 0;`),
       (v) => v === true, 5000, "warte auf das CropModal", 100,
     );
     if (!geklickt || modal !== true) {
@@ -1657,24 +1657,28 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
     }
     const rect = (sel: string): Promise<{ x: number; y: number; w: number; h: number }> =>
       cdp.evaluate(`const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height };`);
-    const info = (): Promise<string> => cdp.evaluate(`return document.querySelector(".lig-crop-info")?.textContent ?? ""`);
+    const info = (): Promise<string> => cdp.evaluate(`return document.querySelector(".okit-crop-info")?.textContent ?? ""`);
 
-    const f0 = await rect(".lig-crop-frame");
+    // Abdunklung (UI-Abweichung in der AGENTS.md): festes Schwarz 0,55 aus `.lig-crop-modal .okit-crop-frame`, nicht die Theme-Variable des Kits.
+    // Gemessen wird der berechnete Wert, nicht die Stylesheet-Zeile: ein Kit-Update, das die Spezifitaet dreht, faellt sonst nicht auf.
+    const scrim = await cdp.evaluate<string>(`return getComputedStyle(document.querySelector(".okit-crop-frame")).boxShadow;`);
+    const scrimOk = /rgba\(0, 0, 0, 0\.55\)/.test(scrim);
+    const f0 = await rect(".okit-crop-frame");
     const i0 = await info();
     await ziehe(cdp, { x: f0.x + f0.w / 2, y: f0.y + f0.h / 2 }, { x: f0.x + f0.w / 2 + 60, y: f0.y + f0.h / 2 });
-    const f1 = await rect(".lig-crop-frame");
-    const h1 = await rect(".lig-crop-handle");
+    const f1 = await rect(".okit-crop-frame");
+    const h1 = await rect(".okit-crop-handle");
     await ziehe(cdp, { x: h1.x + h1.w / 2, y: h1.y + h1.h / 2 }, { x: h1.x + h1.w / 2 - 30, y: h1.y + h1.h / 2 - 30 });
-    const f2 = await rect(".lig-crop-frame");
+    const f2 = await rect(".okit-crop-frame");
     const i2 = await info();
     const bewegt = f1.x > f0.x + 20 && Math.abs(f1.w - f0.w) < 1;
     const skaliert = f2.w < f1.w - 10 && Math.abs(f2.w - f2.h) < 2 && Math.abs(f2.x - f1.x) < 1;
-    const ok = await klick(cdp, `document.querySelector(".lig-crop-ok")`);
+    const ok = await klick(cdp, `document.querySelector(".okit-crop-ok")`);
     await new Promise((r) => setTimeout(r, 300));
 
     const zustand = await cdp.evaluate<{ crop: { x: number; y: number; w: number; h: number } | null; pfadText: string; modalOffen: boolean }>(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-      return { crop: p.state.initCrop, pfadText: document.querySelector(".lig-init-path")?.textContent ?? "", modalOffen: !!document.querySelector(".lig-crop-frame") };
+      return { crop: p.state.initCrop, pfadText: document.querySelector(".lig-init-path")?.textContent ?? "", modalOffen: !!document.querySelector(".okit-crop-frame") };
     `);
     const zustandOk = ok && !zustand.modalOffen && zustand.crop !== null && zustand.crop.x > 0.2 && /crop chosen|Ausschnitt gewählt/.test(zustand.pfadText);
 
@@ -1707,14 +1711,14 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
     }
     record(
       NAME,
-      bewegt && skaliert && zustandOk && serverOk,
+      bewegt && skaliert && zustandOk && serverOk && scrimOk,
       `Rahmen ${bewegt ? "bewegt" : "NICHT bewegt"} (x ${Math.round(f0.x)}→${Math.round(f1.x)}) · ${skaliert ? "skaliert" : "NICHT skaliert"} (Breite ${Math.round(f1.w)}→${Math.round(f2.w)}, Höhe ${Math.round(f2.h)}) · ` +
-        `Info „${i0}“ → „${i2}“ · OK ${zustandOk ? "übernommen" : `NICHT übernommen (${JSON.stringify(zustand)})`} · ${server}`,
+        `Info „${i0}“ → „${i2}“ · Abdunklung ${scrimOk ? "festes Schwarz 0,55" : `ABWEICHEND (${scrim})`} · OK ${zustandOk ? "übernommen" : `NICHT übernommen (${JSON.stringify(zustand)})`} · ${server}`,
     );
   } finally {
     await cdp
       .evaluate(`
-        document.querySelectorAll(".lig-crop-frame").forEach(() => document.querySelector(".lig-crop-cancel")?.click());
+        document.querySelectorAll(".okit-crop-frame").forEach(() => document.querySelector(".okit-crop-cancel")?.click());
         const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
         p.state.initImage = null; p.state.initCrop = null; p.refreshViews();
         const f = app.vault.getAbstractFileByPath(${JSON.stringify(quelle)});
@@ -1840,7 +1844,6 @@ async function runModelSwitchCheck(cdp: Cdp): Promise<void> {
     const select = [...doc.querySelectorAll("select")]
       .find((s) => [...s.options].some((o) => o.value === ${JSON.stringify(other)}));
     if (!select) {
-      app.setting.close();
       return { vorher, vorherAndereAbwesend, nachher: false, nachherAlteAbwesend: false, select: false };
     }
     const setter = Object.getOwnPropertyDescriptor(doc.defaultView.HTMLSelectElement.prototype, "value").set;
@@ -1860,9 +1863,9 @@ async function runModelSwitchCheck(cdp: Cdp): Promise<void> {
     }
     const nachher = nachherAlle.includes(${JSON.stringify(erwartetNachher)});
     const nachherAlteAbwesend = !nachherAlle.includes(${JSON.stringify(erwartetVorher)});
-    app.setting.close();
     return { vorher, vorherAndereAbwesend, nachher, nachherAlteAbwesend, select: true };
   `);
+  await schliesseEinstellungen(cdp);
 
   const teile: string[] = [];
   if (!result.select) teile.push("Modell-Dropdown im Settings-Tab nicht gefunden");
@@ -2075,8 +2078,8 @@ async function runConfirmNoBytesCheck(cdp: Cdp, generateTimeoutMs: number): Prom
 
   // Vorbedingung: sdxl-turbo NICHT im Cache — sonst filtert ModelStore.download() die Datei
   // schon vor jedem Netzaufruf heraus und die Null-Messung unten sagt nichts über den Klick.
+  await schliesseEinstellungen(cdp);
   const entfernt = await cdp.evaluate<{ ok: boolean; downloadedAfter: BuiltinModelId[] }>(`
-    app.setting.close?.();
     const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
     const ok = await p.removeModel(${JSON.stringify("sdxl-turbo" as BuiltinModelId)});
     return { ok, downloadedAfter: p.downloadedModels };
@@ -3087,9 +3090,9 @@ async function runHelpRowCheck(cdp: Cdp): Promise<void> {
       knopf: first?.querySelector("button")?.textContent?.trim() ?? null,
       bug: first?.querySelector(".extra-setting-button")?.getAttribute("aria-label") ?? null,
     };
-    app.setting.close();
     return out;
   `);
+  await schliesseEinstellungen(cdp);
   const ok = (r.erste === "Help" || r.erste === "Hilfe") && r.knopf !== null && r.knopf.length > 0 && r.bug !== null && r.bug.length > 0;
   record(NAME, ok, `erste Zeile „${r.erste}“, Knopf „${r.knopf}“, bug-Tooltip „${r.bug}“`);
 }
@@ -3133,14 +3136,14 @@ async function runEndpointSourceCheck(cdp: Cdp): Promise<void> {
       if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
       await new Promise((r) => setTimeout(r, 600));
       const namen = Array.from(app.setting.activeTab.containerEl.querySelectorAll(".setting-item-name")).map((el) => (el.textContent || "").trim());
-      app.setting.close();
       return namen;
     `);
+    await schliesseEinstellungen(cdp);
     const sektion = zeilen.some((n) => n === "Endpoint" || n === "Endpunkt");
     const modellZeile = zeilen.some((n) => n === "Model" || n === "Modell");
     record(NAME, sektion && !modellZeile, `Sektion ${sektion ? "da" : "FEHLT"} · Modell-Zeile ${modellZeile ? "FAELSCHLICH da" : "korrekt weg"} · Zeilen: ${zeilen.join(" | ").slice(0, 160)}`);
   } finally {
-    await cdp.evaluate(`app.setting.close?.(); return true;`).catch(() => undefined);
+    await schliesseEinstellungen(cdp).catch(() => undefined);
     if (installiert) await entferneFakeManager(cdp, { invalidiere: [PLUGIN_ID] }).catch(() => undefined);
     await cdp.evaluate(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
@@ -3195,9 +3198,9 @@ async function runPlaygroundChecks(cdp: Cdp): Promise<void> {
       await new Promise((r) => setTimeout(r, 300));
       const select = app.setting.activeTab.containerEl.querySelector("select");
       const out = select ? Array.from(select.options).map((o) => o.textContent.trim()) : [];
-      app.setting.close();
       return out;
     `);
+    await schliesseEinstellungen(cdp);
     const hatPlaygroundOption = dropdownOptionen.includes(t("settings.engine.playground"));
     await setzeModus("playground");
     const wirklichUmgeschaltet = await cdp.evaluate<string>(`
@@ -3232,17 +3235,19 @@ async function runPlaygroundChecks(cdp: Cdp): Promise<void> {
   // --- 43. Settings: die Kurzbefehl-Name-Zeile erscheint NUR im playground-Modus ---------
   {
     const NAME = "43. Settings zeigen die Kurzbefehl-Name-Zeile nur im playground-Modus";
-    const zeileVorhanden = async (): Promise<boolean> =>
-      cdp.evaluate<boolean>(`
+    const zeileVorhanden = async (): Promise<boolean> => {
+      const vorhanden = await cdp.evaluate<boolean>(`
         app.setting.open();
         app.setting.openTabById(${JSON.stringify(PLUGIN_ID)});
         await new Promise((r) => setTimeout(r, 300));
         if (app.setting.activeTab && typeof app.setting.activeTab.update === "function") app.setting.activeTab.update();
         await new Promise((r) => setTimeout(r, 300));
         const namen = Array.from(app.setting.activeTab.containerEl.querySelectorAll(".setting-item-name")).map((el) => el.textContent.trim());
-        app.setting.close();
         return namen.includes(${JSON.stringify(t("settings.playground.name"))});
       `);
+      await schliesseEinstellungen(cdp);
+      return vorhanden;
+    };
     const imPlaygroundModus = await zeileVorhanden();
     await setzeModus("builtin");
     const imBuiltinModus = await zeileVorhanden();
@@ -3294,6 +3299,17 @@ async function main(): Promise<void> {
   const keep = args.has("--keep");
   const quick = args.has("--quick");
   const builtin = args.has("--builtin");
+  if (builtin) {
+    // Profilgrenze der Brücke (`OBSIDIAN_CDP_PROFIL_GRENZE_MB`, Standard 1024): `--builtin` lädt BEIDE Modelle in die Cache API des Profils
+    // (`Service Worker/CacheStorage`). Das ist Inhalt, kein Wachstum: gemessen 2026-10-23 an zwei Läufen hintereinander im selben Profil,
+    // CacheStorage beide Male 9271,4 MB, Profil 9766,8 und 9766,9 MB (Task „Testprofil wächst auf 9,5 GB“). Die Grenze folgt deshalb der
+    // Summe der Modelle plus 1024 MB für den Rest des Profils; ein Wachstum darüber (Cache, der je Lauf neue Einträge anlegt) bleibt ein Rot.
+    // Ohne `--builtin` gilt weiter der Standard. Eine gesetzte Umgebungsvariable gewinnt.
+    const modelleMB = Math.ceil(
+      (Object.keys(BUILTIN_MODELS) as BuiltinModelId[]).reduce((summe, id) => summe + totalBytes(filesFor(id)), 0) / (1024 * 1024),
+    );
+    process.env.OBSIDIAN_CDP_PROFIL_GRENZE_MB ??= String(modelleMB + 1024);
+  }
   const assetsBase = flag("assets") ?? "http://127.0.0.1:7862";
   const comfyEndpoint = flag("comfy") ?? "http://127.0.0.1:8189";
   const vault = flag("vault");
@@ -3330,7 +3346,7 @@ async function main(): Promise<void> {
   // Wirt-Zustand zurückschreiben (Einstellungen, Smoke-Ordner, Einstellungsfenster): idempotent, im Abbruch ohne Warten.
   // Im Normalweg läuft er über `schliesse()` im `finally`, nach Ctrl-C ruft ihn das Abbruch-Modul (Welle 21).
   const zustandZurueck = async (): Promise<void> => {
-    await cdp.evaluate(`app.setting.close?.(); return true;`).catch(() => undefined);
+    await schliesseEinstellungen(cdp).catch(() => undefined);
     if (previous !== null) {
       await cdp
         .evaluate(`
@@ -3682,7 +3698,7 @@ async function main(): Promise<void> {
         meine !== null && meine.includes(expectedModel),
         (meine === null ? "keine eigene Notice erschienen" : meine) + fremdHinweis,
       );
-      await cdp.evaluate(`app.setting.close(); return true;`);
+      await schliesseEinstellungen(cdp);
 
       // --- 3. DER BEFUND: das Generate-Panel zeigt den echten Modellnamen -----
       // Regression zu `1d1c046`: parseOptionsModel las nur `sd_model_checkpoint`, Draw Things
@@ -3820,11 +3836,11 @@ async function main(): Promise<void> {
       // hängt das Settings-Modal in einem EIGENEN Fenster (Falle (4) in docs/SMOKE.md).
       const doc = app.setting.activeTab?.containerEl?.ownerDocument ?? document;
       if (!doc.querySelector(".setting-search-container input")) {
-        app.setting.close();
         return { skip: "keine Settings-Suche in dieser Obsidian-Version", namen };
       }
       return { namen };
     `);
+    if (vorbereitung.skip !== undefined) await schliesseEinstellungen(cdp);
 
     // Eine Suche = ein Aufruf. Der Renderer-Teil ist bewusst wortgleich zur alten Fassung
     // (nativer value-Setter, weil eine direkte .value-Zuweisung Obsidians Eingabe-Beobachter
@@ -3864,10 +3880,10 @@ async function main(): Promise<void> {
                   setter.call(input, "");
                   input.dispatchEvent(new Event("input", { bubbles: true }));
                 }
-                app.setting.close();
                 return true;
               `)
               .catch(() => undefined);
+            await schliesseEinstellungen(cdp);
             return { gesucht: vorbereitung.namen, gefunden, fehlend, negativkontrolle };
           })();
     if (searchable.skip) {
