@@ -247,7 +247,7 @@ export class LigSettingTab extends PluginSettingTab {
     if (key === "engine") {
       // Moduswechsel hat Seiteneffekte (GPU-Sessions frei, Server prüfen) — über das Plugin.
       // Während einer Generierung lehnt es ab (Notice); refreshUi stellt den Dropdown zurück.
-      // VIER moegliche Werte seit dem Playground-Backend (AGENTS.md § "Der dritte Modus-Wert
+      // VIER moegliche Werte seit dem Playground-Backend (`.claude/rules/modi-und-main.md` "Ein neuer Backend-Modus
       // faellt an rund einem Dutzend Stellen in den else-Zweig" — gilt fuer jeden weiteren
       // Wert genauso): eine Ternaerkette, die einen Wert nicht kennt, schaltet ihn hier
       // still auf "builtin" zurueck — kein Fehler, keine Notice, das Dropdown springt um.

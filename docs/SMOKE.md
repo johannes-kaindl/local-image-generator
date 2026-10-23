@@ -116,7 +116,7 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
    weiteren Terminal `npm run smoke:comfy` (`scripts/mock-comfy.mjs`, Port 8189, überschreibbar
    mit `MOCK_COMFY_PORT` bzw. `--comfy <url>` am Treiber). **Bewusst NICHT
    `scripts/mock-a1111.mjs`** — der hat seit 2026-09-02 einen fremden Konsumenten
-   (`epub-exporter`s Naht-Lauf), s. AGENTS.md. Ohne den Mock werden alle vier Punkte
+   (`epub-exporter`s Naht-Lauf), s. `.claude/rules/smoke-treiber.md`. Ohne den Mock werden alle vier Punkte
    übersprungen, nicht geraten.
 
 Dann:
@@ -290,7 +290,7 @@ macht genau diesen Fehlgriff sichtbar.
 **Eigener Mock, eigene Datei.** `scripts/mock-comfy.mjs` ist bewusst NICHT Teil von
 `scripts/mock-a1111.mjs` — letzterer hat seit 2026-09-02 einen fremden Konsumenten
 (`epub-exporter`s Naht-Lauf), eine Änderung an dessen Form bricht einen Treiber in einem anderen
-Repo, still, weil er hier nicht mitläuft (s. AGENTS.md). Start: `npm run smoke:comfy` (Port
+Repo, still, weil er hier nicht mitläuft (s. `.claude/rules/smoke-treiber.md`). Start: `npm run smoke:comfy` (Port
 8189, überschreibbar mit `MOCK_COMFY_PORT`).
 
 **Gegenprobe:** gefahren — 35–38 am 2026-09-06 im Freigabe-Lauf zu 0.13.0 (15/15, zwei

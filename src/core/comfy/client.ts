@@ -18,7 +18,7 @@
 import { normalizeEndpoint } from "../../vendor/kit/endpoint";
 // ⚠️ Eigene Abweichung gegenueber der Quelle (2026-09-06, Provider-API `signal`): `generate`
 // und `waitForImage` kennen ein `AbortSignal`. Ein Re-Sync aus `yijing-oracle` entfernt das
-// wieder — die Zusage in `ApiRequest.signal` haengt daran (s. AGENTS.md § Gotchas, Eintrag
+// wieder — die Zusage in `ApiRequest.signal` haengt daran (s. `.claude/rules/comfy.md`, Eintrag
 // zum Fork).
 import { type ImageBackend, type ImageRequest } from "../txt2img";
 import { comfyProgressSocketUrl, parseComfyProgress } from "./progress";
