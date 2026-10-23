@@ -3,8 +3,10 @@
 import { describe, expect, it } from "vitest";
 import { inspectWorkflow, patchWorkflow, type ComfyGraph, type PatchValues } from "../src/core/comfy/workflow";
 import sdxl from "./fixtures/comfy-sdxl.json";
+import zimage from "./fixtures/comfy-zimage.json";
 
 const SDXL = sdxl as unknown as ComfyGraph;
+const ZIMAGE = zimage as unknown as ComfyGraph;
 
 /** Tiefe Kopie des Fixtures — die Tests hängen sonst voneinander ab. */
 function clone(): ComfyGraph {
@@ -186,5 +188,41 @@ describe("patchWorkflow", () => {
     g["5"] = { class_type: "LatentFromBatch", inputs: { samples: ["4", 0] } };
     const out = patchWorkflow(g, slots, VALUES);
     expect(out["5"]!.inputs).not.toHaveProperty("width");
+  });
+});
+
+// Zweiter Graph mit getrennter Ladekette (UNETLoader + CLIPLoader + VAELoader statt
+// CheckpointLoaderSimple). Herkunft: prompt-Chunk von z_image_turbo_00001_.png aus einem
+// echten ComfyUI-Lauf (API-Format), kein Galerie-Template. Belegt, dass die Erkennung der
+// Node-Verlinkung folgt und nicht der Ladekette.
+describe("Z-Image-Turbo (getrennte Ladekette)", () => {
+  const zslots = { sampler: "3", positive: "6", negative: "7", latent: "13",
+                   seedField: "seed" as const, stepsField: "steps" as const, workflowSteps: 9 };
+
+  it("lädt Modell, CLIP und VAE getrennt, nicht über einen Checkpoint-Loader", () => {
+    const klassen = Object.values(ZIMAGE).map((n) => n.class_type);
+    expect(klassen).toEqual(expect.arrayContaining(["UNETLoader", "CLIPLoader", "VAELoader"]));
+    expect(klassen).not.toContain("CheckpointLoaderSimple");
+  });
+
+  it("findet die Slots über die Verlinkung", () => {
+    const r = inspectWorkflow(ZIMAGE);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.slots).toEqual(zslots);
+  });
+
+  it("patcht Prompt, Negativ, Seed, Steps und Größe und lässt die Ladekette byte-gleich", () => {
+    const out = patchWorkflow(ZIMAGE, zslots, VALUES);
+    expect(out["6"]!.inputs.text).toBe("a mountain lake, ink wash");
+    expect(out["7"]!.inputs.text).toBe("text, watermark");
+    expect(out["3"]!.inputs.seed).toBe(4711);
+    expect(out["3"]!.inputs.steps).toBe(8);
+    expect(out["13"]!.inputs.width).toBe(768);
+    expect(out["13"]!.inputs.height).toBe(768);
+    for (const id of ["16", "11", "18", "17", "8", "9"]) {
+      expect(out[id]).toEqual(ZIMAGE[id]);
+    }
+    expect(out["3"]!.inputs.cfg).toBe(1.0);
   });
 });
