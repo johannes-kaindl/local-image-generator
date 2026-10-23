@@ -47,8 +47,8 @@ import { createShortcutsBridge, type ShortcutsBridge } from "./vendor/kit-obsidi
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
 import { base64OfDataUrl, cropImageToBase64, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
-import { CropModal } from "./obsidian/crop-modal";
-import type { Crop } from "./core/crop";
+import { CropModal } from "./vendor/kit-obsidian/crop-modal";
+import type { Crop } from "./vendor/kit/crop";
 import { dataUrlToBytes } from "./vendor/kit/data-url";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { ImagePickerModal } from "./obsidian/image-picker";
@@ -205,9 +205,24 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       pickInitCrop: () => {
         const init = this.state.initImage;
         if (init === null) return;
-        new CropModal(this.app, init.dataUrl, this.state.initCrop, (crop) => {
-          this.state.initCrop = crop;
-          this.refreshViews();
+        new CropModal(this.app, {
+          src: init.dataUrl,
+          start: this.state.initCrop,
+          strings: {
+            title: t("crop.title"),
+            frameLabel: t("crop.frameLabel"),
+            handleLabel: t("crop.handleLabel"),
+            whole: t("crop.whole"),
+            cancel: t("crop.cancel"),
+            ok: t("crop.ok"),
+            info: (cropW, cropH, imageW, imageH) => t("crop.info", cropW, cropH, imageW, imageH),
+          },
+          // Scope fuer die Abdunklung in styles.css (`.lig-crop-modal .okit-crop-frame`).
+          cls: "lig-crop-modal",
+          onChoose: (crop) => {
+            this.state.initCrop = crop;
+            this.refreshViews();
+          },
         }).open();
       },
       useResultAsInitImage: () => void this.useResultAsInitImage(),

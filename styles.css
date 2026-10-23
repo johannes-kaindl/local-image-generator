@@ -139,15 +139,32 @@
 .lig-model-pick { flex: 0 0 auto; }
 
 
-/* Ausschnitt-Wahl der Vorlage (CropModal): Bild mit verschiebbarem, quadratischem Rahmen.
-   Die Abdunklung ausserhalb ist ein riesiger box-shadow des Rahmens, begrenzt vom overflow der Buehne.
-   Halbtransparentes Schwarz statt `--background-modifier-cover`: dessen Hellgrau war im Light-Theme kaum vom
-   Rahmeninneren zu unterscheiden (Abnahme Welle 24); Abdunkeln ist in beiden Themes dieselbe Geste. */
-.lig-crop-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; line-height: 0; user-select: none; touch-action: none; }
-.lig-crop-img { display: block; max-width: 100%; max-height: 60vh; }
-.lig-crop-frame { position: absolute; box-sizing: border-box; border: 2px solid var(--interactive-accent); box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55); cursor: move; touch-action: none; }
-.lig-crop-handle { position: absolute; right: -6px; bottom: -6px; width: 14px; height: 14px; background: var(--interactive-accent); cursor: nwse-resize; touch-action: none; }
-.lig-crop-info { color: var(--text-muted); font-size: var(--font-ui-small); margin-top: var(--size-4-2); }
+/* Ausschnitt-Wahl der Vorlage (CropModal aus obsidian-kit 0.66.1): `CROP_MODAL_CSS` unveraendert aus `vendor/kit-obsidian/crop-modal.ts`,
+   das Kit injiziert kein CSS. Neu kopieren, wenn der Pin steigt. */
+.okit-crop-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; line-height: 0; user-select: none; touch-action: none; }
+.okit-crop-img { display: block; max-width: 100%; max-height: 60vh; }
+/* Der Rahmen dunkelt das Bild AUSSERHALB ab (Form), der Rand und der Griff folgen dem Akzent des Themes. */
+.okit-crop-frame {
+  position: absolute; box-sizing: border-box; cursor: move; touch-action: none;
+  border: 2px solid var(--interactive-accent);
+  box-shadow: 0 0 0 9999px var(--background-modifier-cover);
+}
+/* Der Griff sitzt IM Rahmen: ragte er über die Ecke hinaus, schnitte ihn die Bühne (overflow: hidden) am Bildrand ab, sobald der Rahmen
+   bis dorthin reicht (gemessen 2026-10-23: 4 px fehlten). */
+.okit-crop-handle {
+  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  background: var(--interactive-accent); cursor: nwse-resize; touch-action: none;
+}
+/* Der Fokusrahmen liegt INNEN (negativer outline-offset). Ein äußerer Ring wurde von der Bühne abgeschnitten, wo der Rahmen den Bildrand
+   berührt, und las sich dort als zweite Kante neben dem Rahmen (Befund 2026-10-23). */
+.okit-crop-frame:focus-visible { outline: 2px solid var(--text-normal); outline-offset: -4px; }
+.okit-crop-handle:focus-visible { outline: 2px solid var(--background-primary); outline-offset: -4px; }
+.okit-crop-info { color: var(--text-muted); font-size: var(--font-ui-small); margin-top: var(--size-4-2); }
+
+/* UI-Abweichung (AGENTS.md): die Abdunklung ausserhalb des Rahmens bleibt halbtransparentes Schwarz. Das Kit nimmt `--background-modifier-cover`,
+   und das hellt im Light-Theme auf, statt abzudunkeln (Abnahme Welle 24; vom Kit-Entwickler am 2026-10-23 gleich beobachtet). Der Scope `.lig-crop-modal`
+   kommt aus `cls` in main.ts und steht NACH dem Kit-Block, er gewinnt durch die hoehere Spezifitaet. */
+.lig-crop-modal .okit-crop-frame { box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55); }
 
 /* ── Zuletzt, und das ist der Punkt ──────────────────────────────────────────
    `.is-hidden` ist die Aus-Schaltung fuer jede Zeile, die ein Backend nicht kann

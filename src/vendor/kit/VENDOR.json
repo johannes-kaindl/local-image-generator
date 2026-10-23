@@ -2,7 +2,7 @@
   "source": "code-kit",
   "version": "0.28.0",
   "sha": "642b791",
-  "vendored": "data-url.ts, endpoint.ts, endpoint_config.ts, endpoint_diagnostics.ts, format-bytes.ts, i18n.ts, local-stamp.ts, model-choice.ts, model-list-cache.ts, num.ts, reasoning.ts, sampling-profiles.ts, secrets.ts, settings.ts, settings_schema.ts, sha256.ts, think-splitter.ts, timeout.ts, cache-download.ts",
+  "vendored": "crop.ts (code-kit@0.34.0, 065b068), data-url.ts, endpoint.ts, endpoint_config.ts, endpoint_diagnostics.ts, format-bytes.ts, i18n.ts, local-stamp.ts, model-choice.ts, model-list-cache.ts, num.ts, reasoning.ts, sampling-profiles.ts, secrets.ts, settings.ts, settings_schema.ts, sha256.ts, think-splitter.ts, timeout.ts, cache-download.ts",
   "note": "Verbatim snapshot aus ZWEI Quellen (obsidian-kit + code-kit); welche Datei woher stammt, sagt ihr eigener Kopf. Never hand-edit. Pins in tools/kit-sync.json, re-vendor via tools/sync-kit.sh (zentrales kit-sync im Dach). version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; abweichende Einzelpins stehen dort inline (Datei (quelle@version, sha)). num.ts kommt nur als Abhaengigkeit mit: settings_schema.ts importiert clampInt daraus. kit-obsidian/ siehe dortige VENDOR.json.",
   "code_kit_version": "0.6.0",
   "code_kit_sha": "918ed85",

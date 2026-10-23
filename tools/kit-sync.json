@@ -13,6 +13,10 @@
       "source": "code-kit",
       "from": "src/ts/pure",
       "modules": [
+        {
+          "name": "crop",
+          "ref": "0.34.0"
+        },
         "data-url",
         "endpoint",
         "endpoint_config",
@@ -72,6 +76,10 @@
       "modules": [
         "clock",
         "confirm",
+        {
+          "name": "crop-modal",
+          "ref": "0.66.1"
+        },
         "endpoint-secrets",
         "endpoint-source",
         "folder-suggest",
