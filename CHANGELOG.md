@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-10-23
+
 ### Changed
 
 - **The crop dialog now works with the keyboard.** The frame is focusable (Tab): the arrow keys move it by 1 % of the shorter image side, Shift+arrow by ten times that. The corner handle is a slider for screen readers: the arrow keys resize the frame (right or up = larger, left or down = smaller). The labels read "drag or use the arrow keys". Esc still closes the dialog.
