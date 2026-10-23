@@ -3,7 +3,7 @@ import type { BuiltinModelId } from "./model-manifest";
 import { isoStamp } from "./filename";
 import type { EngineChoice } from "./settings";
 import type { GenParams } from "./viewmodel";
-import { parseCrop } from "./crop";
+import { parseCrop } from "../vendor/kit/crop";
 import type { WorkflowSlots } from "./comfy/workflow";
 import { clampInt } from "../vendor/kit/num";
 

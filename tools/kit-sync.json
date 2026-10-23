@@ -78,13 +78,17 @@
         "confirm",
         {
           "name": "crop-modal",
-          "ref": "0.66.1"
+          "ref": "0.66.2"
         },
         "endpoint-secrets",
         "endpoint-source",
         "folder-suggest",
         "help-setting",
         "hub",
+        {
+          "name": "image-crop",
+          "ref": "0.66.2"
+        },
         "model-picker",
         "secrets",
         "settings_walker",

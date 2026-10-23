@@ -139,7 +139,7 @@
 .lig-model-pick { flex: 0 0 auto; }
 
 
-/* Ausschnitt-Wahl der Vorlage (CropModal aus obsidian-kit 0.66.1): `CROP_MODAL_CSS` unveraendert aus `vendor/kit-obsidian/crop-modal.ts`,
+/* Ausschnitt-Wahl der Vorlage (CropModal aus obsidian-kit 0.66.2): `CROP_MODAL_CSS` unveraendert aus `vendor/kit-obsidian/crop-modal.ts`,
    das Kit injiziert kein CSS. Neu kopieren, wenn der Pin steigt. */
 .okit-crop-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; line-height: 0; user-select: none; touch-action: none; }
 .okit-crop-img { display: block; max-width: 100%; max-height: 60vh; }

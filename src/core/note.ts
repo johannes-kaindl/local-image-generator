@@ -4,7 +4,7 @@
 // kommt aus dem vendorten Serializer.
 import { serializeFrontmatter, type FmValue } from "../vendor/kit/frontmatter";
 import type { GenParams } from "./viewmodel";
-import { formatCrop } from "./crop";
+import { formatCrop } from "../vendor/kit/crop";
 
 const FM_ORDER = [
   "prompt",

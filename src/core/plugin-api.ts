@@ -5,7 +5,7 @@
 import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
 import type { BuiltinModelId } from "./model-manifest";
 import type { HardenInput } from "./params";
-import type { Crop } from "./crop";
+import type { Crop } from "../vendor/kit/crop";
 import type { GenParams } from "./viewmodel";
 import type { EngineChoice } from "./settings";
 import type { WorkflowSlots } from "./comfy/workflow";

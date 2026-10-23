@@ -6,7 +6,7 @@ import { backendCapabilities, toBackendContext, type SizeOption } from "./genera
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
 import { slotsOf, type WorkflowProblem, type WorkflowState } from "./comfy/state";
 import type { EngineChoice } from "./settings";
-import { cropEquals, type Crop } from "./crop";
+import { cropEquals, type Crop } from "../vendor/kit/crop";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
@@ -83,9 +83,8 @@ export interface PanelState {
    *  comfy inzwischen ausdruecklich (`comfyStatus`/`comfyEmpty`); **offen ist nur noch
    *  `recipeUnchanged`**, das den comfy-Fall weiter in den Server-Vergleich faltet — folgenlos
    *  fuer die Richtigkeit der Notiz, aber `generateEnabled` sperrt dort ein unveraendertes
-   *  Rezept nie. Vollstaendige Liste + Schadensbild je Stelle: AGENTS.md
-   *  § "Architecture notes / Gotchas" — "Der dritte Modus-Wert faellt an rund einem Dutzend
-   *  Stellen in den else-Zweig". */
+   *  Rezept nie. Vollstaendige Liste + Schadensbild je Stelle: `.claude/rules/modi-und-main.md`
+   *  — "Ein neuer Backend-Modus faellt an rund einem Dutzend Stellen in den else-Zweig". */
   mode: EngineChoice;
   /** Der Zustand des hinterlegten ComfyUI-Workflows — der GANZE Zustand, nicht nur die
    *  Slots: das ViewModel braucht ihn spaeter (Statuszeile), und zwei Quellen fuer dieselbe

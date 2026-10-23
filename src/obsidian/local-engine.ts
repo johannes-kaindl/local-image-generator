@@ -2,7 +2,7 @@
 // Implementiert dasselbe ImageBackend wie der A1111Client — der Router in main.ts sieht keinen
 // Unterschied. Alles Schwere ist injiziert (Store, Session-Fabrik, Runtime-Init, GPU-Check,
 // PNG-Encoder), damit die Ladeschritte in Node testbar sind. Kein obsidian-Import nötig.
-import type { Crop } from "../core/crop";
+import type { Crop } from "../vendor/kit/crop";
 import { SdTurboEngine, type BuiltinEngine, type Session } from "../core/engine";
 import { SdxlTurboEngine } from "../core/engine-sdxl";
 import { RUNTIME_WASM, type BuiltinModel, type ModelPart } from "../core/model-manifest";
@@ -10,6 +10,7 @@ import type { TokenizerData } from "../core/pipeline/tokenizer";
 import type { ImageBackend, ImageRequest } from "../core/txt2img";
 import { withTimeout, type TimeoutTimers } from "../vendor/kit/timeout";
 import type { ModelStore } from "./model-store";
+import { base64OfDataUrl } from "./png";
 
 // Wachhund um den Session-Aufbau (Spec §8 Punkt 2 — im Code-Stand vor diesem Fix nicht
 // vorhanden, obwohl die Plan-Selbstpruefung "keine Luecke" behauptete: geschrieben am
@@ -125,7 +126,7 @@ export class LocalEngineBackend implements ImageBackend {
     );
     const dataUrl = this.deps.encodePng(res.rgba, res.width, res.height);
     // Wie A1111Client: nackte Base64 — main.ts hängt das data:-Präfix selbst an.
-    return dataUrl.slice(dataUrl.indexOf(",") + 1);
+    return base64OfDataUrl(dataUrl);
   }
 
   /** `req.width`/`req.height` gegen `model.sizes` validieren (C1-Fix, 2026-08-24): vorher wurde

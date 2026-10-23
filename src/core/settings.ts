@@ -2,7 +2,7 @@
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
-import { parseCrop, type Crop } from "./crop";
+import { parseCrop, type Crop } from "../vendor/kit/crop";
 import { DEFAULT_ASSET_BASE_URL, DEFAULT_BUILTIN_MODEL_ID, type BuiltinModelId } from "./model-manifest";
 import {
   arrayOf,

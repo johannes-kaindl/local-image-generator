@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCrop, cropEquals, cropSourceRect, defaultCrop, moveCrop, parseCrop, resizeCrop, MIN_CROP_PX } from "../src/core/crop";
+import { formatCrop, cropEquals, cropSourceRect, defaultCrop, moveCrop, parseCrop, resizeCrop, MIN_CROP_PX } from "../src/vendor/kit/crop";
 
 describe("cropSourceRect", () => {
   it("null = zentriertes Quadrat der kuerzeren Seite (das bisherige Verhalten der eingebauten Engine)", () => {

@@ -1,4 +1,4 @@
-// vendored from obsidian-kit@0.66.1, src/obsidian/crop-modal.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from obsidian-kit@0.66.2, src/obsidian/crop-modal.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /**
  * Ausschnitt-Wahl (UI-STANDARD §8 ergänzt): das Bild mit einem quadratischen Rahmen darüber. Ziehen am Rahmen verschiebt, der Griff unten rechts
  * skaliert; `onChoose(crop)` bekommt den Rahmen, `onChoose(null)` heißt „ganzes Bild“ (keine Wahl), Abbrechen ruft nichts.

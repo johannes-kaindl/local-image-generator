@@ -2,7 +2,7 @@
 // yijing-oracle/src/obsidian/image-client.ts. Deckt Draw Things, A1111, Forge, SD.Next.
 // Spricht ZWEI Endpunkte: txt2img und (seit 0.8) img2img. Der Auftrag entscheidet, nicht
 // der Aufrufer — deshalb heisst die Klasse nicht mehr Txt2ImgClient.
-import type { Crop } from "./crop";
+import type { Crop } from "../vendor/kit/crop";
 import { normalizeEndpoint } from "../vendor/kit/endpoint";
 import type { EngineChoice } from "./settings";
 

@@ -11,7 +11,7 @@ All notable changes to this project are documented here. The format follows
 - **The crop dialog now works with the keyboard.** The frame is focusable (Tab): the arrow keys move it by 1 % of the shorter image side, Shift+arrow by ten times that. The corner handle is a slider for screen readers: the arrow keys resize the frame (right or up = larger, left or down = smaller). The labels read "drag or use the arrow keys". Esc still closes the dialog.
 - **The crop dialog draws its focus ring inside the frame** (no second dark edge next to the frame where it touches the image border), and **the corner handle sits fully inside the frame** (16 px, was 14 px and stuck out by 6 px, so the image border cut it off when the frame reached the edge).
 - **OK in the crop dialog only works once the image is loaded** (there is no frame before that).
-- The dimming around the frame stays the same dark overlay as before in both themes; only the dialog's code changed (it now comes from `obsidian-kit` 0.66.1 and `code-kit` 0.34.0, taken for the crop module only, the other vendored modules keep their pins).
+- The dimming around the frame stays the same dark overlay as before in both themes; only the dialog's code changed (it now comes from `obsidian-kit` 0.66.2 and `code-kit` 0.34.0, taken for the crop module only, the other vendored modules keep their pins).
 
 ## [0.20.0] — 2026-10-18
 
