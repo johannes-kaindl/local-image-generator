@@ -117,7 +117,8 @@ export class GeneratePanel implements HubPanel<TabId> {
 
     this.chipsEl = root.createDiv({ cls: "lig-row lig-chips" });
 
-    const controls = root.createDiv({ cls: "lig-row" });
+    // `lig-controls`: Raster statt Flex-Umbruch (styles.css) — Beschriftung, Regler und Wert einer Gruppe bleiben auf einer Zeile.
+    const controls = root.createDiv({ cls: "lig-row lig-controls" });
     this.sizeRowEl = controls.createSpan({ cls: "lig-size-slot" });
     // Modell-Dropdown (Task 12, Spec 0.9 §6.2): NUR geladene Modelle als Optionen — ein
     // Panel-Klick darf nie einen Download ausloesen (vm.modelOptions filtert das bereits vor).

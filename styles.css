@@ -8,6 +8,18 @@
 .lig-cfg { flex: 1 1 60px; }
 .lig-cfg-value { min-width: 1.5em; text-align: center; }
 .lig-seed { width: 8em; }
+/* Reglerzeile als Raster (drei Spalten: Beschriftung · Regler · Wert). Vorher war sie EINE Flex-Zeile mit Umbruch: Beschriftung, Regler und Wert waren je ein
+   eigenes Flex-Kind, und in einem schmalen Panel (300 px) brach die Zeile hinter dem Wert um, die naechste Beschriftung landete am Zeilenende, eine Zeile
+   versetzt zum eigenen Regler. Die Gruppen werden immer zusammen versteckt (`is-hidden` setzt `display: none` und nimmt sie aus dem Raster), jede Gruppe
+   fuellt also genau eine Rasterzeile. Hier darf KEIN `display` auf einem Kind stehen: `.is-hidden` (ganz unten) muesste sonst dagegen gewinnen. */
+.lig-controls { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; }
+.lig-controls .lig-size-slot,
+.lig-controls .lig-generate { grid-column: 1 / -1; }
+.lig-controls .lig-model-pick { grid-column: 2 / -1; min-width: 0; }
+.lig-controls .lig-steps,
+.lig-controls .lig-cfg,
+.lig-controls .lig-denoise { width: 100%; min-width: 0; }
+.lig-controls .lig-seed { justify-self: start; }
 .lig-model-info { color: var(--text-muted); font-size: var(--font-ui-small); }
 /* Ohne diese Regel unterscheidet sich ein deaktivierter mod-cta-Button optisch kaum vom
    aktiven (nur der Cursor ändert sich) — wirkt wie ein Bug statt wie "nichts zu tun".

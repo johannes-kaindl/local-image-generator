@@ -174,6 +174,8 @@ const PUNKTE = [
   "46. Nach dem Neuladen meldet status() mit eingerichtetem ComfyUI bereit, ohne dass ein Panel offen ist",
   "47. ComfyUI meldet den Fortschritt per Socket — Prozentwerte steigen, der Socket gehört zur clientId des POST",
   "48. Ausschnitt-Wahl: Rahmen ziehen und skalieren, OK — der Server bekommt nur den Ausschnitt",
+  "49. Regler-Zeilen bei 300 px: Beschriftung, Regler und Wert jeder Gruppe stehen auf einer Zeile",
+  "50. Gegenprobe zu 49: ohne das Raster (Klasse lig-controls) stehen die Gruppen versetzt — der Punkt wird rot",
 ] as const;
 
 /** Klick-Modus des Laufs (`--halten <ms>`, `--klick-gegenprobe`); Default 0 ms ohne Gegenprobe (Welle 21). */
@@ -1574,6 +1576,8 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
 }
 
 
+const NAME_49 = "49. Regler-Zeilen bei 300 px: Beschriftung, Regler und Wert jeder Gruppe stehen auf einer Zeile";
+const NAME_50 = "50. Gegenprobe zu 49: ohne das Raster (Klasse lig-controls) stehen die Gruppen versetzt — der Punkt wird rot";
 const NAME_48 = "48. Ausschnitt-Wahl: Rahmen ziehen und skalieren, OK — der Server bekommt nur den Ausschnitt";
 
 /** Gedrueckte Maus von `von` nach `nach` ziehen: echte CDP-Mausereignisse (vertrauenswuerdige
@@ -1602,6 +1606,123 @@ function mockLastInit(): { initW: number; initH: number } | null {
     return JSON.parse(readFileSync(file, "utf8")) as { initW: number; initH: number };
   } catch {
     return null;
+  }
+}
+
+/** Die vier Reglergruppen des Panels (Beschriftung · Regler · Wert); die Seed-Gruppe hat den Wuerfel statt eines Werts. */
+const REGLER_GRUPPEN: { name: string; selektoren: [string, string, string] }[] = [
+  { name: "Steps", selektoren: [".lig-steps-label", ".lig-steps", ".lig-steps-value"] },
+  { name: "CFG", selektoren: [".lig-cfg-label", ".lig-cfg", ".lig-cfg-value"] },
+  { name: "Denoise", selektoren: [".lig-denoise-label", ".lig-denoise", ".lig-denoise-value"] },
+  { name: "Seed", selektoren: [".lig-seed-label", ".lig-seed", ".lig-seed-dice"] },
+];
+
+interface GruppenMessung { name: string; sichtbar: boolean; versetzt: boolean; detail: string }
+
+/** Misst je Gruppe, ob ihre drei Elemente auf einer Zeile stehen (Mitten auf einer Hoehe, linke Kanten in Leserichtung). Eine Gruppe ohne sichtbares
+ *  Element ist nicht gemessen; eine mit nur teils sichtbaren Elementen ist versetzt. Toleranz 4 px: ein Regler und ein Text haben verschiedene Hoehen,
+ *  eine Zeile Versatz sind mehr als 14 px. */
+async function messeReglerGruppen(cdp: Cdp): Promise<GruppenMessung[]> {
+  return await cdp.evaluate<GruppenMessung[]>(`
+    const gruppen = ${JSON.stringify(REGLER_GRUPPEN)};
+    const root = document.querySelector(".lig-panel");
+    return gruppen.map((g) => {
+      const els = g.selektoren.map((s) => root ? root.querySelector(s) : null);
+      const rects = els.map((e) => (e && e.getClientRects().length > 0 ? e.getBoundingClientRect() : null));
+      const da = rects.filter((r) => r !== null).length;
+      if (da === 0) return { name: g.name, sichtbar: false, versetzt: false, detail: "nicht sichtbar" };
+      if (da < 3) return { name: g.name, sichtbar: true, versetzt: true, detail: da + " von 3 Elementen sichtbar" };
+      const mitten = rects.map((r) => r.top + r.height / 2);
+      const spanne = Math.max(...mitten) - Math.min(...mitten);
+      const ordnung = rects[0].left < rects[1].left && rects[1].left < rects[2].left;
+      return {
+        name: g.name, sichtbar: true, versetzt: spanne > 4 || !ordnung,
+        detail: "Mitten y " + mitten.map((m) => Math.round(m)).join("/") + " (Spanne " + Math.round(spanne) + " px), " + (ordnung ? "Reihenfolge ok" : "Reihenfolge verletzt"),
+      };
+    });
+  `);
+}
+
+/**
+ * Punkt 49/50 (Welle 26, Task „Slider-Beschriftungen stehen eine Zeile versetzt neben den Werten"): im schmalen Panel (300 px) standen Beschriftung, Regler und Wert
+ * als flache Flex-Kinder in EINER umbrechenden Zeile; die Zeile brach hinter dem Wert um, die naechste Beschriftung landete am Zeilenende. Das Fake-DOM der Tests
+ * sieht keine Kaskade: der Punkt misst im Renderer. Das Panel auf 300 px zu stellen kennt die Bruecke nicht, also gibt der Punkt der `.lig-panel`-Huelle eine
+ * feste Breite (alles darin richtet sich nach ihr, wie in einer schmalen Seitenleiste) und stellt sie im finally zurueck.
+ * Punkt 50 ist die Gegenprobe (CORE-TEST-01/-24): nimmt man der Reglerzeile die Klasse `lig-controls`, ist die Zeile wieder die alte Flex-Zeile und die Messung
+ * MUSS mindestens eine versetzte Gruppe melden; sonst sieht Punkt 49 den Defekt nicht.
+ */
+async function runSliderLayoutCheck(cdp: Cdp): Promise<void> {
+  const quelle = `${SMOKE_FOLDER}/regler-quelle.png`;
+  const zurueck = async (): Promise<void> => {
+    await cdp.evaluate(`
+      const root = document.querySelector(".lig-panel");
+      if (root) { root.style.width = ""; root.style.maxWidth = ""; root.style.boxSizing = ""; }
+      const row = document.querySelector(".lig-steps")?.parentElement;
+      if (row) row.classList.add("lig-controls");
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      p.state.initImage = null; p.state.initCrop = null; p.refreshViews();
+      const f = app.vault.getAbstractFileByPath(${JSON.stringify(quelle)});
+      if (f) await app.vault.delete(f);
+      return true;
+    `).catch(() => undefined);
+  };
+  try {
+    // Server-Modus (Steps, CFG, Seed) und eine Vorlage (Denoise): alle vier Gruppen stehen im DOM.
+    const bereit = await cdp.evaluate<boolean>(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== "server") await p.setEngine("server");
+      const c = document.createElement("canvas"); c.width = 64; c.height = 64;
+      c.getContext("2d").fillRect(0, 0, 64, 64);
+      const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+      const bytes = await blob.arrayBuffer();
+      if (!app.vault.getAbstractFileByPath(${JSON.stringify(SMOKE_FOLDER)})) await app.vault.createFolder(${JSON.stringify(SMOKE_FOLDER)});
+      const alt = app.vault.getAbstractFileByPath(${JSON.stringify(quelle)});
+      if (alt) await app.vault.modifyBinary(alt, bytes); else await app.vault.createBinary(${JSON.stringify(quelle)}, bytes);
+      await p.setInitImage(app.vault.getAbstractFileByPath(${JSON.stringify(quelle)}));
+      p.refreshViews();
+      const root = document.querySelector(".lig-panel");
+      if (!root) return false;
+      root.style.boxSizing = "border-box"; root.style.maxWidth = "300px"; root.style.width = "300px";
+      await new Promise((r) => setTimeout(r, 500));
+      return true;
+    `);
+    if (!bereit) {
+      nichtGemessen(NAME_49, "kein .lig-panel im DOM — Panel nicht offen");
+      nichtGemessen(NAME_50, "kein .lig-panel im DOM — Panel nicht offen");
+      return;
+    }
+    const breite = await cdp.evaluate<number>(`return Math.round(document.querySelector(".lig-panel").getBoundingClientRect().width);`);
+    const mit = await messeReglerGruppen(cdp);
+    const sichtbar = mit.filter((g) => g.sichtbar);
+    const fehlend = mit.filter((g) => !g.sichtbar).map((g) => g.name);
+    const text = (ms: GruppenMessung[]): string => ms.map((g) => `${g.name}: ${g.detail}`).join(" · ");
+    if (breite !== 300 || sichtbar.length < REGLER_GRUPPEN.length) {
+      const grund = `Vorbedingung fehlt: Panelbreite ${breite} px (erwartet 300), sichtbare Gruppen ${sichtbar.length}/${REGLER_GRUPPEN.length}${fehlend.length ? ` (fehlen: ${fehlend.join(", ")})` : ""}`;
+      nichtGemessen(NAME_49, grund);
+      nichtGemessen(NAME_50, grund);
+      return;
+    }
+    const schief = mit.filter((g) => g.versetzt);
+    record(NAME_49, schief.length === 0, `bei ${breite} px ${schief.length === 0 ? "alle vier Gruppen auf einer Zeile" : `VERSETZT: ${schief.map((g) => g.name).join(", ")}`} · ${text(mit)}`);
+
+    // Gegenprobe: das Raster abschalten (die Klasse am Container), dieselbe Messung.
+    const ohne = await cdp.evaluate<GruppenMessung[] | null>(`
+      const row = document.querySelector(".lig-steps")?.parentElement;
+      if (!row || !row.classList.contains("lig-controls")) return null;
+      row.classList.remove("lig-controls");
+      await new Promise((r) => setTimeout(r, 300));
+      return true;
+    `).then(async (v) => (v === null ? null : await messeReglerGruppen(cdp)));
+    if (ohne === null) {
+      nichtGemessen(NAME_50, "die Reglerzeile traegt die Klasse lig-controls nicht — die Gegenprobe hat nichts abzuschalten");
+      return;
+    }
+    const versetzt = ohne.filter((g) => g.sichtbar && g.versetzt);
+    record(NAME_50, versetzt.length > 0, versetzt.length > 0
+      ? `ohne lig-controls versetzt: ${versetzt.map((g) => g.name).join(", ")} → die Messung sieht den Defekt · ${text(ohne)}`
+      : `ohne lig-controls bleibt die Messung gruen — Punkt 49 sieht den Defekt nicht · ${text(ohne)}`);
+  } finally {
+    await zurueck();
   }
 }
 
@@ -4215,6 +4336,10 @@ async function main(): Promise<void> {
 
     // --- 48. Ausschnitt-Wahl der Vorlage (Welle 24, Teil C) ------------------
     await runCropCheck(cdp, generateTimeoutMs, probe.reachable, endpoint);
+
+    // --- 49/50. Regler-Zeilen im schmalen Panel (Welle 26) -------------------
+    // Kein Server, kein Download: nur Server-Modus, eine Vorlage und `getBoundingClientRect`.
+    await runSliderLayoutCheck(cdp);
 
     // --- 35–38. ComfyUI-Backend (Task 10) ------------------------------------
     // Eigener Mock (scripts/mock-comfy.mjs, `npm run smoke:comfy`), eigener Zustand — die

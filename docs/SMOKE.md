@@ -69,7 +69,7 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
      `yijing-oracle` — durchweg `shots.ts`, wo eine falsch erkannte Sprache falsch beschriftete
      README-Bilder erzeugt statt nur roter Prüfpunkte).
 
-   Die Bilanz hat seit 2026-10-12 vier Zustände (grün · rot · übersprungen · nichts gemessen, Soll-Liste 44 Punkte als Nenner): „übersprungen“ ist nur, was in dieser Lage nicht angefordert oder nicht anwendbar ist (`--builtin` fehlt, `--quick`, kein WebGPU). Fehlt eine Vorbedingung (Server, Mock, Zustand nicht herstellbar), steht der Punkt als „nichts gemessen“ da und der Lauf endet mit Exit 1. Antwortet der Server dagegen
+   Die Bilanz hat seit 2026-10-12 vier Zustände (grün · rot · übersprungen · nichts gemessen, Soll-Liste 51 Punkte als Nenner): „übersprungen“ ist nur, was in dieser Lage nicht angefordert oder nicht anwendbar ist (`--builtin` fehlt, `--quick`, kein WebGPU). Fehlt eine Vorbedingung (Server, Mock, Zustand nicht herstellbar), steht der Punkt als „nichts gemessen“ da und der Lauf endet mit Exit 1. Antwortet der Server dagegen
    **falsch** (HTTP-Fehler, kein Modellname), bleibt es ein Abbruch: das ist ein Befund.
 
 3. **Deployter Stand:**
@@ -173,6 +173,8 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 38 | Die Ergebnis-Notiz trägt die vom Mock **empfangene** Schrittzahl, nicht den Workflow-Default | misst Spec §4 direkt: der Workflow-Default (20) und die angefragte Zahl (3) sind absichtlich verschieden, damit ein Test, der den falschen Wert liest, nicht zufällig grün bleibt |
 | 39 | Die comfy-Notiz trägt **keine** `cfg:`-Zeile — der Workflow bestimmt den Wert | prüft eine ABWESENHEIT und muss deshalb zuerst belegen, dass überhaupt ein Rezept-Frontmatter dasteht (`seed:`/`model:`, beide unbedingt geschrieben) — sonst wäre der Punkt gerade dann grün, wenn die Notiz gar nicht entstand |
 | 40 | Die grossen Formate (0.12.1) stehen im **Server**-Dropdown und **nicht** im builtin | beide Richtungen, und die zweite ist die Aussage: dass `2048x1152` im Server auftaucht, belegt nur, dass die Liste ankommt — dass es im builtin FEHLT, belegt die Trennung der Quellen (dort speist der Modellkatalog, nicht `SIZES`) |
+| 49 | Regler-Zeilen bei **300 px**: Beschriftung, Regler und Wert jeder Gruppe (Steps, CFG, Denoise, Seed) stehen auf **einer** Zeile | Server-Modus plus Vorlage (alle vier Gruppen sichtbar), `.lig-panel` auf 300 px gestellt (die Brücke hat keinen `setWidth`-Helfer; alles im Panel richtet sich nach der Hülle). Je Gruppe: Mitten der drei Elemente auf einer Höhe (Spanne ≤ 4 px) und linke Kanten in Leserichtung. Vorher (flache Flex-Kinder in einer umbrechenden Zeile, Task „Slider-Beschriftungen …“) lag die nächste Beschriftung am Zeilenende, 28–33 px versetzt. Weniger als vier sichtbare Gruppen oder eine andere Breite als 300 px = nichts gemessen |
+| 50 | Gegenprobe zu 49: ohne das Raster stehen die Gruppen versetzt | nimmt der Reglerzeile die Klasse `lig-controls` (damit ist sie wieder die alte Flex-Zeile) und misst dieselbe Gruppenzeile: mindestens eine Gruppe MUSS versetzt sein, sonst sieht Punkt 49 den Defekt nicht (CORE-TEST-01/-24). Gemessen 2026-10-25: alle vier Gruppen versetzt (Spanne 28–33 px, Reihenfolge verletzt) |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
