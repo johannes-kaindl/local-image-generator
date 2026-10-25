@@ -47,4 +47,11 @@ describe("EN/DE dictionaries", () => {
       expect(DE[key]).toBeTruthy();
     }
   });
+
+  it("say on the model row that the download is stored per Obsidian profile and shared by all vaults", () => {
+    expect(EN["settings.model.desc"]).toMatch(/profile/);
+    expect(EN["settings.model.desc"]).toMatch(/all vaults/);
+    expect(DE["settings.model.desc"]).toMatch(/Profil/);
+    expect(DE["settings.model.desc"]).toMatch(/alle Vaults/);
+  });
 });
