@@ -218,8 +218,6 @@ export default class LocalImageGeneratorPlugin extends Plugin {
             ok: t("crop.ok"),
             info: (cropW, cropH, imageW, imageH) => t("crop.info", cropW, cropH, imageW, imageH),
           },
-          // Scope fuer die Abdunklung in styles.css (`.lig-crop-modal .okit-crop-frame`).
-          cls: "lig-crop-modal",
           onChoose: (crop) => {
             this.state.initCrop = crop;
             this.refreshViews();

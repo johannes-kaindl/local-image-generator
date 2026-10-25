@@ -1659,8 +1659,8 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
       cdp.evaluate(`const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height };`);
     const info = (): Promise<string> => cdp.evaluate(`return document.querySelector(".okit-crop-info")?.textContent ?? ""`);
 
-    // Abdunklung (UI-Abweichung in der AGENTS.md): festes Schwarz 0,55 aus `.lig-crop-modal .okit-crop-frame`, nicht die Theme-Variable des Kits.
-    // Gemessen wird der berechnete Wert, nicht die Stylesheet-Zeile: ein Kit-Update, das die Spezifitaet dreht, faellt sonst nicht auf.
+    // Abdunklung: der Rueckfallwert der Kit-Variable `--okit-crop-scrim` (schwarz 0,55), keine Theme-Variable und kein lokaler Override mehr.
+    // Gemessen wird der berechnete Wert, nicht die Stylesheet-Zeile: ein Kit-Update, das den Wert oder die Variable aendert, faellt sonst nicht auf.
     const scrim = await cdp.evaluate<string>(`return getComputedStyle(document.querySelector(".okit-crop-frame")).boxShadow;`);
     const scrimOk = /rgba\(0, 0, 0, 0\.55\)/.test(scrim);
     const f0 = await rect(".okit-crop-frame");
@@ -1713,7 +1713,7 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
       NAME,
       bewegt && skaliert && zustandOk && serverOk && scrimOk,
       `Rahmen ${bewegt ? "bewegt" : "NICHT bewegt"} (x ${Math.round(f0.x)}→${Math.round(f1.x)}) · ${skaliert ? "skaliert" : "NICHT skaliert"} (Breite ${Math.round(f1.w)}→${Math.round(f2.w)}, Höhe ${Math.round(f2.h)}) · ` +
-        `Info „${i0}“ → „${i2}“ · Abdunklung ${scrimOk ? "festes Schwarz 0,55" : `ABWEICHEND (${scrim})`} · OK ${zustandOk ? "übernommen" : `NICHT übernommen (${JSON.stringify(zustand)})`} · ${server}`,
+        `Info „${i0}“ → „${i2}“ · Abdunklung ${scrimOk ? "Rueckfallwert der Variable (schwarz 0,55)" : `ABWEICHEND (${scrim})`} · OK ${zustandOk ? "übernommen" : `NICHT übernommen (${JSON.stringify(zustand)})`} · ${server}`,
     );
   } finally {
     await cdp
