@@ -467,6 +467,8 @@ in der Cache-API des Browsers im Obsidian-Profil — **außerhalb deines Vaults*
 also nie gesynct — und **Entfernen** in den Einstellungen löscht sie wieder. Ein Download
 lässt sich jederzeit abbrechen; fertige Dateien bleiben.
 
+**Wo liegen die Modelle?** Einmal je Obsidian-Profil, nicht je Vault: Die Modelle und die ONNX-Laufzeit liegen in der Cache-API des Browsers im Obsidian-Profil, jeder Vault, den du in diesem Profil öffnest, nutzt also dieselbe Kopie (SD-Turbo ≈ 2,6 GB, SDXL-Turbo ≈ 7,1 GB; die Laufzeit teilen sich beide). Sie liegen nicht im Vault-Ordner, Obsidian Sync nimmt sie deshalb nicht auf deine anderen Geräte mit — jedes Gerät lädt einmal. **Entfernen** in den Einstellungen löscht die Dateien des gewählten Modells wieder (die Rückfrage nennt ihre Größe) und lässt die geteilte Laufzeit stehen. Der Speicherort lässt sich nicht auf einen Ordner deiner Wahl verlegen, weil die Cache-API auf keinen Ordner zeigen kann. Im Server-Modus lädt das Plugin nichts und nutzt die Modelle, die dein Draw Things, AUTOMATIC1111, Forge, SD.Next oder ComfyUI schon hat.
+
 Die Download-Quelle ist die einzige Netzwerkverbindung der eingebauten Engine. Im
 Server-Modus ist die einzige Verbindung der Server-Endpunkt, den du konfigurierst — und
 das nur beim Generieren, beim Verbindungstest und beim Abfragen des Fortschritts. Kein

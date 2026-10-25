@@ -492,6 +492,8 @@ inside Obsidian's profile — **outside your vault**, so they are never
 synced — and **Remove** in the settings deletes them again. You can cancel a
 download at any time; finished files are kept.
 
+**Where are the models stored?** Once per Obsidian profile, not per vault: the models and the ONNX runtime sit in the browser's Cache API inside Obsidian's profile, so every vault you open in that profile shares the same copy (SD-Turbo ≈ 2.6 GB, SDXL-Turbo ≈ 7.1 GB; the runtime is shared by both). They are not in the vault folder, so Obsidian Sync does not carry them to your other devices — each device downloads once. **Remove** in the settings deletes the active model's files again (the confirmation shows their size) and leaves the shared runtime in place. The storage place cannot be moved to a folder of your choice, because the Cache API cannot point at one. In server mode the plugin downloads nothing and uses the models your Draw Things, AUTOMATIC1111, Forge, SD.Next or ComfyUI already has.
+
 The download source is the only network connection the built-in engine makes.
 In server mode, the only connection is to the server endpoint you configure,
 and only when you generate, test the connection, or the panel polls progress.
