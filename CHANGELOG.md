@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.2] — 2026-10-25
+
 ### Changed
 
 - The model row in the settings and the README now say that the downloaded model is stored once per Obsidian profile and shared by all vaults.
