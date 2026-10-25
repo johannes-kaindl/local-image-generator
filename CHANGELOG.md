@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.1] — 2026-10-25
+
 ### Fixed
 
 - **In a narrow generate panel, the labels of the sliders no longer sit one line off their sliders.** Steps, guidance, change strength and seed were separate items of one wrapping row; at 300 px the row wrapped behind the value, so the next label landed at the end of the line, next to the wrong slider. Each group is now one grid line (label, slider, value) at every width; the panel is a little taller in a wide sidebar.
