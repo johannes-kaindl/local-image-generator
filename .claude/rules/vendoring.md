@@ -11,7 +11,7 @@ paths:
 
 # Kit-Vendoring und Hilfe-Zeile
 
-Gotchas zum Vendoring aus obsidian-kit und code-kit (`tools/kit-sync.json`, `src/vendor/`): feste Refs, Zielordner, Einzelpins.
+Gotchas zum Vendoring aus obsidian-kit und code-kit (`tools/kit-sync.json`, `src/vendor/`): feste Refs, Zielordner.
 
 - **Vendoring (nie von Hand):** `sh tools/sync-kit.sh` ist seit Welle 12 (2026-09-27) nur noch
   ein Wrapper und delegiert an das zentrale `../tools/kit-sync/kit-sync.mjs`; Pins und
@@ -34,8 +34,4 @@ Gotchas zum Vendoring aus obsidian-kit und code-kit (`tools/kit-sync.json`, `src
   `node ../tools/kit-sync/kit-sync.mjs --check` Exit 0 liefern (Reproduzierbarkeit).
   ⚠️ `HUB_CSS` aus `src/vendor/kit-obsidian/hub.ts` ist zusaetzlich in `styles.css` uebernommen —
   das Kit injiziert kein CSS. Wer das Modul neu vendoriert, gleicht den Block mit ab.
-- **Hilfe-Zeile:** `src/vendor/kit-obsidian/help-setting.ts` hat seit Welle 12 einen Einzelpin
-  `{ "name": "help-setting", "ref": "0.43.0" }` in `tools/kit-sync.json` (vorher `KIT_HELP_REF`
-  in `tools/sync-kit.sh`); die uebrigen Module bleiben auf der Quell-Ref `0.27.0`. Die Zeile ist
-  das erste Element von `getSettingDefinitions()` (`src/obsidian/help-row.ts`), Test
-  `tests/help-row.test.ts`, Smoke-Punkt 41.
+- **Hilfe-Zeile:** `src/vendor/kit-obsidian/help-setting.ts` kommt wie jedes andere Modul aus der Quell-Ref von obsidian-kit (`0.69.1`, code-kit `0.36.0`), `tools/kit-sync.json` führt dafür keinen Einzelpin mehr (bis zur Pin-Hebung `f5dda87` am 2026-10-25 stand dort `{ "name": "help-setting", "ref": "0.43.0" }`, davor `KIT_HELP_REF` in `tools/sync-kit.sh`). Die Zeile ist das erste Element von `getSettingDefinitions()` (`src/obsidian/help-row.ts`), Test `tests/help-row.test.ts`, Smoke-Punkt 41.

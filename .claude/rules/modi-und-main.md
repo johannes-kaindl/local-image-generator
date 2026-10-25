@@ -57,15 +57,4 @@ Gotchas zu `src/main.ts` (Routing nach `settings.engine`, Fremdläufe), zu den v
   die Trennung ist reine Nutzerwahl (zwei unabhaengige `EndpointChoice`, kein Filter). Wer
   einen Draw-Things-Endpunkt versehentlich in der Comfy-Rolle waehlt, bekommt keinen Fehler
   beim Waehlen — erst der naechste Verbindungstest/Lauf zeigt es.
-  **Vendoring lief bis Welle 12 EINZELN, ausserhalb von `tools/sync-kit.sh`** (Rahmen-Regel 2
-  der Welle-7-Auftragsnote: das damalige Skript pinnte eine gemeinsame Ref fuer alle neun
-  gelisteten Module und haette sie beim Aufnehmen dieser vier Dateien auf 0.39.0 gehoben).
-  Seit Welle 12 (2026-09-27, zentrales `kit-sync`) sind Einzelpins ein normaler Fall der
-  Konfiguration, kein Sonderweg mehr: `tools/kit-sync.json` traegt fuer
-  `src/vendor/kit/endpoint-source.ts` und `src/vendor/kit-obsidian/{endpoint-source,
-  model-picker}.ts` je `{ "name": …, "ref": "0.39.0" }` (obsidian-kit), fuer
-  `src/vendor/kit/{endpoint_config,model-choice}.ts` die Quelle `code-kit@0.6.0` — beide
-  VENDOR.json listen die Abweichung seither inline im `vendored`-Schluessel
-  (`datei.ts (quelle@version, sha)`), das fruehere Array `vendored_mixed_version` ist damit
-  redundant geworden und entfernt. Re-vendor gegen einen neuen Tag: `ref` in
-  `tools/kit-sync.json` anheben, `node ../tools/kit-sync/kit-sync.mjs` laufen lassen.
+  **Geschichte, seit der Pin-Hebung `f5dda87` (2026-10-25) entfallen:** Vendoring lief bis Welle 12 EINZELN, außerhalb von `tools/sync-kit.sh` (Rahmen-Regel 2 der Welle-7-Auftragsnote: das damalige Skript pinnte eine gemeinsame Ref für alle neun gelisteten Module und hätte sie beim Aufnehmen dieser vier Dateien auf 0.39.0 gehoben). Von Welle 12 (2026-09-27, zentrales `kit-sync`) bis `f5dda87` trug `tools/kit-sync.json` Einzelpins: für `src/vendor/kit/endpoint-source.ts` und `src/vendor/kit-obsidian/{endpoint-source,model-picker}.ts` je `{ "name": …, "ref": "0.39.0" }` (obsidian-kit), für `src/vendor/kit/{endpoint_config,model-choice}.ts` die Quelle `code-kit@0.6.0`; beide `VENDOR.json` listeten die Abweichung inline im `vendored`-Schlüssel (`datei.ts (quelle@version, sha)`). Heute gibt es einen Pin je Quelle (obsidian-kit `0.69.1`, code-kit `0.36.0`). Re-vendor gegen einen neuen Tag: `ref` in `tools/kit-sync.json` anheben, `node ../tools/kit-sync/kit-sync.mjs` laufen lassen.
