@@ -1,10 +1,10 @@
 {
   "sources": {
     "obsidian-kit": {
-      "ref": "0.61.0"
+      "ref": "0.69.1"
     },
     "code-kit": {
-      "ref": "0.28.0"
+      "ref": "0.36.0"
     }
   },
   "targets": [
@@ -13,10 +13,7 @@
       "source": "code-kit",
       "from": "src/ts/pure",
       "modules": [
-        {
-          "name": "crop",
-          "ref": "0.34.0"
-        },
+        "crop",
         "data-url",
         "endpoint",
         "endpoint_config",
@@ -76,27 +73,19 @@
       "modules": [
         "clock",
         "confirm",
-        {
-          "name": "crop-modal",
-          "ref": "0.66.2"
-        },
+        "crop-modal",
         "endpoint-secrets",
         "endpoint-source",
         "folder-suggest",
         "help-setting",
         "hub",
-        {
-          "name": "image-crop",
-          "ref": "0.66.2"
-        },
+        "image-crop",
         "model-picker",
+        "plugin-api",
         "secrets",
         "settings_walker",
         "shortcuts-bridge",
-        {
-          "name": "text-socket",
-          "ref": "0.63.1"
-        }
+        "text-socket"
       ],
       "rewrite": [
         [

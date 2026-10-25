@@ -1,4 +1,4 @@
-// vendored from obsidian-kit@0.66.2, src/obsidian/image-crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from obsidian-kit@0.69.1, src/obsidian/image-crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /**
  * Ausschnitt eines Bildes zeichnen: Base64 → Bitmap → Canvas, begrenzt durch einen `Crop` (code-kit `pure/crop`). Das Gegenstück zum
  * `CropModal` (`obsidian/crop-modal`): das Modal wählt den Rahmen, dieses Modul schneidet ihn aus.

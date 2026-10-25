@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Vendored `obsidian-kit` 0.69.1 (was 0.61.0) and `code-kit` 0.36.0 (was 0.28.0); the crop dialog, its image drawing and the ComfyUI progress socket no longer carry their own pins. Nothing is visible: the dimming around the crop frame was already a dark overlay (55 % black) in both themes; it now comes from the kit's own variable (`--okit-crop-scrim`, same default) instead of a local override. The other changes in these releases (Claude API provider, loose number parsing, frontmatter link text, a new endpoint-list role, the Endpoint Manager plugin API) concern other plugins.
+
 ## [0.21.0] — 2026-10-23
 
 ### Changed

@@ -1,4 +1,4 @@
-// vendored from obsidian-kit@0.63.1, src/obsidian/text-socket.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from obsidian-kit@0.69.1, src/obsidian/text-socket.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /** Ein WebSocket im Renderer, der nur Textrahmen weiterreicht — der Transport, den ein Plugin für einen Fortschritts- oder Ereignisstrom braucht
  *  (ComfyUI meldet Schritte per WebSocket, `local-image-generator`). Reiner Transport: welche Nachricht was heißt, liest der Aufrufer.
  *

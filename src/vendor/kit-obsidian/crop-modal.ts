@@ -1,4 +1,4 @@
-// vendored from obsidian-kit@0.66.2, src/obsidian/crop-modal.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from obsidian-kit@0.69.1, src/obsidian/crop-modal.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /**
  * Ausschnitt-Wahl (UI-STANDARD §8 ergänzt): das Bild mit einem quadratischen Rahmen darüber. Ziehen am Rahmen verschiebt, der Griff unten rechts
  * skaliert; `onChoose(crop)` bekommt den Rahmen, `onChoose(null)` heißt „ganzes Bild“ (keine Wahl), Abbrechen ruft nichts.
@@ -16,7 +16,10 @@
  *   (Pfeiltasten verschieben um 1 % der kürzeren Bildseite, mit Umschalt um das Zehnfache) und der Griff ein `role="slider"` mit
  *   `aria-valuemin`/`-max`/`-now` in Bildpunkten (rechts/oben größer, links/unten kleiner). Esc schließt weiter das Modal, Tab bleibt Tab.
  * - **Texte als Parameter** (`CropModalStrings`, UI-STANDARD §10), `info` als Funktion, weil die Wortstellung der Sprache gehört.
- * - **Theme-Farben statt `rgba`:** die Abdunklung außerhalb des Rahmens nimmt `--background-modifier-cover`.
+ * - **Theme-Farben statt `rgba`, mit einer Ausnahme:** Rand und Griff folgen dem Akzent. Die Abdunklung außerhalb des Rahmens ist die Variable
+ *   `--okit-crop-scrim` mit dem festen Rückfallwert `rgba(0, 0, 0, 0.55)`. `--background-modifier-cover` taugte nicht: es ist im hellen Theme hell
+ *   und dunkelte das Bild dort nicht ab (gemessen Welle 25/26). Eine Abdunklung ist unabhängig vom Theme dunkel, weil sie vor dem Bild steht, nicht vor dem
+ *   Fenster. Der Consumer überschreibt `--okit-crop-scrim` in seiner `styles.css`, wenn er eine andere Stärke will.
  * - **„Übernehmen“ ist erst nach dem Laden des Bildes wirksam** (vorher gibt es keinen Rahmen).
  *
  * ## Fallen beim Übernehmen
@@ -197,11 +200,12 @@ export class CropModal extends Modal {
 export const CROP_MODAL_CSS = `
 .okit-crop-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; line-height: 0; user-select: none; touch-action: none; }
 .okit-crop-img { display: block; max-width: 100%; max-height: 60vh; }
-/* Der Rahmen dunkelt das Bild AUSSERHALB ab (Form), der Rand und der Griff folgen dem Akzent des Themes. */
+/* Der Rahmen dunkelt das Bild AUSSERHALB ab (Form), der Rand und der Griff folgen dem Akzent des Themes. Die Abdunklung ist eine eigene Variable
+   mit hartem Rückfallwert (einzige feste Farbe der Konstante): ein Theme-Wert wie die Modal-Abdeckung ist im hellen Theme hell. */
 .okit-crop-frame {
   position: absolute; box-sizing: border-box; cursor: move; touch-action: none;
   border: 2px solid var(--interactive-accent);
-  box-shadow: 0 0 0 9999px var(--background-modifier-cover);
+  box-shadow: 0 0 0 9999px var(--okit-crop-scrim, rgba(0, 0, 0, 0.55));
 }
 /* Der Griff sitzt IM Rahmen: ragte er über die Ecke hinaus, schnitte ihn die Bühne (overflow: hidden) am Bildrand ab, sobald der Rahmen
    bis dorthin reicht (gemessen 2026-10-23: 4 px fehlten). */

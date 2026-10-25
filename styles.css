@@ -139,15 +139,16 @@
 .lig-model-pick { flex: 0 0 auto; }
 
 
-/* Ausschnitt-Wahl der Vorlage (CropModal aus obsidian-kit 0.66.2): `CROP_MODAL_CSS` unveraendert aus `vendor/kit-obsidian/crop-modal.ts`,
+/* Ausschnitt-Wahl der Vorlage (CropModal aus obsidian-kit 0.69.1): `CROP_MODAL_CSS` unveraendert aus `vendor/kit-obsidian/crop-modal.ts`,
    das Kit injiziert kein CSS. Neu kopieren, wenn der Pin steigt. */
 .okit-crop-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; line-height: 0; user-select: none; touch-action: none; }
 .okit-crop-img { display: block; max-width: 100%; max-height: 60vh; }
-/* Der Rahmen dunkelt das Bild AUSSERHALB ab (Form), der Rand und der Griff folgen dem Akzent des Themes. */
+/* Der Rahmen dunkelt das Bild AUSSERHALB ab (Form), der Rand und der Griff folgen dem Akzent des Themes. Die Abdunklung ist eine eigene Variable
+   mit hartem Rückfallwert (einzige feste Farbe der Konstante): ein Theme-Wert wie die Modal-Abdeckung ist im hellen Theme hell. */
 .okit-crop-frame {
   position: absolute; box-sizing: border-box; cursor: move; touch-action: none;
   border: 2px solid var(--interactive-accent);
-  box-shadow: 0 0 0 9999px var(--background-modifier-cover);
+  box-shadow: 0 0 0 9999px var(--okit-crop-scrim, rgba(0, 0, 0, 0.55));
 }
 /* Der Griff sitzt IM Rahmen: ragte er über die Ecke hinaus, schnitte ihn die Bühne (overflow: hidden) am Bildrand ab, sobald der Rahmen
    bis dorthin reicht (gemessen 2026-10-23: 4 px fehlten). */
@@ -160,11 +161,6 @@
 .okit-crop-frame:focus-visible { outline: 2px solid var(--text-normal); outline-offset: -4px; }
 .okit-crop-handle:focus-visible { outline: 2px solid var(--background-primary); outline-offset: -4px; }
 .okit-crop-info { color: var(--text-muted); font-size: var(--font-ui-small); margin-top: var(--size-4-2); }
-
-/* UI-Abweichung (AGENTS.md): die Abdunklung ausserhalb des Rahmens bleibt halbtransparentes Schwarz. Das Kit nimmt `--background-modifier-cover`,
-   und das hellt im Light-Theme auf, statt abzudunkeln (Abnahme Welle 24; vom Kit-Entwickler am 2026-10-23 gleich beobachtet). Der Scope `.lig-crop-modal`
-   kommt aus `cls` in main.ts und steht NACH dem Kit-Block, er gewinnt durch die hoehere Spezifitaet. */
-.lig-crop-modal .okit-crop-frame { box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55); }
 
 /* ── Zuletzt, und das ist der Punkt ──────────────────────────────────────────
    `.is-hidden` ist die Aus-Schaltung fuer jede Zeile, die ein Backend nicht kann

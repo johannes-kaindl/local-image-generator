@@ -1,4 +1,4 @@
-// vendored from code-kit@0.34.0, src/ts/pure/crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.36.0, src/ts/pure/crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /** The frame of a crop on an image: a square in pixels, stored relative to the size of the original, with the arithmetic to move it,
  *  resize it and cut it out. Pure — no DOM, no canvas; the modal that draws and drags the frame lives in obsidian-kit.
  *
