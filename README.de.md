@@ -290,7 +290,7 @@ Drittanbieter-App keinen anderen Weg dorthin.
 
 1. Den Kurzbefehl **`Generate Image (Obsidian)`** besorgen — entweder Johannes Kaindls
    geteilte Fassung importieren (Link und Einrichtungsanleitung:
-   [uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts))
+   [jkaindl.de/uplink/apple-shortcuts](https://jkaindl.de/uplink/apple-shortcuts/))
    oder selbst bauen: ein Kurzbefehl, der den übergebenen Text als Prompt nimmt, damit
    eine **Image Playground**-Aktion ausführt und das Ergebnis per **Datei sichern** in
    den Vault schreibt.
@@ -306,7 +306,7 @@ Drittanbieter-App keinen anderen Weg dorthin.
 Der zentrale Guide — die Import-Fragen des Kurzbefehls, die vollständige Fehlertabelle
 (Guardrail-Ablehnungen, ein fehlender Kurzbefehl, Timeouts) und alle Voraussetzungen im
 Detail — steht unter
-[uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts).
+[jkaindl.de/uplink/apple-shortcuts](https://jkaindl.de/uplink/apple-shortcuts/).
 
 ## Verwendung
 

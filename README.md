@@ -305,7 +305,7 @@ way for a third-party app to reach it on iOS.
 
 1. Get the Shortcut named **`Generate Image (Obsidian)`** — either import
    Johannes Kaindl's shared version (link and setup walkthrough:
-   [uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts))
+   [jkaindl.de/uplink/apple-shortcuts](https://jkaindl.de/uplink/apple-shortcuts/))
    or build your own: a Shortcut that takes the passed-in text as the
    prompt, runs an **Image Playground** action with it, and saves the
    result into your vault with a **Save File** action.
@@ -321,7 +321,7 @@ way for a third-party app to reach it on iOS.
 The central guide — the Shortcut's import questions, the full error table
 (guardrail refusals, a missing Shortcut, timeouts), and requirements in
 detail — lives at
-[uplink.jkaindl.de/apple-shortcuts](https://uplink.jkaindl.de/apple-shortcuts).
+[jkaindl.de/uplink/apple-shortcuts](https://jkaindl.de/uplink/apple-shortcuts/).
 
 ## Usage
 
