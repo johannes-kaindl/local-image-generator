@@ -30,6 +30,10 @@
         "settings",
         "settings_schema",
         "sha256",
+        {
+          "name": "split-list",
+          "ref": "0.63.0"
+        },
         "think-splitter",
         "timeout"
       ]

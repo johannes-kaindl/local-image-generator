@@ -11,28 +11,23 @@
 // wäre ein Referenzzähler neben dem Textfeld, also genau die zweite Wahrheit, die wir
 // vermeiden wollen.
 
-const SEP = ", ";
+import { splitList } from "../vendor/kit/split-list";
 
-function splitParts(text: string): string[] {
-  return text
-    .split(",")
-    .map((p) => p.trim())
-    .filter((p) => p !== "");
-}
+const SEP = ", ";
 
 /** Aktiv, wenn ALLE Bausteine des Suffix im Prompt stehen. Leerer Suffix → nie aktiv. */
 export function presetActive(prompt: string, suffix: string): boolean {
-  const suffixParts = splitParts(suffix);
+  const suffixParts = splitList(suffix);
   if (suffixParts.length === 0) return false;
-  const promptParts = splitParts(prompt);
+  const promptParts = splitList(prompt);
   return suffixParts.every((p) => promptParts.includes(p));
 }
 
 /** Schaltet den Suffix an/aus. Normalisiert die Trennung auf ", ". */
 export function togglePresetInPrompt(prompt: string, suffix: string): string {
-  const suffixParts = splitParts(suffix);
+  const suffixParts = splitList(suffix);
   if (suffixParts.length === 0) return prompt;
-  const promptParts = splitParts(prompt);
+  const promptParts = splitList(prompt);
   const next = presetActive(prompt, suffix)
     ? promptParts.filter((p) => !suffixParts.includes(p))
     : [...promptParts, ...suffixParts.filter((p) => !promptParts.includes(p))];
