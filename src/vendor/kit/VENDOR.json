@@ -9,5 +9,6 @@
   "code_kit_vendored": "endpoint_config.ts, model-choice.ts",
   "obsidian_kit_version": "0.69.1",
   "obsidian_kit_sha": "4f99d6c",
-  "obsidian_kit_vendored": "frontmatter.ts, image-gen-provider.ts, endpoint-source.ts, endpoint-secret-hook.ts"
+  "obsidian_kit_vendored": "frontmatter.ts, image-gen-provider.ts, endpoint-source.ts, endpoint-secret-hook.ts",
+  "license": "AGPL-3.0-or-later"
 }
