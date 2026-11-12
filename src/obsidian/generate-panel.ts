@@ -120,7 +120,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     // `lig-controls`: Raster statt Flex-Umbruch (styles.css) — Beschriftung, Regler und Wert einer Gruppe bleiben auf einer Zeile.
     const controls = root.createDiv({ cls: "lig-row lig-controls" });
     this.sizeRowEl = controls.createSpan({ cls: "lig-size-slot" });
-    // Modell-Dropdown (Task 12, Spec 0.9 §6.2): NUR geladene Modelle als Optionen — ein
+    // Modell-Dropdown: NUR geladene Modelle als Optionen — ein
     // Panel-Klick darf nie einen Download ausloesen (vm.modelOptions filtert das bereits vor).
     // Sichtbare Beschriftung wie beim Groessen-Dropdown daneben (UI-STANDARD: ein
     // Bedienelement ohne zugaengliches Label ist derselbe Fall wie ein Icon-only-Button).
@@ -406,7 +406,7 @@ export class GeneratePanel implements HubPanel<TabId> {
       this.buildSizeDropdown(sizeOptions);
       if (this.sizeEl!.value !== vorherSize) this.host.setRecipe(this.currentRecipe());
     }
-    // Modell-Dropdown (Task 12): NUR bei sichtbarem Picker sind die Optionen ueberhaupt
+    // Modell-Dropdown: NUR bei sichtbarem Picker sind die Optionen ueberhaupt
     // relevant, aber toggleClass laeuft immer — dieselbe Regel wie bei den anderen Zeilen.
     this.modelPickEl.toggleClass("is-hidden", !vm.controls.modelPicker);
     this.modelPickLabelEl.toggleClass("is-hidden", !vm.controls.modelPicker);

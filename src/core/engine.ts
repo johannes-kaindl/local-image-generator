@@ -54,7 +54,7 @@ export interface GenerateRequest {
   /** Kantenlänge in Pixeln. OPTIONAL — SdTurboEngine ignoriert es (immer 512),
    *  SdxlTurboEngine liest `req.size ?? opts.size` (Spec 0.9 §5.2). Pflicht hätte
    *  SdTurboEngine und alle bestehenden Aufrufer geändert, gegen die Zusage, dass
-   *  SD-Turbo unangetastet bleibt (Controller-Ruling Task 9). */
+   *  SD-Turbo unangetastet bleibt. */
   size?: number;
   /** img2img (Spec 4a): Vorlagen-Pixel CHW [-1,1], BEREITS auf Zielgroesse (Base64→Pixel
    *  braucht DOM und sitzt in png.ts/local-engine — Pure-Core-Schnitt). undefined = txt2img. */
@@ -129,7 +129,7 @@ export function firstOutput(session: Session, outputs: Record<string, OrtValue>)
 }
 
 // UNet-Schleife (Euler-Ancestral, Spec §5) — geteilt zwischen SdTurboEngine und
-// SdxlTurboEngine (Review Task 9: die Schleife war ein Verbatim-Duplikat bis auf
+// SdxlTurboEngine (vorher ein Verbatim-Duplikat in beiden Engines, bis auf
 // Latent-Dims und zwei Zusatz-Feeds). `extraFeeds` traegt alles, was ein Encoder-Setup
 // dem UNet zusaetzlich zu `sample`/`timestep` gibt — SD-Turbo nur `encoder_hidden_states`,
 // SDXL zusaetzlich `text_embeds`/`time_ids`. Reine Latents-Rueckgabe (kein VAE-Decode) —
@@ -213,7 +213,7 @@ export function noisedInitLatents(init: Float32Array, seed: number, sigma: numbe
 }
 
 // VAE-Rueckskalierung + Decode + CHW→RGBA — geteilt zwischen SdTurboEngine und
-// SdxlTurboEngine (Review Task 9), Skalierungskonstante und Zielgroesse sind Parameter
+// SdxlTurboEngine, Skalierungskonstante und Zielgroesse sind Parameter
 // statt Modul-Konstanten, damit SDXL (0.13025, 512/1024) SD-Turbo (0.18215, 512) nicht
 // anfasst.
 export async function decodeLatents(

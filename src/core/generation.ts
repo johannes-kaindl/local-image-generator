@@ -1,4 +1,4 @@
-// Generations-Grenzen (Spec §4) — ersetzen den Modell-Katalog (models.ts stirbt in Task 8):
+// Generations-Grenzen (Spec §4) — ersetzen den frueheren Modell-Katalog (models.ts ist entfallen):
 // der Server hält die Modelle, das Plugin bietet generische, ehrliche Regler.
 import { modelById, type BuiltinModelId } from "./model-manifest";
 import type { EngineChoice } from "./settings";

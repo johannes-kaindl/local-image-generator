@@ -89,7 +89,7 @@ type GeneratedEntry = {
 };
 
 /** Cache-Key eines generierten Katalogeintrags modell-qualifizieren — beide Modelle haben
- *  z. B. einen "unet". `g.path` traegt den Modellordner bereits (Ruling Task 5: kein zweites
+ *  z. B. einen "unet". `g.path` traegt den Modellordner bereits (kein zweites
  *  Praefix, sonst laeuft der Download in einen 404). */
 function asset(modelId: BuiltinModelId, key: string, g: { path: string; bytes: number; sha256: string }, kind: AssetFile["kind"]): AssetFile {
   return { key: `${modelId}/${key}`, path: g.path, bytes: g.bytes, sha256: g.sha256, kind };
@@ -202,8 +202,8 @@ export function cacheKey(f: AssetFile): string {
   return `https://lig-asset.invalid/${f.key}/${f.sha256.slice(0, 16)}/${base}`;
 }
 
-/** Der Cache-Schluessel vor der Modell-Qualifizierung von `asset()` (Ruling Task 5,
- *  2026-08-24 — `key` bekam das `${modelId}/`-Praefix). NUR fuer die Einmal-Migration
+/** Der Cache-Schluessel vor der Modell-Qualifizierung von `asset()` (seit
+ *  2026-08-24 traegt `key` das `${modelId}/`-Praefix). NUR fuer die Einmal-Migration
  *  bestehender SD-Turbo-Downloads gedacht (`ModelStore.migrateLegacyKeys`, C2-Fix): ohne sie
  *  faende `isComplete()` die ~2,5 GB jeder Bestandsinstallation nie wieder, und das Panel
  *  boete einen unnoetigen Neudownload an, waehrend die alten Bytes fuer immer im Cache

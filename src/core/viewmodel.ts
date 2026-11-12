@@ -109,7 +109,7 @@ export interface PanelState {
    *  Rechnung selbst steht einmal in `missingBytes()` (model-manifest.ts). */
   missingBytes: number | null;
   /** Welche eingebauten Modelle vollstaendig im Cache liegen — vom aktiven `mode` unabhaengig,
-   *  bezieht sich immer auf alle Eintraege in BUILTIN_MODELS (Task 10). */
+   *  bezieht sich immer auf alle Eintraege in BUILTIN_MODELS. */
   downloadedModels: BuiltinModelId[];
   /** Das gewaehlte eingebaute Modell (settings.builtinModel) — wie `mode` abgeleitet aus den
    *  Settings, hier aber Teil des States selbst (kein Omit noetig: es lebt nur in Settings,

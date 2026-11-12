@@ -87,8 +87,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
-  // `workflow` ist seit Task 5 Teil von PanelState (der ganze Zustand, nicht nur die Slots) —
-  // die fruehere Intersection ist damit aufgeloest.
+  // `workflow` ist Teil von PanelState (der ganze Zustand, nicht nur die Slots) —
+  // eine Intersection mit einem eigenen Workflow-Typ ist damit nicht mehr noetig.
   private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker" | "playgroundShortcutName"> = {
     initImage: null,
     initCrop: null,
@@ -291,7 +291,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
     // Cache-Migration (C2-Fix, Final-Review 2026-08-24) VOR dem ersten isComplete()-Blick:
-    // Ruling Task 5 qualifizierte die Cache-Schluessel modell-spezifisch — eine Bestands-
+    // Die Cache-Schluessel sind seit 2026-08-24 modell-spezifisch qualifiziert — eine Bestands-
     // installation traegt ihre ~2,5 GB SD-Turbo noch unter dem alten, flachen Schluessel.
     // Awaited, damit refreshEngineState() gleich danach den migrierten Stand sieht statt eine
     // Race gegen die eigene Migration zu laufen und einen 2,5-GB-Neudownload anzubieten.
@@ -319,7 +319,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Einmalig pro Session (onload läuft genau einmal pro Plugin-Ladevorgang, nicht pro
     // Settings-Tab-Öffnung): Bestandsinstallationen können noch ~2,5 GB alte SD-Turbo-
     // Gewichte im Cache-API-Speicher haben (0.x, In-Process-Engine). Hinweis statt
-    // automatischem Löschen — der Aufräumer selbst sitzt in den Settings (Task 7).
+    // automatischem Löschen — der Aufräumer selbst sitzt in den Settings.
     void hasLegacyCache().then((found) => {
       if (found) new Notice(t("notice.legacyHint"));
     });
@@ -388,7 +388,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   /** Das gewaehlte eingebaute Modell (settings.builtinModel) — abgeleitet, keine zweite
-   *  Kopie. Oeffentlich: der Settings-Tab (Task 11) zeigt Name/Groesse/Lizenz darueber an. */
+   *  Kopie. Oeffentlich: der Settings-Tab zeigt Name/Groesse/Lizenz darueber an. */
   activeModel(): BuiltinModel {
     return modelById(this.settings.builtinModel);
   }
@@ -400,7 +400,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return filesFor(this.settings.builtinModel);
   }
 
-  /** Welche eingebauten Modelle vollstaendig im Cache liegen — fuer den Settings-Tab (Task 11),
+  /** Welche eingebauten Modelle vollstaendig im Cache liegen — fuer den Settings-Tab,
    *  der pro Modell Download/Loeschen anbietet. */
   get downloadedModels(): BuiltinModelId[] {
     return this.state.downloadedModels;
@@ -587,7 +587,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const complete = cached !== null && cached.length === files.length;
     this.state.missingBytes = cached === null ? null : missingBytes(files, cached);
     // Welche Modelle ueberhaupt im Cache liegen — unabhaengig vom aktiven, fuer den
-    // Settings-Tab (Task 11). Ohne RUNTIME_WASM: die zaehlt nicht als Teil eines Modells.
+    // Settings-Tab. Ohne RUNTIME_WASM: die zaehlt nicht als Teil eines Modells.
     const geladen: BuiltinModelId[] = [];
     for (const id of Object.keys(BUILTIN_MODELS) as BuiltinModelId[]) {
       if (await this.modelStore.isComplete(assetsFor(id)).catch(() => false)) geladen.push(id);
@@ -599,7 +599,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** Opt-in-Download aller fehlenden Assets des GEWAEHLTEN Modells (Spec 0.6 §4: ohne Klick
    *  fließt kein Byte). Vor dem grossen SDXL-Turbo-Download fragt zusaetzlich ein
-   *  Bestaetigungsdialog (Task 12) — SD-Turbo (Default) bleibt ohne Rueckfrage, wie bisher.
+   *  Bestaetigungsdialog — SD-Turbo (Default) bleibt ohne Rueckfrage, wie bisher.
    *  Abbrechen (Knopf, Escape, Klick daneben) laedt kein Byte: confirmAction() loest bei
    *  jedem dieser drei Wege mit `false` auf. */
   async startDownload(): Promise<void> {
@@ -781,7 +781,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return { url: r.config?.url ?? null };
   }
 
-  /** Modell wechseln (Settings, Task 10): dieselbe Sperre wie setEngine() — ein Wechsel darf
+  /** Modell wechseln (Settings): dieselbe Sperre wie setEngine() — ein Wechsel darf
    *  die GPU-Sessions nicht unter einem laufenden Panel- ODER API-Lauf wegziehen (isBusy()
    *  deckt beide). Schaltet NICHT automatisch zurueck, wenn das neue Modell fehlt: das
    *  Panel zeigt dann seinen Download-Aufruf (Spec §4, „ohne Klick fließt kein Byte" gilt
@@ -808,7 +808,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** Erreichbarkeit + aktives Modell in den State spiegeln (Spec §3: GET /sdapi/v1/options,
    *  200 ohne Modellfeld gilt als OK — Draw Things liefert die Options-Form nur teilweise).
-   *  Gibt den resultierenden ServerState zurück, damit der Settings-Tab-Test-Button (Task 7)
+   *  Gibt den resultierenden ServerState zurück, damit der Settings-Tab-Test-Button
    *  das Ergebnis direkt für seine Notice auswerten kann, ohne einen eigenen Zugriff auf
    *  den (privaten) Plugin-State zu brauchen. */
   async checkServer(): Promise<ServerState> {
@@ -1024,8 +1024,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // bei Fehler. Ohne diese Unterscheidung zeigte die Statuszeile die rohe Backend-Meldung
       // eines fremden Laufs, als waere der EIGENE gescheitert. Der Aufrufer bekommt den
       // Fehler ohnehin als Rueckgabewert und meldet ihn seinem Nutzer selbst; unsere
-      // Statuszeile gehoert dem eigenen Klick. (Ruling 2026-08-23, Task „Folgearbeit aus dem
-      // Provider-API-Abschlussreview" — Alternative war ein dritter i18n-Key.)
+      // Statuszeile gehoert dem eigenen Klick. (Entschieden 2026-08-23; die Alternative war ein dritter i18n-Key.)
       // Spec §8 Punkt 1: ein Session-Aufbau, der an knappem Speicher scheitert, bekommt einen
       // lesbaren Satz statt der rohen ORT-Fehlermeldung — nur im eingebauten Modus, nur bei
       // erkanntem Signal (`isOutOfMemoryError`, src/core/engine-errors.ts). Erkennt sie nichts,

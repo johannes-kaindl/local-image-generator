@@ -170,8 +170,8 @@ export class ModelStore {
   }
 
   /** Einmalige Cache-zu-Cache-Migration bestehender SD-Turbo-Downloads auf die
-   *  modell-qualifizierten Schluessel (Ruling Task 5 aenderte `cacheKey()` — C2-Fix,
-   *  Final-Review 2026-08-24). Ohne sie faende `isComplete()` die ~2,5 GB jeder
+   *  modell-qualifizierten Schluessel (`cacheKey()` qualifiziert seit 2026-08-24 mit dem
+   *  Modell). Ohne sie faende `isComplete()` die ~2,5 GB jeder
    *  Bestandsinstallation nie wieder (`cachedKeys()` prueft nur noch den NEUEN Schluessel),
    *  das Panel boete einen unnoetigen 2,5-GB-Neudownload an, und die alten Bytes blieben fuer
    *  immer verwaist im Cache (`deleteAll()` kennt ebenfalls nur die neuen Schluessel).

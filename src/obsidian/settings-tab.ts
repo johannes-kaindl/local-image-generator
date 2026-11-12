@@ -135,11 +135,11 @@ export class LigSettingTab extends PluginSettingTab {
         items: [
           {
             name: t("settings.engine.name"),
-            // Modellneutral (Task 12 Fixrunde): diese Zeile beschreibt den ENGINE-Modus
+            // Modellneutral: diese Zeile beschreibt den ENGINE-Modus
             // (eingebaut vs. Server), nicht ein bestimmtes Modell — Groesse/Name des
             // aktiven Modells stehen bereits in modelRow direkt darunter. Vorher hardcodiert
             // auf SD-Turbo/dessen Groesse: mit SDXL-Turbo gewaehlt widersprach diese Zeile
-            // der Zeile direkt darunter (Review-Fund Task 12).
+            // der Zeile direkt darunter.
             desc: t("settings.engine.desc"),
             control: {
               type: "dropdown",

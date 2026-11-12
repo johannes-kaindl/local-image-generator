@@ -1,7 +1,7 @@
 // Aufräumer für den 0.x-In-Process-Cache (Spec §4): die SD-Turbo-Gewichte (~2,5 GB) liegen
-// bei Bestandsinstallationen noch in der Cache API. Name übernommen aus model-store.ts (0.4)
-// — als Literal kopiert statt importiert, weil model-store.ts in Task 8 komplett entfällt und
-// dieser Aufräumer gerade NICHT mehr davon abhängen soll.
+// bei Bestandsinstallationen noch in der Cache API. Name des 0.x-Caches — als Literal geschrieben statt aus
+// model-store.ts importiert, weil das heutige model-store.ts einen anderen Cache verwaltet (`ASSET_CACHE_NAME`)
+// und dieser Aufräumer gerade NICHT davon abhängen soll.
 const LEGACY_CACHE = "local-image-generator-models";
 
 /** Liegen noch 0.4-Gewichte da? Zählt Einträge, nicht den Namen: ein leerer Cache (Name

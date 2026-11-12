@@ -38,7 +38,7 @@ export interface HardenContext {
    *  ohne diese Trennung fiel `backendCapabilities(ctx.mode)` auf ihren Default-Parameter
    *  zurueck (SD-Turbo) und ueberschrieb im builtin-Modus JEDE Groesse eines anderen Modells
    *  still auf 512x512 — SDXL-Turbos 1024x1024 kam nie im GenParams an, obwohl Panel und
-   *  Settings-Tab es korrekt anboten (Review-Fund, Task 12 Fixrunde). Im Server-Modus
+   *  Settings-Tab es korrekt anboten. Im Server-Modus
    *  ungenutzt (backendCapabilities ignoriert `model`, wenn mode !== "builtin"), aber trotzdem
    *  Pflicht: ein optionales Feld waere wieder ein stiller Default gewesen. */
   builtinModel: BuiltinModelId;
