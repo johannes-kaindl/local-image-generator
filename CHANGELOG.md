@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-11-14
+
 ### Changed
 
 - Settings, **Advanced → Download source**: the address is now checked. Only https addresses and local http addresses (127.0.0.1, localhost, [::1]) are accepted; anything else is refused with a notice and the previous value stays. A value in `data.json` that does not pass falls back to the default. Until now any text was taken as the source of the model files (the checksums still bind the downloaded bytes). The address is joined to the file path by the shared library function `joinAssetUrl` instead of a private copy.
