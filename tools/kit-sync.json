@@ -32,6 +32,10 @@
         },
         "format-bytes",
         "i18n",
+        {
+          "name": "loopback",
+          "ref": "0.68.0"
+        },
         "local-stamp",
         "model-choice",
         "model-list-cache",
@@ -55,6 +59,10 @@
       "source": "code-kit",
       "from": "src/ts/web",
       "modules": [
+        {
+          "name": "asset-store",
+          "ref": "0.68.0"
+        },
         "cache-download"
       ]
     },

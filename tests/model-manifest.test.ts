@@ -34,6 +34,7 @@ describe("model-manifest", () => {
     const f = assetsFor("sd-turbo").find((x) => x.key === "sd-turbo/unet")!;
     expect(assetUrl("http://127.0.0.1:7862/", f)).toBe(`http://127.0.0.1:7862/${f.path}`);
     expect(assetUrl(DEFAULT_ASSET_BASE_URL, f)).toBe(`${DEFAULT_ASSET_BASE_URL}/${f.path}`);
+    expect(assetUrl("https://m.example.org///", f)).toBe(`https://m.example.org/${f.path}`);
   });
   it("cacheKey ist URL-unabhängig, URL-förmig und trägt den Hash-Präfix", () => {
     const f = RUNTIME_WASM;

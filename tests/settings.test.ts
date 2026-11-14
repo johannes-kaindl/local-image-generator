@@ -331,6 +331,14 @@ describe("engine-Migration (0.6)", () => {
     expect(validate({ assetBaseUrl: "  " }).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
     expect(validate({ assetBaseUrl: "http://127.0.0.1:7862/" }).assetBaseUrl).toBe("http://127.0.0.1:7862/");
   });
+  it("assetBaseUrl: nur https oder lokales http (127.0.0.1, localhost, [::1]); alles andere fällt auf den Default", () => {
+    for (const ok of ["https://mirror.example.org/models", "  https://huggingface.co/x/y/resolve/main  ", "http://localhost:7862", "http://[::1]:7862/", "http://127.0.0.1:7862"]) {
+      expect(validate({ assetBaseUrl: ok }).assetBaseUrl).toBe(ok.trim());
+    }
+    for (const bad of ["http://mirror.example.org", "http://127.0.0.1.evil.test", "http://127.0.0.1@evil.test", "ftp://x", "file:///etc", "javascript:alert(1)", "mirror.example.org", "//evil.test", 42, null]) {
+      expect(validate({ assetBaseUrl: bad }).assetBaseUrl).toBe(DEFAULT_ASSET_BASE_URL);
+    }
+  });
 });
 
 describe("Modellwahl-Settings (Spec 0.9 §6.1)", () => {

@@ -165,7 +165,8 @@ export const EN: Record<string, string> = {
   "confirm.bigModel.cta": "Download",
   "settings.advanced.heading": "Advanced",
   "settings.assetBaseUrl.name": "Download source",
-  "settings.assetBaseUrl.desc": "Base URL of the model files. Default is the plugin's model repository; change it for a mirror or a local server. Downloaded files stay valid regardless of the URL.",
+  "settings.assetBaseUrl.desc": "Base URL of the model files. Default is the plugin's model repository; change it for a mirror or a local server. Only https addresses and local http addresses (127.0.0.1, localhost) are accepted. Downloaded files stay valid regardless of the URL.",
+  "settings.assetBaseUrl.rejected": "Download source not accepted: only https or a local http address (127.0.0.1, localhost). The previous value stays.",
   "settings.server.name": "Server endpoint",
   "settings.server.desc":
     "A1111-compatible local image server — Draw Things (enable API server), AUTOMATIC1111 (--api), Forge, SD.Next.",
@@ -387,7 +388,8 @@ export const DE: Record<string, string> = {
   "confirm.bigModel.cta": "Herunterladen",
   "settings.advanced.heading": "Erweitert",
   "settings.assetBaseUrl.name": "Download-Quelle",
-  "settings.assetBaseUrl.desc": "Basis-URL der Modell-Dateien. Standard ist das Modell-Repository des Plugins; für einen Spiegel oder lokalen Server änderbar. Geladene Dateien bleiben unabhängig von der URL gültig.",
+  "settings.assetBaseUrl.desc": "Basis-URL der Modell-Dateien. Standard ist das Modell-Repository des Plugins; für einen Spiegel oder lokalen Server änderbar. Angenommen werden nur https-Adressen und lokale http-Adressen (127.0.0.1, localhost). Geladene Dateien bleiben unabhängig von der URL gültig.",
+  "settings.assetBaseUrl.rejected": "Download-Quelle nicht angenommen: nur https oder eine lokale http-Adresse (127.0.0.1, localhost). Der bisherige Wert bleibt.",
   "settings.server.name": "Server-Endpoint",
   "settings.server.desc":
     "A1111-kompatibler lokaler Bild-Server — Draw Things (API-Server aktivieren), AUTOMATIC1111 (--api), Forge, SD.Next.",

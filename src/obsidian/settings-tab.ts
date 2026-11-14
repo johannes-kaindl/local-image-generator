@@ -273,8 +273,17 @@ export class LigSettingTab extends PluginSettingTab {
       this.refreshUi(); // Download-/Loeschen-Zeile zeigt jetzt ein anderes Modell
       return;
     }
-    this.plugin.settings = validateSettings(DEFAULT_SETTINGS, { ...this.plugin.settings, [key]: clean }, SETTINGS_SCHEMA);
+    const before = this.plugin.settings;
+    this.plugin.settings = validateSettings(DEFAULT_SETTINGS, { ...before, [key]: clean }, SETTINGS_SCHEMA);
+    // Die Spiegel-URL ist eine Ziel-Erlaubnis (nur https oder lokales http): ein abgelehnter Wert fällt still auf den Default zurück,
+    // das Feld würde den getippten Text weiter zeigen. Deshalb sagen und das Feld zurückstellen.
+    const rejected = key === "assetBaseUrl" && clean !== "" && this.plugin.settings.assetBaseUrl !== clean;
+    if (rejected) {
+      this.plugin.settings = { ...this.plugin.settings, assetBaseUrl: before.assetBaseUrl };
+      new Notice(t("settings.assetBaseUrl.rejected"));
+    }
     await this.plugin.saveSettings();
+    if (rejected) this.refreshUi();
   }
 
   // ── render-Hatches ───────────────────────────────────────────────────────

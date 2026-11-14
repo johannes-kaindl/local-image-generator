@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Settings, **Advanced → Download source**: the address is now checked. Only https addresses and local http addresses (127.0.0.1, localhost, [::1]) are accepted; anything else is refused with a notice and the previous value stays. A value in `data.json` that does not pass falls back to the default. Until now any text was taken as the source of the model files (the checksums still bind the downloaded bytes). The address is joined to the file path by the shared library function `joinAssetUrl` instead of a private copy.
 - History list: the one-line label of a prompt is now cut by the shared library function (`chatTitle` from code-kit) instead of a private copy. Prompts without emoji look exactly as before. The cut now counts characters, not UTF-16 units, so an emoji at the cut is never split in half (before, it could leave a broken character before the ellipsis). A prompt that is only whitespace still shows an empty label.
 
 ## [0.21.2] — 2026-10-25

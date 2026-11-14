@@ -2,6 +2,7 @@
 // Attribution, Regler-Bereich) steht hier; Pfade, Größen und SHA-256 kommen aus dem generierten
 // Manifest (scripts/build-assets.mjs). Zwei Modelle (SD-Turbo, SDXL-Turbo) sind benannte Teile
 // (`ModelPart`) über `assetsFor()` aufgelöst — kein Umbau für ein drittes Modell. Pure, obsidian-frei.
+import { joinAssetUrl } from "../vendor/kit/asset-store";
 import { GENERATED_ASSETS, ORT_VERSION } from "./engine-manifest.generated";
 import type { SizeOption } from "./generation";
 
@@ -191,7 +192,7 @@ export function assetsFor(id: BuiltinModelId): AssetFile[] {
 
 /** Basis + Pfad ohne doppelte oder fehlende Slashes. */
 export function assetUrl(baseUrl: string, f: AssetFile): string {
-  return `${baseUrl.replace(/\/+$/, "")}/${f.path}`;
+  return joinAssetUrl(baseUrl, f.path);
 }
 
 /** Cache-Schlüssel — URL-unabhängig (Spiegel/lokaler Server verstecken nie einen vorhandenen

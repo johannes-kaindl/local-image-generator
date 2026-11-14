@@ -399,6 +399,7 @@ detail — lives at
   from. The default is this plugin's model repository on Hugging Face; point
   it at a mirror or a local server if you need to. Files already downloaded
   stay valid whatever the URL says.
+  Only https addresses and local http addresses (127.0.0.1, localhost, [::1]) are accepted; anything else is refused with a notice and the previous value stays.
 - **Delete old SD-Turbo weights** (only shown if detected) — if you're
   upgrading from a pre-0.5 version of this plugin, which cached a different
   conversion of the model in the browser's Cache API, this row lets you

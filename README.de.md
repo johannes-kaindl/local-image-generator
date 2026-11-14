@@ -381,6 +381,7 @@ Detail — steht unter
   werden. Standard ist das Modell-Repository dieses Plugins auf Hugging Face; für einen
   Spiegel oder einen lokalen Server änderbar. Bereits geladene Dateien bleiben gültig,
   egal was die URL sagt.
+  Angenommen werden nur https-Adressen und lokale http-Adressen (127.0.0.1, localhost, [::1]); alles andere wird mit einer Meldung abgelehnt, der bisherige Wert bleibt.
 - **Alte SD-Turbo-Gewichte löschen** (nur sichtbar, wenn welche gefunden werden) — wer
   von einer Version vor 0.5 kommt, die eine andere Konversion des Modells in der
   Cache-API des Browsers ablegte, löscht diese ~2,5 GB hier mit einem Klick. Die

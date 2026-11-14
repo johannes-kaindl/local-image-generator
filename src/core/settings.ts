@@ -2,6 +2,7 @@
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
+import { isLoopbackHttpUrl } from "../vendor/kit/loopback";
 import { parseCrop, type Crop } from "../vendor/kit/crop";
 import { DEFAULT_ASSET_BASE_URL, DEFAULT_BUILTIN_MODEL_ID, type BuiltinModelId } from "./model-manifest";
 import {
@@ -9,8 +10,8 @@ import {
   arrayThen,
   check,
   isPlainObject,
-  nonEmptyString,
   oneOf,
+  type FieldCheck,
   type SettingsSchema,
 } from "../vendor/kit/settings_schema";
 import type { EndpointChoice } from "../vendor/kit/endpoint-source";
@@ -211,6 +212,25 @@ export function migrateSettings(raw: unknown): unknown {
   return { ...s, engine: endpoint !== "" ? "server" : "builtin" };
 }
 
+/** Nur https. Bewusst nicht im Kit: dort gibt es `isLoopbackHttpUrl`, die https-Hälfte ist ein Einzeiler und steht ebenso in audio-interface (`main.ts`). */
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/** Die Spiegel-URL der Modell-Downloads ist eine Ziel-Erlaubnis, kein Freitext: nur https oder lokales http (127.0.0.1, localhost, [::1]).
+ *  Alles andere (auch ein Wert aus einer fremd geschriebenen `data.json`) fällt auf den Default zurück. Die Prüfsummen binden die Bytes
+ *  ohnehin; die Grenze verhindert, dass ein Vertipper oder ein untergeschobener Wert Anfragen im Klartext in ein fremdes Netz schickt.
+ *  Getrimmt; ein Schrägstrich am Ende bleibt roh (`assetUrl` normalisiert). */
+const assetBaseUrlField: FieldCheck<string> = (raw, fallback) => {
+  if (typeof raw !== "string") return fallback;
+  const v = raw.trim();
+  return isLoopbackHttpUrl(v) || isHttpsUrl(v) ? v : fallback;
+};
+
 /** Feldprüfer für `validateSettings` (Kit `pure/settings_schema.ts`, Schicht 2 — geschlossene
  *  Welt). Eine handeditierte oder von einem Sync-Konflikt zerlegte `data.json` darf nicht in
  *  vier verschiedenen Renderstellen (Chips, Preset-Editor, Collapsible-Storage, Historie-Push)
@@ -229,7 +249,7 @@ export function migrateSettings(raw: unknown): unknown {
  *  (leerer outputFolder = Obsidians Attachment-Logik). */
 export const SETTINGS_SCHEMA: SettingsSchema<LigSettings> = {
   engine: oneOf<EngineChoice>(["builtin", "server", "comfy", "playground"]),
-  assetBaseUrl: nonEmptyString({ trim: true }),
+  assetBaseUrl: assetBaseUrlField,
   // check(...), NICHT clampIntField(1, 50): der Kombinator ist String-tolerant und trunct
   // Floats ("3" → 3, 2.5 → 2). Hier gilt ein Wert, der kein ganzzahliger Schritt im Bereich
   // ist, als kaputt und fällt auf den Default zurück (gepinnt in tests/settings.test.ts).
