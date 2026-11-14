@@ -70,8 +70,5 @@ export function deleteEntry(list: readonly HistoryEntry[], entry: HistoryEntry):
   );
 }
 
-/** Einzeiliges, gekürztes Label für die Historie-Anzeige. */
-export function historyLabel(prompt: string, max = 60): string {
-  const flat = prompt.replace(/\s+/g, " ").trim();
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
-}
+/** Länge des einzeiligen Labels in der Historie-Anzeige (Zeichen). Gekürzt wird mit `chatTitle` aus code-kit, Rückfall bei leerem Prompt ist `""`. */
+export const HISTORY_LABEL_MAX = 60;

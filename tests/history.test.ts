@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { HISTORY_LIMIT, historyLabel, pushHistory, groupByPrompt, deleteEntry } from "../src/core/history";
+import { chatTitle } from "../src/vendor/kit/chat-archive";
+import { HISTORY_LABEL_MAX, HISTORY_LIMIT, pushHistory, groupByPrompt, deleteEntry } from "../src/core/history";
 import type { HistoryEntry } from "../src/core/settings";
 
 function e(
@@ -164,18 +165,32 @@ describe("recipes negativePrompt/cfg (Task 3)", () => {
   });
 });
 
-describe("historyLabel", () => {
+describe("Label der Historie (chatTitle aus code-kit)", () => {
+  const label = (prompt: string, max = HISTORY_LABEL_MAX): string => chatTitle(prompt, max, "");
+
   it("lässt kurze Prompts unverändert", () => {
-    expect(historyLabel("an apple")).toBe("an apple");
+    expect(label("an apple")).toBe("an apple");
   });
 
   it("kürzt lange Prompts mit Ellipse", () => {
-    const label = historyLabel("x".repeat(80), 10);
-    expect(label).toBe("xxxxxxxxx…");
-    expect(label).toHaveLength(10);
+    const l = label("x".repeat(80), 10);
+    expect(l).toBe("xxxxxxxxx…");
+    expect(l).toHaveLength(10);
   });
 
   it("ersetzt Zeilenumbrüche durch Leerzeichen", () => {
-    expect(historyLabel("a\nb")).toBe("a b");
+    expect(label("a\nb")).toBe("a b");
+  });
+
+  it("ein leerer Prompt bleibt leer (kein Rückfalltitel des Kits)", () => {
+    expect(label("")).toBe("");
+    expect(label("  \n ")).toBe("");
+  });
+
+  it("teilt an der Kürzungsgrenze kein Surrogatpaar (Unterschied zur früheren Eigenfassung)", () => {
+    const l = label("ab😀cdef", 4);
+    expect(l).toBe("ab😀…");
+    expect([...l]).toHaveLength(4);
+    expect(l).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
   });
 });

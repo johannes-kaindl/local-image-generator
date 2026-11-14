@@ -4,7 +4,8 @@
 // läuft über den Host (refreshViews → view.refresh → panel.render); lokal wird nur der
 // Auf-/Zu-Zustand der Gruppen gerendert.
 import { setIcon, setTooltip } from "obsidian";
-import { groupByPrompt, historyLabel } from "../core/history";
+import { HISTORY_LABEL_MAX, groupByPrompt } from "../core/history";
+import { chatTitle } from "../vendor/kit/chat-archive";
 import type { HistoryEntry } from "../core/settings";
 import { t } from "../vendor/kit/i18n";
 import type { HubPanel, TabId } from "./hub";
@@ -66,7 +67,7 @@ export class HistoryPanel implements HubPanel<TabId> {
     for (const entry of history) {
       const row = this.listEl.createDiv({ cls: "lig-hist-row" });
       row.addEventListener("click", () => this.host.restoreRecipe(entry));
-      row.createDiv({ cls: "lig-hist-prompt", text: historyLabel(entry.prompt) });
+      row.createDiv({ cls: "lig-hist-prompt", text: chatTitle(entry.prompt, HISTORY_LABEL_MAX, "") });
       this.buildMeta(row, entry);
     }
   }
@@ -77,7 +78,7 @@ export class HistoryPanel implements HubPanel<TabId> {
       const header = this.listEl.createDiv({ cls: "lig-hist-group" });
       const chevron = header.createSpan({ cls: "lig-hist-chevron" });
       setIcon(chevron, isCollapsed ? "chevron-right" : "chevron-down");
-      header.createSpan({ text: historyLabel(group.prompt) });
+      header.createSpan({ text: chatTitle(group.prompt, HISTORY_LABEL_MAX, "") });
       header.createSpan({
         cls: "lig-hist-count",
         text: group.entries.length === 1 ? t("history.variations.one") : t("history.variations.other", group.entries.length),

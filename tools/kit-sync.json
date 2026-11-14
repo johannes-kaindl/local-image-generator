@@ -13,11 +13,23 @@
       "source": "code-kit",
       "from": "src/ts/pure",
       "modules": [
+        {
+          "name": "chat-archive",
+          "ref": "0.68.0"
+        },
+        {
+          "name": "chat-history",
+          "ref": "0.68.0"
+        },
         "crop",
         "data-url",
         "endpoint",
         "endpoint_config",
         "endpoint_diagnostics",
+        {
+          "name": "filename-template",
+          "ref": "0.68.0"
+        },
         "format-bytes",
         "i18n",
         "local-stamp",
