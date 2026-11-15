@@ -1,5 +1,5 @@
 // zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19 — Anpassung 0.6: das WASM-Binary
-// kommt nicht mehr inline aus main.js, sondern als Asset aus der Cache API (Spec 0.6 §3/§5).
+// kommt nicht mehr inline aus main.js, sondern als Asset aus der Cache API.
 //
 // Adapter zu onnxruntime-web: WebGPU-EP, Sessions als schmales Session-Interface der pure Engine.
 //

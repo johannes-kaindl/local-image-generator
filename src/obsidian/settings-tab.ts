@@ -1,5 +1,5 @@
 // Settings (UI-STANDARD §5): Server, Ausgabe, Presets, plus ein einmaliger Legacy-Cache-
-// Aufräumer für Bestandsinstallationen (Spec §4).
+// Aufräumer für Bestandsinstallationen.
 //
 // Zweigleisig — EINE Wahrheit für beide Renderpfade (REGISTRY „Zweigleisige deklarative
 // Settings — eine-Wahrheit-Walker", Muster übernommen aus 3d-codeblocks/src/obsidian/settings.ts
@@ -75,7 +75,7 @@ export class LigSettingTab extends PluginSettingTab {
     // den Tab mit den dann passenden Zeilen neu.
     const activeModel = modelById(this.plugin.settings.builtinModel);
     const modelRow: SettingDefinitionItem<keyof LigSettings> = {
-      // Modell-Zeile der eingebauten Engine (Spec 0.6 §6): Status + Herunterladen/Abbrechen/
+      // Modell-Zeile der eingebauten Engine: Status + Herunterladen/Abbrechen/
       // Entfernen je nach Zustand — mehrere Controls, deshalb ein render-Hatch. Bezieht sich
       // immer auf das GEWAEHLTE Modell (settings.builtinModel), nicht auf den Default.
       name: t("settings.model.name", activeModel.label, formatBytes(totalBytes(this.modelFiles(activeModel.id)))),
@@ -117,7 +117,7 @@ export class LigSettingTab extends PluginSettingTab {
       desc: t("settings.workflow.desc"),
       render: (setting) => this.renderWorkflow(setting),
     };
-    // Image Playground (Spec Baustein 5, Welle 13): kein Endpunkt, kein Server — nur ein
+    // Image Playground (seit Welle 13): kein Endpunkt, kein Server — nur ein
     // Kurzbefehl-Name. Die Beschreibung nennt die Ehrlichkeits-Grenzen ausdruecklich
     // (Auftrag C): stilisierte Ausgaben, keine Fotorealistik, keine Negativ-Prompts/Maße,
     // kein img2img — die Settings-Zeile ist der Ort, an dem ein Nutzer das VOR dem ersten
@@ -223,7 +223,7 @@ export class LigSettingTab extends PluginSettingTab {
         ],
       },
       {
-        // Legacy-Cache-Hinweis (Spec §4): Bestandsinstallationen können noch ~2,5 GB alte
+        // Legacy-Cache-Hinweis: Bestandsinstallationen können noch ~2,5 GB alte
         // SD-Turbo-Gewichte (0.x, In-Process-Engine) im Cache-API-Speicher haben. Der Check
         // ist asynchron, deshalb entscheidet ein Prädikat über die Sichtbarkeit statt eines
         // nachträglichen Anhängens ans DOM — ausgewertet in beiden Renderpfaden.
@@ -261,7 +261,7 @@ export class LigSettingTab extends PluginSettingTab {
       // Muss ueber onChange laufen (Brief-Warnung): Obsidian 1.13 cacht getSettingDefinitions()
       // und wertet Praedikate nicht neu aus — ohne den Wechsel HIER zu setzen bliebe die
       // Download-/Loeschen-Zeile darunter beim alten Modell stehen.
-      // isBuiltinModelId statt `as BuiltinModelId` (Block-5-Fix, Final-Review 2026-08-24): der
+      // isBuiltinModelId statt `as BuiltinModelId` (statt Cast): der
       // "engine"-Zweig zwei Zeilen darueber engt echt ein (`=== "server" ? "server" : "builtin"`)
       // — dieser Zweig tat es nicht. Das Dropdown-Options-Objekt lieferte bisher immer einen
       // gueltigen Wert, aber `setControlValue` ist ueber `getControlValue`/den deklarativen Host

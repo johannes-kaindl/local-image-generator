@@ -1,4 +1,4 @@
-// Viertes Backend (Spec 2026-09-27-shortcuts-bridge-design.md, Baustein 5): Image Playground
+// Viertes Backend: Image Playground
 // per Apple-Kurzbefehl — mobil das EINZIGE Backend, das ist das Kernversprechen der Welle 13.
 // Implementiert dasselbe ImageBackend wie A1111Client/ComfyClient/LocalEngineBackend — main.ts
 // sieht keinen Unterschied. Kein obsidian-Import: die Bruecke selbst (aus src/vendor/kit-obsidian,

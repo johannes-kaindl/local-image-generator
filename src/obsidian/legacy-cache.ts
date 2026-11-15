@@ -1,4 +1,4 @@
-// Aufräumer für den 0.x-In-Process-Cache (Spec §4): die SD-Turbo-Gewichte (~2,5 GB) liegen
+// Aufräumer für den 0.x-In-Process-Cache: die SD-Turbo-Gewichte (~2,5 GB) liegen
 // bei Bestandsinstallationen noch in der Cache API. Name des 0.x-Caches — als Literal geschrieben statt aus
 // model-store.ts importiert, weil das heutige model-store.ts einen anderen Cache verwaltet (`ASSET_CACHE_NAME`)
 // und dieser Aufräumer gerade NICHT davon abhängen soll.

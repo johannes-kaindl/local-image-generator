@@ -6,7 +6,7 @@ import { type ComfyTransport } from "../core/comfy/client";
 import { openTextSocket } from "../vendor/kit-obsidian/text-socket";
 
 /** Passt zu HttpPostJson in core/txt2img.ts. Default-Timeout 30 min: große Bilder auf
- *  langsamen Servern können Minuten dauern (Spec §3) — der Timeout ist nur die Notbremse gegen
+ *  langsamen Servern können Minuten dauern — der Timeout ist nur die Notbremse gegen
  *  ewiges Hängen, requestUrl kennt weder timeout noch Abort. */
 export async function httpPostJson(url: string, body: unknown, timeoutMs = 1_800_000): Promise<{ status: number; json: unknown }> {
   const raced = await withTimeout(
@@ -22,7 +22,7 @@ export async function httpPostJson(url: string, body: unknown, timeoutMs = 1_800
   return raced.value;
 }
 
-/** GET mit kurzem Timeout — für options-/progress-Discovery (Spec §3: 3 s). */
+/** GET mit kurzem Timeout — für options-/progress-Discovery (3 s). */
 export async function httpGetJson(url: string, timeoutMs = 3000): Promise<{ status: number; json: unknown }> {
   const raced = await withTimeout(
     requestUrl({ url, throw: false }).then((r) => {

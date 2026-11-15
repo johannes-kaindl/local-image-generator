@@ -141,7 +141,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     // Eigene Klasse wie bei lig-cfg-label: der GUI-Smoke muss genau dieses Element messen
     // koennen, ein blosses .lig-label ist von den Nachbarn nicht zu unterscheiden.
     this.stepsLabelEl = controls.createSpan({ text: t("generate.steps"), cls: "lig-label lig-steps-label" });
-    // Im comfy-Modus hat der Nutzer seinen Workflow schon auf einen Wert gebracht (Spec §3)
+    // Im comfy-Modus hat der Nutzer seinen Workflow schon auf einen Wert gebracht
     // — der ist der bessere Startwert als der generische Default. Nur beim Mount gelesen
     // (Mount-once, s. Modulkopf): ein spaeterer Workflow-Wechsel wirkt erst beim naechsten
     // Oeffnen des Panels, nicht live auf einen schon gezeichneten Regler.
@@ -424,7 +424,7 @@ export class GeneratePanel implements HubPanel<TabId> {
     // Bedingung dafuer ist `downloadedModels`, nicht dieser Code hier, und die kann sich
     // aendern (Nachlese 0.9.0).
     if (vm.modelOptions.some((o) => o.id === state.builtinModel)) this.modelPickEl.value = state.builtinModel;
-    // Zwei getrennte Fragen (Spec §3): kann das BACKEND ein Ausgangsbild (ganze Zeile), und
+    // Zwei getrennte Fragen: kann das BACKEND ein Ausgangsbild (ganze Zeile), und
     // gibt es ueberhaupt eine Vorlage zu aendern (nur der Regler)?
     this.initRowEl.toggleClass("is-hidden", !vm.controls.initImage);
     this.denoiseLabelEl.toggleClass("is-hidden", !vm.controls.denoising);
@@ -458,7 +458,7 @@ export class GeneratePanel implements HubPanel<TabId> {
       }
     }
 
-    // Hier stand bis zum Final-Review ein Denoise-Gegenstueck zum Steps-Block oben. Seit 0.12
+    // Hier stand frueher ein Denoise-Gegenstueck zum Steps-Block oben. Seit 0.12
     // setzt niemand mehr `min`/`step` des Denoise-Reglers nach — sie kommen bei der Erzeugung
     // aus denselben Konstanten, gegen die der Block verglich, die Bedingung konnte also nicht
     // mehr wahr werden. Ein Kommentar, der eine Absicherung BEHAUPTET, die es nicht gibt, ist

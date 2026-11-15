@@ -1,4 +1,4 @@
-// Eingebautes Backend (Spec 0.6 §2/§5): SD-Turbo im Renderer über onnxruntime-web/WebGPU.
+// Eingebautes Backend: SD-Turbo im Renderer über onnxruntime-web/WebGPU.
 // Implementiert dasselbe ImageBackend wie der A1111Client — der Router in main.ts sieht keinen
 // Unterschied. Alles Schwere ist injiziert (Store, Session-Fabrik, Runtime-Init, GPU-Check,
 // PNG-Encoder), damit die Ladeschritte in Node testbar sind. Kein obsidian-Import nötig.
@@ -12,10 +12,9 @@ import { withTimeout, type TimeoutTimers } from "../vendor/kit/timeout";
 import type { ModelStore } from "./model-store";
 import { base64OfDataUrl } from "./png";
 
-// Wachhund um den Session-Aufbau (Spec §8 Punkt 2 — im Code-Stand vor diesem Fix nicht
-// vorhanden, obwohl die Plan-Selbstpruefung "keine Luecke" behauptete: geschrieben am
-// 2026-07-18, aber ueber zwei Engine-Umbauten (0.5-Thin-Client-Entfernung, 0.6-Rueckholung)
-// verlorengegangen. ORT bietet KEIN Abort fuer `InferenceSession.create` — ein Timeout kann
+// Wachhund um den Session-Aufbau (er ging einmal ueber zwei Engine-Umbauten, die
+// 0.5-Thin-Client-Entfernung und die 0.6-Rueckholung, verloren und ist seither wieder da).
+// ORT bietet KEIN Abort fuer `InferenceSession.create` — ein Timeout kann
 // den Aufruf nicht wirklich abbrechen, nur der UI nach Ablauf eine lesbare Meldung geben und
 // die haengende Promise im Hintergrund verwaisen lassen (derselbe Kompromiss wie im
 // verworfenen 0.4-Entwurf). Deadline **5 Minuten**: deutlich ueber der als normal
@@ -129,7 +128,7 @@ export class LocalEngineBackend implements ImageBackend {
     return base64OfDataUrl(dataUrl);
   }
 
-  /** `req.width`/`req.height` gegen `model.sizes` validieren (C1-Fix, 2026-08-24): vorher wurde
+  /** `req.width`/`req.height` gegen `model.sizes` validieren: vorher wurde
    *  hier gar nichts an `engine.generate()` uebergeben, obwohl `hardenParams` die angeforderte
    *  Groesse laengst korrekt durchgereicht hatte — SDXL-Turbo rechnete deshalb IMMER auf
    *  `model.sizes[0]` (512), egal was Notiz/Dateiname/Provider-API behaupteten. Ein Treffer im
@@ -198,7 +197,7 @@ export class LocalEngineBackend implements ImageBackend {
       // ganzen String). ORT verlangt hier den reinen DATEINAMEN (AGENTS-Gotcha).
       return { path: d.path.slice(d.path.lastIndexOf("/") + 1), data: bytes };
     });
-    // Wachhund (Spec §8 Punkt 2): `deps.createSession()` bekommt hoechstens
+    // Wachhund: `deps.createSession()` bekommt hoechstens
     // `SESSION_BUILD_TIMEOUT_MS`, bevor der Aufruf als haengend gilt. Ein spaetes Aufloesen
     // nach Ablauf wird nicht mehr abgewartet (ORT bietet kein Abort) — die Session bleibt dann
     // unreleased im Hintergrund verwaist, dieselbe Abwaegung wie im verworfenen 0.4-Entwurf.
@@ -208,7 +207,7 @@ export class LocalEngineBackend implements ImageBackend {
     // gemessene SDXL-Session-Aufbauten liegen bei ~1 s pro Teil auf M5, fuenf Teile in Reihe
     // also bei ~5 s statt der bisher angenommenen parallelen ~1 s.
     const sessionPromise = this.enqueueCreate(() => this.deps.createSession(buf, ext));
-    // Review-Fund: `withTimeout` haengt intern `work.then(...)` an — nur den Erfolgsfall, kein
+    // `withTimeout` haengt intern `work.then(...)` an — nur den Erfolgsfall, kein
     // `onRejected`. Verwirft `sessionPromise` NACH Ablauf der Frist (die Race also schon per
     // Timeout entschieden ist), waere das genau die Art `unhandledrejection`, die die eigene
     // Geschichte dieses Repos schon einmal produziert hat (jsep/asyncify-Fehlpaarung). Der
@@ -218,7 +217,7 @@ export class LocalEngineBackend implements ImageBackend {
     sessionPromise.catch(() => { /* nur gegen unhandledrejection nach einem Timeout */ });
     const raced = await withTimeout(sessionPromise, SESSION_BUILD_TIMEOUT_MS, this.timers);
     if (raced.timedOut) {
-      // Review-Fund (Fix-Runde 1, 2026-08-31): ohne Reset bleibt `this.createChain` an genau
+      // Ohne Reset bleibt `this.createChain` an genau
       // DIESES haengende `sessionPromise` gekettet — beim historischen Ewig-Haenger-Fall
       // (`create()` resolved nie, jsep/asyncify-Fehlpaarung) settelt es NIE, also wuerde JEDER
       // kuenftige `enqueueCreate()`-Aufruf auf derselben Backend-Instanz fuer immer warten und
@@ -241,7 +240,7 @@ export class LocalEngineBackend implements ImageBackend {
   // Welche Pipeline entsteht, entscheidet der Katalog (`model.kind`) — nicht eine
   // Zeichenkette im Code. `model.sizes[0]` ist hier nur der Konstruktor-Default fuer
   // SdxlTurboEngine (falls je ohne `size` aufgerufen); `run()`/`pickSize()` uebergeben die
-  // pro Anfrage gueltige Groesse explizit (C1-Fix).
+  // pro Anfrage gueltige Groesse explizit.
   private async load(): Promise<BuiltinEngine> {
     const { store, initRuntime } = this.deps;
     if (!this.runtimeReady) {

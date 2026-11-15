@@ -1,4 +1,4 @@
-// Preset-Editor für den Settings-Tab (Spec §7.5).
+// Preset-Editor für den Settings-Tab.
 import { Notice, Setting } from "obsidian";
 import type { StylePreset } from "../core/settings";
 import { t } from "../vendor/kit/i18n";

@@ -1,4 +1,4 @@
-// Asset-Ablage über die Cache API (Spec 0.6 §4): liegt im Electron-Profil AUSSERHALB des Vaults
+// Asset-Ablage über die Cache API: liegt im Electron-Profil AUSSERHALB des Vaults
 // (wird nie gesynct), überlebt Neustarts, Datei-Granularität beim Retry. Deps injizierbar → in Node
 // testbar. Kein obsidian-Import.
 //

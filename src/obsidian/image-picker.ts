@@ -1,11 +1,11 @@
-// Auswahl eines Vorlagenbildes aus dem Vault (Spec 0.8 §4, Weg A). Obsidian-nativ:
+// Auswahl eines Vorlagenbildes aus dem Vault. Obsidian-nativ:
 // FuzzySuggestModal ist dieselbe Bedienung wie der Schnellwechsler — kein eigenes Frontend
 // (UI-STANDARD §1). Kennt das Plugin nicht, nur den Rueckruf.
 import { FuzzySuggestModal, TFile, type App } from "obsidian";
 import { t } from "../vendor/kit/i18n";
 
 /** Was ein A1111-kompatibler Server als Vorlage annimmt. Bewusst knapp gehalten: die Datei
- *  wird unveraendert weitergereicht (Spec §9 — kein Skalieren, kein Zuschneiden). */
+ *  wird unveraendert weitergereicht — kein Skalieren, kein Zuschneiden. */
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "webp"]);
 
 export class ImagePickerModal extends FuzzySuggestModal<TFile> {

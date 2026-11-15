@@ -37,15 +37,15 @@ export interface ViewHost {
   /** Ausschnitt der Vorlage waehlen (oeffnet das CropModal). */
   pickInitCrop(): void;
   /** Das gerade erzeugte Bild ablegen und ALS VORLAGE setzen. Speichert bewusst zuerst:
-   *  eine Vorlage ohne Vault-Pfad haette in der Ergebnis-Notiz keine benennbare Herkunft
-   *  (Spec §4). Legt nur das Bild an, nie eine Notiz. */
+   *  eine Vorlage ohne Vault-Pfad haette in der Ergebnis-Notiz keine benennbare Herkunft.
+   *  Legt nur das Bild an, nie eine Notiz. */
   useResultAsInitImage(): void;
   recheckServer(): void;
-  /** Eingebaute Engine: Modell-Download aus dem Panel starten/abbrechen (Spec 0.6 §6). */
+  /** Eingebaute Engine: Modell-Download aus dem Panel starten/abbrechen. */
   downloadModel(): void;
   cancelDownload(): void;
   /** Eingebautes Modell wechseln (Panel-Dropdown) — nur unter geladenen Modellen
-   *  waehlbar (Spec 0.9 §6.2): ein Panel-Klick loest nie einen Download aus. */
+   *  waehlbar: ein Panel-Klick loest nie einen Download aus. */
   setBuiltinModel(id: BuiltinModelId): void;
   saveImage(mode: "create" | "insert"): void;
   openSettings(): void;
