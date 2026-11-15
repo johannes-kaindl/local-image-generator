@@ -11,7 +11,7 @@
     "test": "node scripts/check-no-abs-paths.mjs && node scripts/check-no-nul-bytes.mjs && vitest run --passWithNoTests",
     "check:pure": "node scripts/check-pure.mjs",
     "check:clean": "node scripts/check-clean.mjs",
-    "lint": "node scripts/check-no-inline-disables.mjs && eslint src --max-warnings 0",
+    "lint": "node scripts/check-no-inline-disables.mjs && node scripts/check-no-spec-refs.mjs && eslint src --max-warnings 0",
     "shots": "esbuild scripts/shots.ts --bundle --platform=node --format=esm --outfile=.shots.mjs --log-level=warning && node .shots.mjs",
     "shots:check": "D=\"${DOCS_ROOT:-$HOME/Projects/jkaindl/workspace/_docs}\"; test -f \"$D/readme/readme_lint.py\" || D=../../_docs; if test -f \"$D/readme/readme_lint.py\"; then python3 \"$D/readme/readme_lint.py\" .; else echo 'shots:check uebersprungen: readme_lint.py weder unter DOCS_ROOT bzw. ~/Projects/jkaindl/workspace/_docs noch unter ../../_docs (maintainer-lokal)'; fi",
     "smoke:assets": "node scripts/mock-assets.mjs",
