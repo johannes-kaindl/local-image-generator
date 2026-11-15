@@ -76,8 +76,8 @@ function clampFloat(v: number | undefined, min: number, max: number, fallback: n
   return Math.min(max, Math.max(min, n));
 }
 
-/** Die naechstgelegene erlaubte Groesse aus `sizes` waehlen (I2-Fix, Final-Review 2026-08-24) —
- *  "so wie sie heute schon Steps klemmt" (Spec-Zusage an v1-API-Konsumenten). Quadrierter
+/** Die naechstgelegene erlaubte Groesse aus `sizes` waehlen —
+ *  "so wie sie heute schon Steps klemmt". Quadrierter
  *  euklidischer Abstand statt Wurzel (monoton, spart die sqrt, aendert das Ergebnis nicht) —
  *  bei Gleichstand gewinnt der ERSTE Treffer in `sizes` (Katalog-Reihenfolge = Praeferenz,
  *  z. B. SDXL-Turbos `[512, 1024]`: 768 liegt genau in der Mitte und landet deshalb auf 512).
@@ -126,7 +126,7 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
     // der Aufrufer sieht am Rueckgabewert, was daraus wurde (Keine-Attrappen-Linie).
     negativePrompt: caps.negativePrompt ? (input.negativePrompt ?? "") : "",
     // Drei Ausgaenge, einer je Modus — und der Unterschied zwischen den beiden unteren ist
-    // der ganze Punkt (C1, Final-Review 2026-09-06):
+    // der ganze Punkt:
     //   builtin     → 1     "keine Guidance" ist hier WAHR: SD-Turbo ist destilliert.
     //   comfy       → null  Das Plugin hat den Wert nicht bestimmt — `patchWorkflow` fasst
     //                       das CFG-Feld des Samplers nicht an, der Lauf rechnet mit dem

@@ -1,5 +1,5 @@
 // zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19
-// VAE-Output ([1,3,h,w] CHW, Werte in [-1,1]) → RGBA für Canvas/ImageData (Spec §5).
+// VAE-Output ([1,3,h,w] CHW, Werte in [-1,1]) → RGBA für Canvas/ImageData.
 export function chwToRgba(data: Float32Array, w: number, h: number): Uint8ClampedArray {
   const px = w * h;
   const out = new Uint8ClampedArray(px * 4);

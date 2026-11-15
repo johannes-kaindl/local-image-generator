@@ -1,6 +1,6 @@
 // zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19
 // f32↔f16-Konvertierung über DataView-Bit-Tricks — die fp16-ONNX-Tensoren sind
-// Uint16Array; JS-seitige Mathematik läuft in f32 (Spec §5).
+// Uint16Array; JS-seitige Mathematik läuft in f32.
 const buf = new ArrayBuffer(4);
 const dv = new DataView(buf);
 

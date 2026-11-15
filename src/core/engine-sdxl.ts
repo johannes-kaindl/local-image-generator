@@ -1,4 +1,4 @@
-// SDXL-Turbo-Pipeline (Spec 0.9 §5.2) — siehe engine.ts fuer die Grundstruktur: tokenize →
+// SDXL-Turbo-Pipeline — siehe engine.ts fuer die Grundstruktur: tokenize →
 // text_encoder → UNet-Loop (Euler-Ancestral, guidance 1.0) → VAE-Decode → RGBA. SDXL hat
 // ZWEI Text-Encoder statt einem: deren vorletzte Hidden-States werden auf 2048 konkateniert,
 // dazu kommen die pooled Embeddings (`text_embeds`) aus dem ZWEITEN Encoder und `time_ids`.
@@ -29,7 +29,7 @@ export interface SdxlSessions {
   textEncoder2: Session;
   unet: Session;
   vaeDecoder: Session;
-  /** img2img (Spec 0.9 §4a) — Pflichtfeld wie bei SD-Turbo (engine.ts): txt2img ruft ihn nie
+  /** img2img — Pflichtfeld wie bei SD-Turbo (engine.ts): txt2img ruft ihn nie
    *  auf, aber `local-engine.ts` laedt ihn unbedingt mit. */
   vaeEncoder: Session;
 }
@@ -44,7 +44,7 @@ export interface SdxlEngineOpts {
    *  damit engine.ts unangetastet bleibt. */
   vaeScaling: number;
   /** Default-Kantenlaenge, falls die Anfrage keine `size` traegt. `local-engine.ts` uebergibt
-   *  seit dem C1-Fix (2026-08-24) bei jeder Anfrage eine gegen `model.sizes` gepruefte `size` —
+   *  bei jeder Anfrage eine gegen `model.sizes` gepruefte `size` —
    *  dieser Fallback greift nur, wenn jemand die Engine direkt ohne `size` aufruft. */
   size: number;
 }
@@ -62,8 +62,7 @@ const SECONDARY_PAD_TOKEN = 0;
 // (hidden_states.0 … hidden_states.N), nicht als einen Ausgang "hidden_states"
 // (gemessen am echten Modell, scripts/verify-model.mjs). SDXL braucht den VORLETZTEN
 // Layer — also den zweithoechsten Index. Fehlt der Ausgang, wird geworfen statt still
-// auf last_hidden_state zurueckzufallen (Spec §9-Risiko 1: das waere der leise
-// Qualitaetsverlust, den diese Funktion gerade verhindern soll).
+// auf last_hidden_state zurueckzufallen.
 function pickHidden(outputs: Record<string, OrtValue>): OrtValue {
   const indices = Object.keys(outputs)
     .map((k) => /^hidden_states\.(\d+)$/.exec(k))
@@ -73,7 +72,7 @@ function pickHidden(outputs: Record<string, OrtValue>): OrtValue {
   if (indices.length < 2) {
     throw new Error(
       `pickHidden: nur ${indices.length} indizierte hidden_states.N-Ausgaenge gefunden (mind. 2 noetig fuer einen ` +
-        `"vorletzten" Layer — SDXL-Text-Encoder liefern sie einzeln, Spec 0.9 §9.1)`,
+        `"vorletzten" Layer — SDXL-Text-Encoder liefern sie einzeln)`,
     );
   }
   const vorletzter = indices[indices.length - 2]!;
@@ -127,7 +126,7 @@ export class SdxlTurboEngine implements BuiltinEngine {
     return this._busy;
   }
 
-  // Gibt alle fünf ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden). Idempotent,
+  // Gibt alle fünf ORT-Sessions frei, damit kein GPU-Speicher leckt. Idempotent,
   // Best-Effort wie SdTurboEngine.dispose().
   async dispose(): Promise<void> {
     if (this._disposed) return;
@@ -177,7 +176,7 @@ export class SdxlTurboEngine implements BuiltinEngine {
 
       const schedule = makeSchedule(req.steps);
 
-      // img2img (Spec 0.9 §4a): nur bei einer Vorlage — sonst bleibt der txt2img-Pfad
+      // img2img: nur bei einer Vorlage — sonst bleibt der txt2img-Pfad
       // exakt wie zuvor (init bleibt undefined, runDiffusion startet bei 0).
       let init: { latents: Float32Array; startAt: number } | undefined;
       if (req.initPixels) {
@@ -185,8 +184,8 @@ export class SdxlTurboEngine implements BuiltinEngine {
         const encoded = await encodeInitImage(this.sessions.vaeEncoder, req.initPixels, size, this.opts.vaeScaling);
         if (entry.sigma === 0) {
           // Wortgleich zu SdTurboEngine.generate() — der Defekt sitzt im GETEILTEN
-          // `schedulerStep` (Sigma 0 → 0/0 → NaN → schwarzes Bild ohne Fehler, K1
-          // Final-Review 2026-09-05), also braucht ihn jede Engine. Ein Abfangen in nur
+          // `schedulerStep` (Sigma 0 → 0/0 → NaN → schwarzes Bild ohne Fehler),
+          // also braucht ihn jede Engine. Ein Abfangen in nur
           // einer waere ein halber Fix mit dem gefaehrlicheren Rest.
           onProgress?.(1, 1);
           return await decodeLatents(this.sessions.vaeDecoder, encoded, latentDims, this.opts.vaeScaling, size, req.seed);

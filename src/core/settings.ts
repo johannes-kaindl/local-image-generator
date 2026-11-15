@@ -1,4 +1,4 @@
-// Plugin-Settings — pure (Spec §5.1). Leerer outputFolder = Obsidians Attachment-Logik,
+// Plugin-Settings — pure. Leerer outputFolder = Obsidians Attachment-Logik,
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
@@ -31,11 +31,11 @@ export interface StylePreset {
 /** Ein aufgezeichnetes Rezept in der Historie (volle Reproduktion). */
 export interface HistoryEntry {
   prompt: string;
-  /** Negativ-Prompt (A1111-kompatibel) — leerer String heißt "nicht gesetzt" (Spec §5). */
+  /** Negativ-Prompt (A1111-kompatibel) — leerer String heißt "nicht gesetzt". */
   negativePrompt: string;
   seed: number;
   steps: number;
-  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). `null` heisst „vom Backend
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel). `null` heisst „vom Backend
    *  bestimmt, nicht vom Plugin" (comfy-Modus) — dieselbe Bedeutung wie in `GenParams.cfg`,
    *  und der Grund, warum `migrateHistory` unten zwischen FEHLEND (Alt-Eintrag → 7) und
    *  ausdruecklich `null` unterscheiden muss. */
@@ -45,7 +45,7 @@ export interface HistoryEntry {
   height: number;
   /** Lokaler ISO-8601-Stempel, beim Generier-Erfolg eingefroren (siehe isoStamp). */
   created: string;
-  /** Nicht-null ⇔ der Eintrag war ein img2img-Lauf (Spec 0.8 §1/§7). */
+  /** Nicht-null ⇔ der Eintrag war ein img2img-Lauf. */
   denoising: number | null;
   /** Vault-Pfad der Vorlage, nicht ihre Bytes — die Historie liegt in data.json. null heisst
    *  „keine benennbare Herkunft": txt2img, oder ein API-Lauf ohne Vault-Datei. */
@@ -55,12 +55,12 @@ export interface HistoryEntry {
 }
 
 export interface LigSettings {
-  /** Welches Backend Bilder erzeugt (Spec 0.6 §2/§6): die eingebaute SD-Turbo-Engine (WebGPU,
+  /** Welches Backend Bilder erzeugt: die eingebaute SD-Turbo-Engine (WebGPU,
    *  Modell per Klick nachgeladen — Default, zero-setup) oder ein lokaler A1111-kompatibler
    *  Server (Draw Things, A1111, Forge, SD.Next). Bestandsnutzer mit Endpunkt landen per
    *  migrateSettings() im Server-Modus. */
   engine: EngineChoice;
-  /** Basis-URL der Modell-/Runtime-Assets für den Download (Spec 0.6 §3). Default ist das
+  /** Basis-URL der Modell-/Runtime-Assets für den Download. Default ist das
    *  eigene HF-Repo; änderbar für Spiegel oder einen lokalen Server (GUI-Smoke). Der Cache
    *  hängt nicht an der URL (cacheKey ist hash-gebunden). */
   assetBaseUrl: string;
@@ -78,28 +78,28 @@ export interface LigSettings {
   /** Ansicht des Historie-Tabs. */
   historyView: "recent" | "grouped";
   /** Legacy: totes Feld seit 0.5 (Thin-Client). Der Modell-Katalog wurde durch den
-   *  externen Server ersetzt (Spec §4/§5); kein Codepfad liest diesen Wert mehr. Das
+   *  externen Server ersetzt; kein Codepfad liest diesen Wert mehr. Das
    *  Feld bleibt, damit gespeicherte Konfigurationen ohne Migration laden. */
   selectedModel: string;
-  /** Legacy: totes Feld seit 0.5 (Thin-Client). mflux lief in-process (Spec §6, bis 0.4);
-   *  seit dem Umbau auf einen externen A1111-kompatiblen Server (Spec §4/§5) liest kein
+  /** Legacy: totes Feld seit 0.5 (Thin-Client). mflux lief bis 0.4 in-process;
+   *  seit dem Umbau auf einen externen A1111-kompatiblen Server liest kein
    *  Codepfad diesen Wert mehr. Das Feld bleibt, damit gespeicherte Konfigurationen ohne
    *  Migration laden. */
   mfluxPath: string;
   /** Legacy: totes Feld seit 0.5 (Thin-Client). HF_HOME galt nur für den früheren
-   *  in-process-mflux-Kindprozess (Spec §6, bis 0.4); seit dem Umbau auf einen externen
-   *  A1111-kompatiblen Server (Spec §4/§5) liest kein Codepfad diesen Wert mehr. Das Feld
+   *  in-process-mflux-Kindprozess (bis 0.4); seit dem Umbau auf einen externen
+   *  A1111-kompatiblen Server liest kein Codepfad diesen Wert mehr. Das Feld
    *  bleibt, damit gespeicherte Konfigurationen ohne Migration laden. */
   modelsDir: string;
   /** Legacy: Auf-/Zu-Zustand der früher einklappbaren Settings-Sektionen. Seit deren
    *  Wegfall (2026-07-20) liest den Wert kein Codepfad mehr; das Feld bleibt, damit
    *  gespeicherte Konfigurationen ohne Migration laden. */
   sectionsCollapsed: Record<string, boolean>;
-  /** Welche eingebaute Modellstufe die Engine laedt (Spec 0.9 §6.1): SD-Turbo (Default,
+  /** Welche eingebaute Modellstufe die Engine laedt: SD-Turbo (Default,
    *  512 px, ~2,5 GB) oder SDXL-Turbo (groesser, hoehere Aufloesung). Nur relevant im
    *  builtin-Modus; bindet nicht in die Provider-API. */
   builtinModel: BuiltinModelId;
-  /** Ob die Settings ueberhaupt eine Modellwahl anzeigen (Spec 0.9 §6.1). Default aus:
+  /** Ob die Settings ueberhaupt eine Modellwahl anzeigen. Default aus:
    *  bis zur zweiten Stufe gab es keine Wahl zu treffen. */
   showModelPicker: boolean;
   /** Vault-Pfad der ComfyUI-Workflow-Datei (API-Format). Leer = keiner gesetzt; das ist
@@ -179,10 +179,10 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
     )
     .map((h) => ({
       ...h,
-      // Migration 0.3→0.4: Alt-Einträge sind alle SD-Turbo-512er (Spec §8).
+      // Migration 0.3→0.4: Alt-Einträge sind alle SD-Turbo-512er.
       width: typeof h.width === "number" ? h.width : 512,
       height: typeof h.height === "number" ? h.height : 512,
-      // Migration 0.4→0.5: Alt-Einträge kannten weder negativePrompt noch cfg (Spec §5/§8).
+      // Migration 0.4→0.5: Alt-Einträge kannten weder negativePrompt noch cfg.
       negativePrompt: typeof h.negativePrompt === "string" ? h.negativePrompt : "",
       // Seit 0.13 ist `null` ein GUELTIGER cfg-Wert (comfy: „vom Backend bestimmt") und muss
       // vom FEHLENDEN Feld eines Alt-Eintrags unterschieden werden — `typeof null` ist
@@ -192,7 +192,7 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
       // fehlendes Feld weg — die beiden Faelle sind also wirklich unterscheidbar.
       cfg: typeof h.cfg === "number" ? h.cfg : h.cfg === null ? null : 7,
       // Migration 0.7→0.8: img2img ist neu. null heisst „war keins" — ein Vorgabewert waere
-      // eine Angabe ueber einen Lauf, der nie stattgefunden hat (Spec §1).
+      // eine Angabe ueber einen Lauf, der nie stattgefunden hat.
       denoising: typeof h.denoising === "number" ? h.denoising : null,
       initImage: typeof h.initImage === "string" ? h.initImage : null,
       // Seit Teil C neu: Alt-Eintraege kannten keinen Ausschnitt (= nicht gewaehlt).
@@ -200,7 +200,7 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
     }));
 }
 
-/** 0.5 → 0.6 (Spec 0.6 §8): das Feld `engine` ist neu. Fehlt es, bleibt ein Nutzer mit
+/** 0.5 → 0.6: das Feld `engine` ist neu. Fehlt es, bleibt ein Nutzer mit
  *  eingetragenem Endpunkt im Server-Modus — niemand verliert seine Konfiguration; alle anderen
  *  bekommen die eingebaute Engine (Zero-Setup-Default). Läuft VOR mergeSettings, sonst hätte
  *  der Default "builtin" die Entscheidung schon getroffen. Pure. */

@@ -1,10 +1,10 @@
 import { localFileStamp, localIso } from "../vendor/kit/local-stamp";
-// Dateinamens-Schema (Spec §7): lig-<YYYYMMDD-HHmmss>-s<seed>.png
+// Dateinamens-Schema: lig-<YYYYMMDD-HHmmss>-s<seed>.png
 export function buildImageFilename(d: Date, seed: number): string {
   return `lig-${localFileStamp(d, { compact: true, seconds: true })}-s${seed}.png`;
 }
 
-// Kollisions-Dedup für explizite Output-Ordner (Spec §7): hängt -2, -3, … vor
+// Kollisions-Dedup für explizite Output-Ordner: hängt -2, -3, … vor
 // `.png` an, bis `exists` einen freien Pfad meldet. Pure — der Vault-Lookup wird
 // injiziert, damit die Funktion in Node testbar bleibt.
 export function dedupeFilename(base: string, exists: (p: string) => boolean): string {
@@ -18,7 +18,7 @@ export function dedupeFilename(base: string, exists: (p: string) => boolean): st
   }
 }
 
-// Notiz-Dateiname (Spec §7.4): "<Prompt-Slug, max 60> - <seed>.md", nach Jays
+// Notiz-Dateiname: "<Prompt-Slug, max 60> - <seed>.md", nach Jays
 // handgebautem Vorbild aus dem Smoke-Test ("Apple - Sumi-e painting - 199801046.md").
 const FORBIDDEN = /[[\]#^|/\\:*?"<>]/g;
 const SLUG_MAX = 60;

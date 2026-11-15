@@ -39,7 +39,7 @@ export function isOutOfMemoryError(e: unknown): boolean {
 function errorText(e: unknown): string {
   if (e instanceof Error) return `${e.name} ${e.message}`;
   if (typeof e === "string") return e;
-  // Haertung (Review-Fund): eine echte `GPUOutOfMemoryError` ist ein `GPUError`, KEIN
+  // Haertung: eine echte `GPUOutOfMemoryError` ist ein `GPUError`, KEIN
   // `Error` (WebGPU-Spec) — ohne diesen Zweig lieferte `errorText` "" und der Klassifizierer
   // saehe sie nie, obwohl ihr Name genau im OOM_SIGNALS-Vokabular steht. `String(e)` faengt
   // sie ueber ihr Default-`toString()` ("[object GPUOutOfMemoryError]", klein geschrieben

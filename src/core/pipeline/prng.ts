@@ -1,6 +1,6 @@
 // zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19
 // Geseedeter PRNG (mulberry32) + Box-Muller-Gauß — reproduzierbare Start-Latents
-// und Ancestral-Noise (Spec §5: gleicher Seed+Steps → gleiches Bild).
+// und Ancestral-Noise (gleicher Seed+Steps → gleiches Bild).
 export function mulberry32(seed: number): () => number {
   let s = seed >>> 0;
   return () => {

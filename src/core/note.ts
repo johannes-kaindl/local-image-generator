@@ -1,4 +1,4 @@
-// Ergebnis-Notiz (Spec §7.4) — pure Builder: Frontmatter + Embed. Kein Vault-Zugriff;
+// Ergebnis-Notiz — pure Builder: Frontmatter + Embed. Kein Vault-Zugriff;
 // Pfad und Link kommen von außen. Muster übernommen von image-to-markdown/src/img_to_md.ts
 // (lines[]-Builder, IO injiziert) — dessen schwaches Escaping aber NICHT: das Quoting
 // kommt aus dem vendorten Serializer.
@@ -26,7 +26,7 @@ const FM_ORDER = [
 export function buildImageNote(params: GenParams, imageLink: string): string {
   const data: Record<string, FmValue> = {
     prompt: params.prompt,
-    // negative_prompt nur bei nicht-leerem Wert (Spec §5) — ein leerer Negativ-Prompt ist
+    // negative_prompt nur bei nicht-leerem Wert — ein leerer Negativ-Prompt ist
     // "nicht gesetzt", nicht "bewusst leer", und soll nicht als Rauschen in jeder Notiz stehen.
     ...(params.negativePrompt.trim() !== "" ? { negative_prompt: params.negativePrompt } : {}),
     seed: params.seed,

@@ -1,4 +1,4 @@
-// Generations-Grenzen (Spec §4) — ersetzen den frueheren Modell-Katalog (models.ts ist entfallen):
+// Generations-Grenzen — ersetzen den frueheren Modell-Katalog (models.ts ist entfallen):
 // der Server hält die Modelle, das Plugin bietet generische, ehrliche Regler.
 import { modelById, type BuiltinModelId } from "./model-manifest";
 import type { EngineChoice } from "./settings";
@@ -76,11 +76,11 @@ export type BackendContext =
 
 /** Was ein Backend ehrlich kann. Im builtin-Modus haengt das Ergebnis vom AKTIVEN Modell ab
  *  (SD-Turbo: eine Größe, SDXL-Turbo: zwei); im comfy-Modus vom hinterlegten Workflow — `model`
- *  bzw. `slots` sind deshalb PFLICHT, kein Default mehr (Final-Review-Fund, 2026-08-24): ein
+ *  bzw. `slots` sind deshalb PFLICHT, kein Default mehr: ein
  *  still auf `DEFAULT_BUILTIN_MODEL_ID` zurueckfallender Aufruf ohne zweites Argument war genau
- *  der Mechanismus, der C1 (`local-engine.ts` rechnete SDXL-Turbo-Anfragen still auf SD-Turbos
- *  512²) im Vorfeld unsichtbar hielt — ein Test, der nur "ohne Modellargument gilt der Default"
- *  belegte, waere nach C1 eine Rechtfertigung fuer denselben Fehler gewesen. Als Union statt
+ *  der Mechanismus, der einen frueheren Fehler (`local-engine.ts` rechnete SDXL-Turbo-Anfragen
+ *  still auf SD-Turbos 512²) unsichtbar hielt — ein Test, der nur "ohne Modellargument gilt der
+ *  Default" belegte, waere eine Rechtfertigung fuer denselben Fehler gewesen. Als Union statt
  *  eines optionalen dritten Stellungsarguments: der Fehler ist damit nicht verboten, sondern
  *  unmoeglich. Der Server-Zweig bleibt von einem Modell unberuehrt: er kennt kein "Modell" in
  *  diesem Sinn, der Server waehlt selbst. */
@@ -122,10 +122,10 @@ export function backendCapabilities(ctx: BackendContext): BackendCapabilities {
       // patchWorkflow fasst CFG bewusst nicht an: Sampler, Scheduler, CFG, LoRAs und
       // Upscaler gehoeren dem Nutzer.
       cfg: false,
-      // Stufe 1 (Spec §0): braucht /upload/image und einen LoadImage-Slot.
+      // Stufe 1: braucht /upload/image und einen LoadImage-Slot.
       initImage: false,
       minSteps: STEPS.min, maxSteps: STEPS.max,
-      // Beides gesichert durch die Abweisung in inspectWorkflow (Spec §4).
+      // Beides gesichert durch die Abweisung in inspectWorkflow.
       fixedSize: null, sizes: null,
     };
   }

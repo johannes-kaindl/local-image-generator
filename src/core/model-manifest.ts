@@ -1,4 +1,4 @@
-// Katalog der eingebauten Modelle (Spec 0.9 §3.3) — die redaktionelle Seite (Kennung, Lizenz,
+// Katalog der eingebauten Modelle — die redaktionelle Seite (Kennung, Lizenz,
 // Attribution, Regler-Bereich) steht hier; Pfade, Größen und SHA-256 kommen aus dem generierten
 // Manifest (scripts/build-assets.mjs). Zwei Modelle (SD-Turbo, SDXL-Turbo) sind benannte Teile
 // (`ModelPart`) über `assetsFor()` aufgelöst — kein Umbau für ein drittes Modell. Pure, obsidian-frei.
@@ -50,7 +50,7 @@ export type BuiltinModel =
         textEncoder: ModelPart;
         unet: ModelPart;
         vaeDecoder: ModelPart;
-        /** img2img (Spec 0.9 §4a): Vorlagen-Pixel → Start-Latents. Pflichtteil — txt2img
+        /** img2img: Vorlagen-Pixel → Start-Latents. Pflichtteil — txt2img
          *  laedt ihn mit, ruft ihn aber nie auf (`assetsFor` bewacht: keine zweite,
          *  bedingte Ladeschicht fuer einen einzelnen Teil). */
         vaeEncoder: ModelPart;
@@ -205,7 +205,7 @@ export function cacheKey(f: AssetFile): string {
 
 /** Der Cache-Schluessel vor der Modell-Qualifizierung von `asset()` (seit
  *  2026-08-24 traegt `key` das `${modelId}/`-Praefix). NUR fuer die Einmal-Migration
- *  bestehender SD-Turbo-Downloads gedacht (`ModelStore.migrateLegacyKeys`, C2-Fix): ohne sie
+ *  bestehender SD-Turbo-Downloads gedacht (`ModelStore.migrateLegacyKeys`): ohne sie
  *  faende `isComplete()` die ~2,5 GB jeder Bestandsinstallation nie wieder, und das Panel
  *  boete einen unnoetigen Neudownload an, waehrend die alten Bytes fuer immer im Cache
  *  liegen blieben. Fuer Dateien ohne Modell-Praefix (aktuell nur `ort_wasm`) liefert diese

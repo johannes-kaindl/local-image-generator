@@ -1,5 +1,5 @@
 // zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19
-// CLIP-BPE-Tokenizer (Spec §5) — Algorithmus wie openai/CLIP simple_tokenizer:
+// CLIP-BPE-Tokenizer — Algorithmus wie openai/CLIP simple_tokenizer:
 // bytes_to_unicode (GPT-2-Tabelle), Wort-Regex, BPE-Merges nach Rang, "</w>"-Wortende.
 // vocab.json/merges.txt werden zur Laufzeit geladen und hier injiziert (pure).
 // Pad-Default ist 0, nicht EOS (49407): MS-Demo onnxruntime-inference-examples

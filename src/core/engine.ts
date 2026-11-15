@@ -1,5 +1,5 @@
 // zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19
-// sd-turbo-Pipeline (Spec §5): tokenize → text_encoder → UNet-Loop (Euler-Ancestral,
+// sd-turbo-Pipeline: tokenize → text_encoder → UNet-Loop (Euler-Ancestral,
 // guidance 1.0) → VAE-Decode → RGBA. Sessions/Tensoren sind injiziert (OrtValue ist
 // strukturell ort.Tensor-kompatibel) — die Engine bleibt pure und Node-testbar.
 import { f16ArrayToF32, f32ArrayToF16 } from "./pipeline/f16";
@@ -36,7 +36,7 @@ export interface EngineSessions {
   textEncoder: Session;
   unet: Session;
   vaeDecoder: Session;
-  /** img2img (Spec 0.9 §4a): Vorlagen-Pixel → Start-Latents. Pflichtfeld — der Katalog
+  /** img2img: Vorlagen-Pixel → Start-Latents. Pflichtfeld — der Katalog
    *  (`model-manifest.ts`) laedt ihn fuer jedes builtin-Modell mit; txt2img ruft ihn nie
    *  auf (Keine-Attrappen-Linie waere sonst umgekehrt verletzt: eine Session, die geladen,
    *  aber nie gebraucht wird, ist kein Attrappen-Risiko — eine BEDINGT geladene waere ein
@@ -44,7 +44,7 @@ export interface EngineSessions {
   vaeEncoder: Session;
 }
 
-/** Provider-Sicht (yijing-oracle, Spec 0.4 §10): model/width/height sind dort OPTIONAL
+/** Provider-Sicht (yijing-oracle): model/width/height sind dort OPTIONAL
  *  mit Default sd-turbo/512² — unabhängig vom UI-Dropdown. Die interne Pipeline hier
  *  bleibt bewusst schmal (prompt/steps/seed); der Router in main.ts füllt die Defaults. */
 export interface GenerateRequest {
@@ -52,11 +52,11 @@ export interface GenerateRequest {
   steps: number;
   seed: number;
   /** Kantenlänge in Pixeln. OPTIONAL — SdTurboEngine ignoriert es (immer 512),
-   *  SdxlTurboEngine liest `req.size ?? opts.size` (Spec 0.9 §5.2). Pflicht hätte
+   *  SdxlTurboEngine liest `req.size ?? opts.size`. Pflicht hätte
    *  SdTurboEngine und alle bestehenden Aufrufer geändert, gegen die Zusage, dass
    *  SD-Turbo unangetastet bleibt. */
   size?: number;
-  /** img2img (Spec 4a): Vorlagen-Pixel CHW [-1,1], BEREITS auf Zielgroesse (Base64→Pixel
+  /** img2img: Vorlagen-Pixel CHW [-1,1], BEREITS auf Zielgroesse (Base64→Pixel
    *  braucht DOM und sitzt in png.ts/local-engine — Pure-Core-Schnitt). undefined = txt2img. */
   initPixels?: Float32Array;
   /** Bricht den Lauf zwischen zwei Diffusionsschritten ab (Provider-API `signal`, seit 2026-09-06).
@@ -128,7 +128,7 @@ export function firstOutput(session: Session, outputs: Record<string, OrtValue>)
   return out;
 }
 
-// UNet-Schleife (Euler-Ancestral, Spec §5) — geteilt zwischen SdTurboEngine und
+// UNet-Schleife (Euler-Ancestral) — geteilt zwischen SdTurboEngine und
 // SdxlTurboEngine (vorher ein Verbatim-Duplikat in beiden Engines, bis auf
 // Latent-Dims und zwei Zusatz-Feeds). `extraFeeds` traegt alles, was ein Encoder-Setup
 // dem UNet zusaetzlich zu `sample`/`timestep` gibt — SD-Turbo nur `encoder_hidden_states`,
@@ -148,7 +148,7 @@ export async function runDiffusion(
   latentDims: readonly number[],
   extraFeeds: Record<string, OrtValue>,
   onProgress?: ProgressFn,
-  // img2img (Spec 0.9 §4a): Teil-Denoising ab einem Einstiegspunkt statt vom reinen Rauschen.
+  // img2img: Teil-Denoising ab einem Einstiegspunkt statt vom reinen Rauschen.
   // `init` traegt die bereits verrauschten Vorlagen-Latents UND den Einstiegspunkt im
   // Zeitplan — ohne `init` bleibt das Verhalten fuer txt2img-Aufrufer EXAKT wie zuvor
   // (startAt 0, volle Schrittzahl, Fortschritt 1..total).
@@ -247,7 +247,7 @@ export class SdTurboEngine implements BuiltinEngine {
     return this._busy;
   }
 
-  // Gibt die vier ORT-Sessions frei (Spec §8: GPU-Speicher-Leak vermeiden).
+  // Gibt die vier ORT-Sessions frei, damit kein GPU-Speicher leckt.
   // Idempotent — mehrfaches dispose ruft release nur einmal. Einzelne
   // release-Fehler werden geschluckt, damit ein fehlschlagender Session-Release
   // die anderen drei nicht blockiert (Best-Effort-Cleanup).
@@ -277,7 +277,7 @@ export class SdTurboEngine implements BuiltinEngine {
       const latentDims = [1, LATENT.c, LATENT.h, LATENT.w] as const;
       const schedule = makeSchedule(req.steps);
 
-      // img2img (Spec 0.9 §4a): nur bei einer Vorlage — sonst bleibt der txt2img-Pfad
+      // img2img: nur bei einer Vorlage — sonst bleibt der txt2img-Pfad
       // exakt wie zuvor (init bleibt undefined, runDiffusion startet bei 0).
       let init: { latents: Float32Array; startAt: number } | undefined;
       if (req.initPixels) {
@@ -287,7 +287,7 @@ export class SdTurboEngine implements BuiltinEngine {
           // „denoising 0 heisst nichts veraendern" — im WORTSINN, nicht als Rauschpegel 0 in
           // einer Formel, die durch ihn teilt. `schedulerStep` rechnet `sigmaUp` und
           // `derivative` bei Sigma 0 als 0/0, also NaN; `chwToRgba` klemmt NaN auf 0 und
-          // liefert ein komplett schwarzes Bild OHNE Fehler (K1, Final-Review 2026-09-05).
+          // liefert ein komplett schwarzes Bild OHNE Fehler.
           // Deshalb entfaellt der Diffusions-Lauf ganz und das encodierte Vorlagen-Latent
           // geht direkt in den Decoder. Erreichbar ist der Fall ueber DENOISING.min (linker
           // Regler-Anschlag) und ueber die Provider-API — ein reiner UI-Riegel genuegte nicht.

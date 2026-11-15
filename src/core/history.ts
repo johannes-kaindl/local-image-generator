@@ -7,10 +7,10 @@ export const HISTORY_LIMIT = 20;
 
 function recipeKey(e: HistoryEntry): string {
   // Seit 0.4 mehrmodellig: model + Größe gehören zum Rezept — dasselbe Prompt-Tupel auf
-  // anderem Modell/Format ist ein anderes Ergebnis und darf nicht kollabieren (Spec §8).
+  // anderem Modell/Format ist ein anderes Ergebnis und darf nicht kollabieren.
   // JSON-Tupel als Schlüssel, damit ein Prompt mit Ziffern/Leerzeichen keine falsche
   // Kollision mit Seed/Steps erzeugt.
-  // Seit 0.5: negativePrompt + cfg gehören ebenfalls zum Rezept (Spec §5) — ans Ende
+  // Seit 0.5: negativePrompt + cfg gehören ebenfalls zum Rezept — ans Ende
   // angehängt, damit bestehende Kollisions-Logik für die älteren Felder unverändert bleibt.
   return JSON.stringify([
     e.prompt.trim(),

@@ -1,4 +1,4 @@
-// Stil-Presets — pure (Spec §7.1). Das Prompt-Textfeld ist die EINZIGE Wahrheit; der
+// Stil-Presets — pure. Das Prompt-Textfeld ist die EINZIGE Wahrheit; der
 // Chip-Zustand wird über presetActive daraus abgeleitet und nie parallel geführt. Entfernt
 // der Nutzer den Suffix von Hand, geht der Chip dadurch von selbst aus.
 //

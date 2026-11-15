@@ -21,8 +21,8 @@ export interface WorkflowSlots {
   latent: string;
   /** Variiert je Sampler: KSampler → "seed", KSamplerAdvanced/SamplerCustom → "noise_seed". */
   seedField: "seed" | "noise_seed";
-  /** Anders als in der Quelle NICHT nullable: ein Sampler ohne Steps-Feld wird abgewiesen
-   *  (Spec §4). Grund ist die Ergebnis-Notiz — `GenParams.steps` hat keinen Null-Fall, und
+  /** Anders als in der Quelle NICHT nullable: ein Sampler ohne Steps-Feld wird abgewiesen.
+   *  Grund ist die Ergebnis-Notiz — `GenParams.steps` hat keinen Null-Fall, und
    *  es gibt keinen ehrlichen Eintrag fuer "das Plugin hat den Wert nicht bestimmt". */
   stepsField: "steps";
   /** Die im Workflow eingestellte Schrittzahl, als Startwert des Reglers. null, wenn das
@@ -86,7 +86,7 @@ export function inspectWorkflow(graph: unknown): InspectResult {
     resolved[field] = target;
   }
 
-  // Die Regel aus Spec §4: nutzbar ist ein Workflow, in den wir alle fuenf Werte setzen
+  // Die Regel: nutzbar ist ein Workflow, in den wir alle fuenf Werte setzen
   // koennen, die wir anschliessend in die Notiz schreiben. Die Pruefung sitzt hier und
   // nicht in patchWorkflow, weil patchWorkflow pure bleibt und nicht urteilt — es
   // ueberspringt fehlende Felder stumm, was dort richtig ist.

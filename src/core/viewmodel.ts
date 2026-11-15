@@ -8,7 +8,7 @@ import { slotsOf, type WorkflowProblem, type WorkflowState } from "./comfy/state
 import type { EngineChoice } from "./settings";
 import { cropEquals, type Crop } from "../vendor/kit/crop";
 
-/** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers (Spec §3/§4): ersetzt die
+/** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers: ersetzt die
  *  alte GPU-/Modell-Download-Maschine — der Thin-Client kennt nur noch "ist ein Endpunkt
  *  eingetragen, antwortet er, und welches Modell hat er gerade geladen". */
 export type ServerState =
@@ -17,7 +17,7 @@ export type ServerState =
   | { kind: "ok"; modelName: string | null }
   | { kind: "unreachable" };
 
-/** Zustand der eingebauten Engine (Spec 0.6 §2) — nur im builtin-Modus relevant. Der Weg von
+/** Zustand der eingebauten Engine — nur im builtin-Modus relevant. Der Weg von
  *  „nichts da" bis „bereit" ist sichtbar gemacht, weil jeder Schritt Minuten dauern kann. */
 export type EngineState =
   | { kind: "gpu-checking" }
@@ -46,11 +46,11 @@ export type RunState =
  *  weitergetippten Prompt). */
 export interface GenParams {
   prompt: string;
-  /** Negativ-Prompt (A1111-kompatibel) — leerer String heißt "nicht gesetzt" (Spec §5). */
+  /** Negativ-Prompt (A1111-kompatibel) — leerer String heißt "nicht gesetzt". */
   negativePrompt: string;
   seed: number;
   steps: number;
-  /** Classifier-Free-Guidance-Wert (A1111-kompatibel, Spec §5). **`null` heisst: vom Backend
+  /** Classifier-Free-Guidance-Wert (A1111-kompatibel). **`null` heisst: vom Backend
    *  bestimmt, nicht vom Plugin** — im comfy-Modus fasst `patchWorkflow` das CFG-Feld des
    *  Samplers bewusst nicht an, der Lauf rechnet also mit dem Wert des Nutzer-Workflows.
    *  Eine Zahl hier waere eine Angabe ueber etwas, das dieses Plugin nicht entschieden hat —
@@ -68,8 +68,7 @@ export interface GenParams {
    *  ein API-Lauf, dessen Bytes gar keine Vault-Datei haben. Ob img2img gerechnet wurde,
    *  sagt `denoising`, nicht dieses Feld. */
   initImage: string | null;
-  /** Welcher Bildbereich der Vorlage gerechnet wurde, normalisiert auf [0,1] (Spec img2img-
-   *  Steuerung §4.2, Teil C). `null` = nicht gewaehlt: builtin rechnet zentriert, der Server
+  /** Welcher Bildbereich der Vorlage gerechnet wurde, normalisiert auf [0,1]. `null` = nicht gewaehlt: builtin rechnet zentriert, der Server
    *  entscheidet selbst. Teil des Rezepts wie `initImage`, aber ohne Bilddaten. */
   initCrop: Crop | null;
   /** Nicht-null ⇔ es war ein img2img-Lauf. Nie ein Vorgabewert bei txt2img — das waere
@@ -178,7 +177,7 @@ export interface PanelViewModel {
   };
   /** Text der Modell-Zeile im Panel. */
   modelLabel: string;
-  /** Optionen fuer den Modell-Picker — NUR geladene Modelle (Spec 0.9 §6.2): ein Panel-Klick
+  /** Optionen fuer den Modell-Picker — NUR geladene Modelle: ein Panel-Klick
    *  darf nie einen Download ausloesen. Leer/irrelevant, wenn `controls.modelPicker` false ist. */
   modelOptions: { id: BuiltinModelId; label: string }[];
 }
@@ -209,7 +208,7 @@ export function formatBytes(n: number): string {
 }
 
 /** Sekunden als "m:ss" (kein echter Fortschritt — nur ein Lebensbeweis während der
- *  GPU-Ladephase, siehe Spec 2026-07-18-robustheits-block-design.md §2.3). */
+ *  GPU-Ladephase). */
 export function formatElapsed(totalSec: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;

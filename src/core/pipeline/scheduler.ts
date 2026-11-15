@@ -1,5 +1,5 @@
 // zurueckgeholt aus local-image-generator@0.4.4, 2026-08-19
-// Euler-Ancestral-Scheduler für sd-turbo (Spec §5) — portiert nach dem Muster von
+// Euler-Ancestral-Scheduler für sd-turbo — portiert nach dem Muster von
 // microsoft/onnxruntime-inference-examples js/sd-turbo bzw. diffusers
 // EulerAncestralDiscreteScheduler. Training: 1000 Steps, beta scaled_linear
 // 0.00085→0.012, timestep-Spacing "trailing". Guidance fix 1.0 (keine CFG).

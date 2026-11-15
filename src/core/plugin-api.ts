@@ -1,4 +1,4 @@
-// Provider-API v1 (Spec 2026-08-22-provider-api-v1-design.md §4) — der Vertrag, den dieses
+// Provider-API v1 — der Vertrag, den dieses
 // Plugin anderen Obsidian-Plugins als `app.plugins.plugins["local-image-generator"].api`
 // anbietet. Pure Fassade ueber injizierte Abhaengigkeiten (Muster: vault-rag/src/plugin_api.ts,
 // LocalEngineDeps) — testbar ohne Obsidian, keine eigene Entscheidung ausser Uebersetzung.
@@ -239,7 +239,7 @@ export interface ApiDeps {
     params: GenParams,
     onProgress?: ApiRequest["onProgress"],
     /** Die BYTES der Vorlage — bewusst ein eigener Parameter statt eines Feldes in
-     *  `params`: das Rezept traegt nur die Herkunft, nie das Bild (Spec §1). */
+     *  `params`: das Rezept traegt nur die Herkunft, nie das Bild. */
     initImageData?: string | null,
     /** Durchgereicht aus `ApiRequest.signal`. Der Wirt gibt es an das Backend weiter; was
      *  ein Abbruch dort bewirkt, haengt am Modus (s. `ApiRequest.signal`). */

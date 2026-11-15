@@ -1,4 +1,4 @@
-// A1111-kompatibler Client (Spec §3) — pure, HTTP injiziert; Referenz:
+// A1111-kompatibler Client — pure, HTTP injiziert; Referenz:
 // yijing-oracle/src/obsidian/image-client.ts. Deckt Draw Things, A1111, Forge, SD.Next.
 // Spricht ZWEI Endpunkte: txt2img und (seit 0.8) img2img. Der Auftrag entscheidet, nicht
 // der Aufrufer — deshalb heisst die Klasse nicht mehr Txt2ImgClient.
@@ -107,7 +107,7 @@ export function parseOptionsModel(json: unknown): string | null {
 }
 
 /** Fortschritt aus GET /sdapi/v1/progress als ganze Prozent — null bei fremder Form
- *  (Fallback der Statuszeile: Sekundenzähler statt Prozent, Spec §3). */
+ *  (Fallback der Statuszeile: Sekundenzähler statt Prozent). */
 export function parseProgressPct(json: unknown): number | null {
   const v = (json as { progress?: unknown } | null)?.progress;
   return typeof v === "number" && Number.isFinite(v) ? Math.round(v * 100) : null;
