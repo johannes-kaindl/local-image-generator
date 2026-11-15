@@ -1,4 +1,4 @@
-// Wiring (Spec §4): EIN registerView, Command + Ribbon, Host-Implementierung für die
+// Wiring: EIN registerView, Command + Ribbon, Host-Implementierung für die
 // View. Thin Client — keine In-Process-Engine mehr: generate() spricht über HTTP mit
 // einem lokal laufenden A1111-kompatiblen Server (/sdapi/v1/txt2img).
 // i18n (Vault-Cockpit `_SDD/2026-07-17-i18n-design.md` §2): registerI18n() + setLang()
@@ -76,7 +76,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   /** Laeuft gerade ein Lauf ueber die Provider-API? Getrennt von state.run, weil isBusy()
    *  auch dann sperren muss, wenn der Fremdlauf noch in der Anlaufphase steht. */
   private apiRunning = false;
-  // Eingebaute Engine (Spec 0.6): Store (Cache API), Backend (lazy, lebt bis dispose), laufender
+  // Eingebaute Engine: Store (Cache API), Backend (lazy, lebt bis dispose), laufender
   // Download. Der Settings-Tab beobachtet den Engine-Zustand über onEngineStateChanged.
   private readonly modelStore = new ModelStore();
   private localEngine: LocalEngineBackend | null = null;
@@ -238,7 +238,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       restoreRecipe: (entry) => {
         // Die Vorlage gehoert zum Rezept — aber nur, wenn die Datei noch da ist. Ein
         // stillschweigend als txt2img wieder aufgelegter img2img-Eintrag waere genau die
-        // Sorte Luege, die die Keine-Attrappen-Linie verbietet (Spec §7): der Nutzer sieht
+        // Sorte Luege, die die Keine-Attrappen-Linie verbietet: der Nutzer sieht
         // die leere Vorlagen-Zeile und weiss, dass er sie neu waehlen muss.
         const quelle = entry.initImage !== null ? this.app.vault.getAbstractFileByPath(entry.initImage) : null;
         if (quelle instanceof TFile) void this.setInitImage(quelle, entry.initCrop);
@@ -290,7 +290,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.addRibbonIcon("image-plus", t("view.title"), () => void this.activateView());
     this.addCommand({ id: "open", name: t("cmd.open"), callback: () => void this.activateView() });
 
-    // Cache-Migration (C2-Fix, Final-Review 2026-08-24) VOR dem ersten isComplete()-Blick:
+    // Cache-Migration VOR dem ersten isComplete()-Blick:
     // Die Cache-Schluessel sind seit 2026-08-24 modell-spezifisch qualifiziert — eine Bestands-
     // installation traegt ihre ~2,5 GB SD-Turbo noch unter dem alten, flachen Schluessel.
     // Awaited, damit refreshEngineState() gleich danach den migrierten Stand sieht statt eine
@@ -336,7 +336,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.localEngine = null;
   }
 
-  // ── Eingebaute Engine (Spec 0.6 §2/§4/§5) ─────────────────────────────────
+  // ── Eingebaute Engine ─────────────────────────────────
 
   getEngineState(): EngineState {
     return this.state.engine;
@@ -445,7 +445,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** „Speichern & als Vorlage": legt das gerade erzeugte Bild im Vault ab und macht es zur
    *  Vorlage. Speichert BEWUSST zuerst — eine Vorlage ohne Vault-Pfad haette in der
-   *  Ergebnis-Notiz keine benennbare Herkunft (Spec §4). Nur das Bild, nie eine Notiz:
+   *  Ergebnis-Notiz keine benennbare Herkunft. Nur das Bild, nie eine Notiz:
    *  `createMode` gilt fuer Ergebnisse, nicht fuer Zwischenschritte. */
   private async useResultAsInitImage(): Promise<void> {
     const img = this.state.image;
@@ -597,8 +597,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     this.setEngineState({ kind: complete ? "ready" : "not-downloaded" });
   }
 
-  /** Opt-in-Download aller fehlenden Assets des GEWAEHLTEN Modells (Spec 0.6 §4: ohne Klick
-   *  fließt kein Byte). Vor dem grossen SDXL-Turbo-Download fragt zusaetzlich ein
+  /** Opt-in-Download aller fehlenden Assets des GEWAEHLTEN Modells. Vor dem grossen SDXL-Turbo-Download fragt zusaetzlich ein
    *  Bestaetigungsdialog — SD-Turbo (Default) bleibt ohne Rueckfrage, wie bisher.
    *  Abbrechen (Knopf, Escape, Klick daneben) laedt kein Byte: confirmAction() loest bei
    *  jedem dieser drei Wege mit `false` auf. */
@@ -728,7 +727,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   }
 
   /** Ein Backend pro Lauf, wie bei den anderen drei. Timeout **120 s**: der Spike maß
-   *  18,5 s fuer einen echten Image-Playground-Lauf (Spec-Messgrundlage) — grosszuegig
+   *  18,5 s fuer einen echten Image-Playground-Lauf — grosszuegig
    *  darueber, dieselbe Haltung wie `SESSION_BUILD_TIMEOUT_MS` ("generous beats clever"),
    *  weil ein Timeout hier die EINZIGE Verteidigung ist (Kit-Kommentar shortcuts-bridge.ts:
    *  Kurzbefehle kennen kein Try/Catch, ein gelöschter Kurzbefehl antwortet nie). Zielordner
@@ -784,8 +783,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   /** Modell wechseln (Settings): dieselbe Sperre wie setEngine() — ein Wechsel darf
    *  die GPU-Sessions nicht unter einem laufenden Panel- ODER API-Lauf wegziehen (isBusy()
    *  deckt beide). Schaltet NICHT automatisch zurueck, wenn das neue Modell fehlt: das
-   *  Panel zeigt dann seinen Download-Aufruf (Spec §4, „ohne Klick fließt kein Byte" gilt
-   *  auch hier — dieser Wechsel selbst laedt nichts). */
+   *  Panel zeigt dann seinen Download-Aufruf. */
   async setBuiltinModel(id: BuiltinModelId): Promise<void> {
     if (this.isBusy()) {
       new Notice(t("notice.busy"));
@@ -806,8 +804,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  /** Erreichbarkeit + aktives Modell in den State spiegeln (Spec §3: GET /sdapi/v1/options,
-   *  200 ohne Modellfeld gilt als OK — Draw Things liefert die Options-Form nur teilweise).
+  /** Erreichbarkeit + aktives Modell in den State spiegeln.
    *  Gibt den resultierenden ServerState zurück, damit der Settings-Tab-Test-Button
    *  das Ergebnis direkt für seine Notice auswerten kann, ohne einen eigenen Zugriff auf
    *  den (privaten) Plugin-State zu brauchen. */
@@ -895,7 +892,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     params: GenParams,
     /** Die BYTES der Vorlage (Base64 ohne data:-Praefix) oder null. Bewusst ein eigener
      *  Parameter statt eines Feldes in `params`: das Rezept traegt nur die Herkunft, nie
-     *  das Bild — sonst laege ein Megabyte pro Eintrag in data.json (Spec §1). */
+     *  das Bild — sonst laege ein Megabyte pro Eintrag in data.json. */
     initImageData: string | null,
     onProgress?: ApiRequest["onProgress"],
     opts?: { external?: boolean; signal?: AbortSignal },
@@ -1005,7 +1002,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     try {
       // Server (und ComfyUI/Playground, falls sie je img2img koennen): das Plugin schneidet den
       // gewaehlten Ausschnitt VOR dem Absenden zu — sonst entschiede der Server selbst, welchen
-      // Teil des Bildes er rechnet (Spec img2img-Steuerung §4.4). builtin schneidet beim Dekodieren.
+      // Teil des Bildes er rechnet. builtin schneidet beim Dekodieren.
       const sentInit = !builtin && initImageData !== null && params.initCrop !== null
         ? await cropImageToBase64(initImageData, params.initCrop)
         : initImageData;
@@ -1025,12 +1022,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // eines fremden Laufs, als waere der EIGENE gescheitert. Der Aufrufer bekommt den
       // Fehler ohnehin als Rueckgabewert und meldet ihn seinem Nutzer selbst; unsere
       // Statuszeile gehoert dem eigenen Klick. (Entschieden 2026-08-23; die Alternative war ein dritter i18n-Key.)
-      // Spec §8 Punkt 1: ein Session-Aufbau, der an knappem Speicher scheitert, bekommt einen
+      // Erstens: ein Session-Aufbau, der an knappem Speicher scheitert, bekommt einen
       // lesbaren Satz statt der rohen ORT-Fehlermeldung — nur im eingebauten Modus, nur bei
       // erkanntem Signal (`isOutOfMemoryError`, src/core/engine-errors.ts). Erkennt sie nichts,
       // bleibt die rohe Meldung stehen — lesbar, nur nicht freundlich; nie ein Ewig-Spinner,
       // weil dieser catch-Zweig ohnehin greift, sobald `createOrtSession` wirft/verwirft.
-      // Spec §8 Punkt 2: haengt `createSession` laenger als `SESSION_BUILD_TIMEOUT_MS`, wirft
+      // Zweitens: haengt `createSession` laenger als `SESSION_BUILD_TIMEOUT_MS`, wirft
       // `local-engine.ts`s Wachhund `SessionBuildTimeout` — eigener Satz statt „nicht genug
       // Speicher", weil ein Timeout ein anderer Befund ist (koennte auch ein haengender
       // Treiber sein, nicht nur GPU-Speicher).
@@ -1071,7 +1068,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         ? this.settings.playgroundShortcutName.trim() !== ""
         : this.state.server.kind === "ok" && (this.settings.engine !== "comfy" || this.state.workflow.kind === "ok");
     if (!bereit) return;
-    // Rezept-Ehrlichkeit (Spec 0.6 §7): die eingebaute Engine kennt weder Negativ-Prompt noch CFG
+    // Rezept-Ehrlichkeit: die eingebaute Engine kennt weder Negativ-Prompt noch CFG
     // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams
     // neutralisiert das still statt es abzulehnen (Keine-Attrappen-Linie).
     const init = this.state.initImage;
@@ -1091,7 +1088,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       },
       this.hardenContext(),
     );
-    // AUFTRAG: die Bytes, getrennt vom Rezept (Spec §1). Die Bedingung haengt an
+    // AUFTRAG: die Bytes, getrennt vom Rezept. Die Bedingung haengt an
     // `denoising`, NICHT an `params.initImage`: Letzteres ist der Pfad und darf null sein,
     // waehrend sehr wohl ein Bild mitlaeuft (API-Fall). `denoising !== null` ist per
     // Haertung genau dann wahr, wenn es ein Ausgangsbild gibt.
@@ -1163,7 +1160,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     try {
       // Aus dem beim Generieren eingefrorenen Zeitstempel ableiten, nicht aus "jetzt":
       // sonst laufen Dateiname und Notiz-`created` (params.date) auseinander, wenn
-      // zwischen Generieren und Create Zeit vergeht (Spec §7.4, Finding 4). isoStamp
+      // zwischen Generieren und Create Zeit vergeht. isoStamp
       // liefert lokale Zeit ohne Offset — new Date() parst das als lokale Zeit zurück,
       // der Round-Trip ist verlustfrei.
       const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
