@@ -2,7 +2,7 @@
 // leerer noteFolder = Notiz landet neben dem Bild.
 
 import { STEPS } from "./generation";
-import { isLoopbackHttpUrl } from "../vendor/kit/loopback";
+import { isHttpsOrLoopbackUrl } from "../vendor/kit/loopback";
 import { parseCrop, type Crop } from "../vendor/kit/crop";
 import { DEFAULT_ASSET_BASE_URL, DEFAULT_BUILTIN_MODEL_ID, type BuiltinModelId } from "./model-manifest";
 import {
@@ -212,15 +212,6 @@ export function migrateSettings(raw: unknown): unknown {
   return { ...s, engine: endpoint !== "" ? "server" : "builtin" };
 }
 
-/** Nur https. Bewusst nicht im Kit: dort gibt es `isLoopbackHttpUrl`, die https-Hälfte ist ein Einzeiler und steht ebenso in audio-interface (`main.ts`). */
-function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 /** Die Spiegel-URL der Modell-Downloads ist eine Ziel-Erlaubnis, kein Freitext: nur https oder lokales http (127.0.0.1, localhost, [::1]).
  *  Alles andere (auch ein Wert aus einer fremd geschriebenen `data.json`) fällt auf den Default zurück. Die Prüfsummen binden die Bytes
  *  ohnehin; die Grenze verhindert, dass ein Vertipper oder ein untergeschobener Wert Anfragen im Klartext in ein fremdes Netz schickt.
@@ -228,7 +219,7 @@ function isHttpsUrl(value: string): boolean {
 const assetBaseUrlField: FieldCheck<string> = (raw, fallback) => {
   if (typeof raw !== "string") return fallback;
   const v = raw.trim();
-  return isLoopbackHttpUrl(v) || isHttpsUrl(v) ? v : fallback;
+  return isHttpsOrLoopbackUrl(v) ? v : fallback;
 };
 
 /** Feldprüfer für `validateSettings` (Kit `pure/settings_schema.ts`, Schicht 2 — geschlossene

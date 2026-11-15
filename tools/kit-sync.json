@@ -1,10 +1,10 @@
 {
   "sources": {
     "obsidian-kit": {
-      "ref": "0.69.1"
+      "ref": "0.92.0"
     },
     "code-kit": {
-      "ref": "0.36.0"
+      "ref": "0.73.0"
     }
   },
   "targets": [
@@ -13,43 +13,29 @@
       "source": "code-kit",
       "from": "src/ts/pure",
       "modules": [
-        {
-          "name": "chat-archive",
-          "ref": "0.68.0"
-        },
-        {
-          "name": "chat-history",
-          "ref": "0.68.0"
-        },
+        "chat-archive",
+        "chat-history",
         "crop",
         "data-url",
         "endpoint",
         "endpoint_config",
         "endpoint_diagnostics",
-        {
-          "name": "filename-template",
-          "ref": "0.68.0"
-        },
+        "filename-template",
         "format-bytes",
         "i18n",
-        {
-          "name": "loopback",
-          "ref": "0.68.0"
-        },
         "local-stamp",
+        "loopback",
         "model-choice",
         "model-list-cache",
         "num",
         "reasoning",
+        "rel-path",
         "sampling-profiles",
         "secrets",
         "settings",
         "settings_schema",
         "sha256",
-        {
-          "name": "split-list",
-          "ref": "0.63.0"
-        },
+        "split-list",
         "think-splitter",
         "timeout"
       ]
@@ -59,10 +45,7 @@
       "source": "code-kit",
       "from": "src/ts/web",
       "modules": [
-        {
-          "name": "asset-store",
-          "ref": "0.68.0"
-        },
+        "asset-store",
         "cache-download"
       ]
     },
@@ -73,6 +56,12 @@
       "modules": [
         "frontmatter",
         "image-gen-provider"
+      ],
+      "rewrite": [
+        [
+          "../vendor/code-kit/pure/",
+          "./"
+        ]
       ]
     },
     {
@@ -107,6 +96,7 @@
         "model-picker",
         "plugin-api",
         "secrets",
+        "setting-body-host",
         "settings_walker",
         "shortcuts-bridge",
         "text-socket"

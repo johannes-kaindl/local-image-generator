@@ -139,3 +139,25 @@ describe("buildImageNote — img2img", () => {
     expect(md).not.toContain("init_image");
   });
 });
+
+describe("buildImageNote — Pfade, die ein Wikilink nicht tragen kann", () => {
+  // Obsidian lässt `#`, `^`, `[`, `]` und `|` in Dateinamen zu; ein Link `[[Art/a #1.png]]` zeigt aber auf `Art/a`. `wikilinkOf` gibt dort `null`.
+  it("schreibt das Bild als Klartext und Markdown-Embed, wenn der Pfad ein Linkzeichen trägt", () => {
+    const md = buildImageNote(params(), "Art #1/lig-a.png");
+    expect(md).toContain('image: "Art #1/lig-a.png"');
+    expect(md).toContain("![](<Art #1/lig-a.png>)");
+    expect(md).not.toContain("[[");
+  });
+
+  it("schreibt init_image als Klartext, wenn der Pfad der Vorlage ein Linkzeichen trägt", () => {
+    const md = buildImageNote(params({ denoising: 0.4, initImage: "Bilder/a^b.png" }), "Bilder/neu.png");
+    expect(md).toContain("init_image: Bilder/a^b.png");
+    expect(md).not.toContain("[[Bilder/a^b.png]]");
+  });
+
+  it("lässt einen gewöhnlichen Pfad wie bisher als Wikilink stehen", () => {
+    const md = buildImageNote(params({ denoising: 0.4, initImage: "Bilder/a b.png" }), "Bilder/neu.png");
+    expect(md).toContain('init_image: "[[Bilder/a b.png]]"');
+    expect(md).toContain("![[Bilder/neu.png]]");
+  });
+});

@@ -1,4 +1,4 @@
-// vendored from obsidian-kit@0.69.1, src/obsidian/crop-modal.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from obsidian-kit@0.92.0, src/obsidian/crop-modal.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /**
  * Ausschnitt-Wahl (UI-STANDARD §8 ergänzt): das Bild mit einem quadratischen Rahmen darüber. Ziehen am Rahmen verschiebt, der Griff unten rechts
  * skaliert; `onChoose(crop)` bekommt den Rahmen, `onChoose(null)` heißt „ganzes Bild“ (keine Wahl), Abbrechen ruft nichts.
@@ -189,7 +189,7 @@ export class CropModal extends Modal {
     // Prozentwerte relativ zum Bild: der Rahmen bleibt richtig, wenn das Bild skaliert wird. Auf vier Nachkommastellen gerundet (Anzeige,
     // nicht Geometrie): `0.105 * 100` ergibt sonst `10.500000000000002%`.
     const pct = (v: number): string => `${Math.round(v * 1e6) / 1e4}%`;
-    this.frameEl.setCssProps({ left: pct(c.x), top: pct(c.y), width: pct(c.w), height: pct(c.h) });
+    this.frameEl.setCssProps({ "--okit-crop-left": pct(c.x), "--okit-crop-top": pct(c.y), "--okit-crop-width": pct(c.w), "--okit-crop-height": pct(c.h) }); // Custom Properties: eslint-plugin-obsidianmd 0.5.0 lässt in `setCssProps` nur `--name` zu; die Regel `.okit-crop-frame` liest sie
     this.handleEl.setAttribute("aria-valuemax", String(Math.min(this.natural.w, this.natural.h)));
     this.handleEl.setAttribute("aria-valuenow", String(side));
     this.infoEl.setText(this.opts.strings.info(side, Math.round(c.h * this.natural.h), this.natural.w, this.natural.h));
@@ -204,6 +204,7 @@ export const CROP_MODAL_CSS = `
    mit hartem Rückfallwert (einzige feste Farbe der Konstante): ein Theme-Wert wie die Modal-Abdeckung ist im hellen Theme hell. */
 .okit-crop-frame {
   position: absolute; box-sizing: border-box; cursor: move; touch-action: none;
+  left: var(--okit-crop-left, 0); top: var(--okit-crop-top, 0); width: var(--okit-crop-width, 100%); height: var(--okit-crop-height, 100%);
   border: 2px solid var(--interactive-accent);
   box-shadow: 0 0 0 9999px var(--okit-crop-scrim, rgba(0, 0, 0, 0.55));
 }

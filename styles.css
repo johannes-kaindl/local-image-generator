@@ -159,6 +159,7 @@
    mit hartem Rückfallwert (einzige feste Farbe der Konstante): ein Theme-Wert wie die Modal-Abdeckung ist im hellen Theme hell. */
 .okit-crop-frame {
   position: absolute; box-sizing: border-box; cursor: move; touch-action: none;
+  left: var(--okit-crop-left, 0); top: var(--okit-crop-top, 0); width: var(--okit-crop-width, 100%); height: var(--okit-crop-height, 100%);
   border: 2px solid var(--interactive-accent);
   box-shadow: 0 0 0 9999px var(--okit-crop-scrim, rgba(0, 0, 0, 0.55));
 }

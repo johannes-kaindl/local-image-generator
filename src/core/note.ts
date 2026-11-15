@@ -2,7 +2,7 @@
 // Pfad und Link kommen von außen. Muster übernommen von image-to-markdown/src/img_to_md.ts
 // (lines[]-Builder, IO injiziert) — dessen schwaches Escaping aber NICHT: das Quoting
 // kommt aus dem vendorten Serializer.
-import { serializeFrontmatter, type FmValue } from "../vendor/kit/frontmatter";
+import { serializeFrontmatter, wikilinkOf, type FmValue } from "../vendor/kit/frontmatter";
 import type { GenParams } from "./viewmodel";
 import { formatCrop } from "../vendor/kit/crop";
 
@@ -22,7 +22,13 @@ const FM_ORDER = [
   "image",
 ];
 
-/** @param imageLink Vault-Pfad des Bildes, so wie er in `![[…]]` stehen soll. */
+/** Ein Vault-Pfad als Wikilink, oder als Klartext, wenn ein Link auf eine andere Datei zeigte oder auf keine: ein Pfad mit `[ ] # ^ |` (Obsidian lässt solche Namen
+ *  zu, ein Link darauf bräche am Zeichen) gibt bei `wikilinkOf` `null`. Ein sichtbarer Pfad ist eine Unbequemlichkeit, ein Link auf die falsche Notiz ein Fehler. */
+function linkOrText(path: string): string {
+  return wikilinkOf(path) ?? path;
+}
+
+/** @param imageLink Vault-Pfad des Bildes; als Embed `![[…]]`, bei einem Pfad mit `[ ] # ^ |` als Markdown-Embed `![](<…>)`, das den Pfad ganz liest. */
 export function buildImageNote(params: GenParams, imageLink: string): string {
   const data: Record<string, FmValue> = {
     prompt: params.prompt,
@@ -40,7 +46,7 @@ export function buildImageNote(params: GenParams, imageLink: string): string {
     // eine benennbare Herkunft hat. Ein API-Lauf schickt Bytes ohne Vault-Datei; die Notiz
     // behauptet dann keine Quelle, nennt aber sehr wohl die Aenderungsstaerke.
     ...(params.denoising !== null ? { denoising: params.denoising } : {}),
-    ...(params.initImage !== null ? { init_image: `[[${params.initImage}]]` } : {}),
+    ...(params.initImage !== null ? { init_image: linkOrText(params.initImage) } : {}),
     // Der gerechnete Bildbereich der Vorlage (x, y, Breite, Hoehe, relativ zum Original).
     ...(params.initCrop !== null ? { init_crop: formatCrop(params.initCrop) } : {}),
     model: params.model,
@@ -49,7 +55,8 @@ export function buildImageNote(params: GenParams, imageLink: string): string {
     created: params.date,
     // Der Serializer quotet das selbst (needsQuoting kennt "[["), aber der Link muss als
     // Wikilink im Wert stehen — unquoted bräche "[[" das YAML.
-    image: `[[${imageLink}]]`,
+    image: linkOrText(imageLink),
   };
-  return `${serializeFrontmatter(data, FM_ORDER)}\n![[${imageLink}]]\n`;
+  const embed = wikilinkOf(imageLink) === null ? `![](<${imageLink}>)` : `!${linkOrText(imageLink)}`;
+  return `${serializeFrontmatter(data, FM_ORDER)}\n${embed}\n`;
 }

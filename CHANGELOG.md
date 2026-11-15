@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Result notes no longer write a link that points at the wrong file when the image path (or the path of the template image) contains `#`, `^`, `[`, `]` or `|`: Obsidian allows those characters in names, but a wikilink breaks at them. The path is then written as plain text, and the image is embedded as `![](<path>)`.
+
+### Changed
+
+- The crop dialog's frame is positioned through CSS custom properties (shared library update); the matching rule is in `styles.css`.
+- Turning the LLM endpoint manager on or off while Obsidian runs is noticed within two seconds (shared library update).
+
 ## [0.22.0] — 2026-11-14
 
 ### Changed

@@ -1,4 +1,4 @@
-// vendored from code-kit@0.68.0, src/ts/web/asset-store.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.73.0, src/ts/web/asset-store.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 // Lifted into code-kit (2026-11-03) from audio-interface/src/obsidian/asset-store.ts (Stand Tag 0.7.4), which in turn
 // took the pattern from local-image-generator/src/obsidian/model-store.ts. Second consumer: protocol-droid (Plan 2).
 // Differences from the original, all deliberate:
