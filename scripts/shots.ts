@@ -734,7 +734,6 @@ async function main(): Promise<void> {
     );
   }
   console.log(`Verbunden auf Port ${port}.`);
-  await cdp.send("Page.bringToFront");
   await new Promise((r) => setTimeout(r, 3000));
   await setWindowSize(cdp, FENSTER_BREITE, FENSTER_HOEHE);
 
