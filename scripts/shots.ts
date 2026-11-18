@@ -59,7 +59,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { argv, cwd, env, exit } from "node:process";
 
-import { Cdp, attachTo, openExisting, schliesseEinstellungen, setPluginSetting } from "../../tools/obsidian-cdp/cdp.js";
+import { Cdp, attachTo, bereiteInstanzVor, openExisting, schliesseEinstellungen, setPluginSetting } from "../../tools/obsidian-cdp/cdp.js";
 import { boxAround, capture, setWindowSize, withMetrics, writeShot } from "../../tools/obsidian-cdp/shot.js";
 import { buildVault, stagingVaultDir } from "../../tools/obsidian-cdp/vault.js";
 
@@ -736,6 +736,11 @@ async function main(): Promise<void> {
   console.log(`Verbunden auf Port ${port}.`);
   await new Promise((r) => setTimeout(r, 3000));
   await setWindowSize(cdp, FENSTER_BREITE, FENSTER_HOEHE);
+
+  // Frisches Profil: Vertrauensdialog bestätigen, Restricted Mode aufheben, Plugin laden, Aufnahmesprache setzen. Ohne den Aufruf zeigt jedes Bild
+  // den Vertrauensdialog, und das Plugin fehlt im Renderer (Brücke README § Frisches Profil vorbereiten).
+  const vor = await bereiteInstanzVor(cdp, { pluginIds: [PLUGIN_ID], nurVault: REPO_NAME, sprache: "en" });
+  console.log(`Instanz: ${vor.hinweis}`);
 
   // Den Prueflig HERSTELLEN, nicht annehmen: `npm run deploy` kopiert Dateien, Obsidian
   // laedt sie nicht nach. Ohne diesen Neustart bebildert der Lauf den Stand, der beim
