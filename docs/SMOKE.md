@@ -464,7 +464,7 @@ unabhängig. Beide Ursachen sind Treiber-Defekte, keine Produktregression.
    je GB (8 min/GB), aus der Bytezahl des gerade AKTIVEN Modells berechnet, nicht mehr
    hartcodiert. Kalibrierungspunkt: SD-Turbos ~2,5 GB ergeben ≈ 30 min (die alte Konstante,
    also keine Regression für das kleinere Modell); SDXL-Turbo ergibt ≈ 61 min. Die
-   Fehlermeldung liest jetzt denselben Wert, den `pollUntil` auch bekommen hat — sie kann
+   Fehlermeldung liest jetzt denselben Wert, den `warteBis` auch bekommen hat — sie kann
    nicht mehr von ihm abweichen.
 
 2. **Punkt 17 nahm eine Vorbedingung an, statt sie herzustellen.** `.lig-size-slot` stand in

@@ -87,6 +87,7 @@ import { join } from "node:path";
 // ist die gewollte Meldung. Was ihr fehlt, wird DORT ergänzt, nicht hier nachgebaut.
 import { Cdp, attachTo, beimAbbruch, bereiteInstanzVor, entferneFakeManager, istAbgebrochen, installFakeManager, klicke, requireVisible, schliesseEinstellungen } from "../../tools/obsidian-cdp/cdp.js";
 import { createBilanz, parseArgs, runDriver, type KlickModusArgs } from "../../tools/obsidian-cdp/bilanz.js";
+import { warteBis } from "../../tools/obsidian-cdp/warten.js";
 // Der Build-Guard liegt ebenfalls zentral: `requireEigenerBuild` bricht ab, wenn der Build im
 // Vault nachweislich nicht der gebaute Repo-Stand ist, und WARNT nur, wo er nichts in der Hand
 // hat (fehlender Vergleichsstand) — eine fehlende Umgebung ist kein Befund (CORE-TEST-02 g).
@@ -243,47 +244,6 @@ const waitFor = (body: string, timeoutMs = 8000): string => `
   }
   return null;
 `;
-
-/**
- * Node-seitiges Warten für alles, was länger dauern kann als ein CDP-Aufruf leben darf.
- *
- * ⚠️ **Namensgleich mit `pollUntil` aus der zentralen Brücke, aber NICHT dasselbe** — und das
- * ist die Falle, nicht die Doppelung. Die zentrale Fassung nimmt `(cdp, ausdruck)` und liefert,
- * sobald der Ausdruck truthy wird; diese hier nimmt eine `read`-Funktion und ein `done`-PRÄDIKAT
- * und kann deshalb auf Bedingungen warten, die kein truthy-Wert ausdrückt (`kind === "ready" ||
- * kind === "error"`), und meldet alle 15 s, worauf sie wartet. 20 Aufrufe hängen daran. Wer sie
- * durch den Import ersetzt, weil der Name gleich ist, bricht sie alle — die richtige Bewegung
- * wäre umgekehrt: diese Form in die Brücke heben (Kit-Kandidat, im Dach vermerkt).
- *
- * ABWEICHUNG zur 3d-codeblocks-Vorlage (Material für die spätere Kit-Extraktion): dort
- * genügt `waitFor` im Renderer, weil jede Prüfung in Millisekunden fällt. Hier dauert eine
- * echte Bildgenerierung Minuten — und `Cdp.send` bricht nach 30 s hart ab. Ein
- * renderer-seitiges Warten würde also nicht „lange warten", sondern zuverlässig in eine
- * Zeitüberschreitung laufen, die wie ein Defekt aussieht. Deshalb wird hier kurz gemessen
- * und lange auf der Node-Seite gewartet.
- */
-async function pollUntil<T>(
-  read: () => Promise<T>,
-  done: (value: T) => boolean,
-  timeoutMs: number,
-  label: string,
-  intervalMs = 2000,
-): Promise<T | null> {
-  const deadline = Date.now() + timeoutMs;
-  let lastLog = Date.now();
-  let value: T | null = null;
-  while (Date.now() < deadline) {
-    value = await read();
-    if (done(value)) return value;
-    if (Date.now() - lastLog > 15_000) {
-      lastLog = Date.now();
-      const left = Math.round((deadline - Date.now()) / 1000);
-      console.log(`    … ${label} (noch ${left}s)`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-  return null;
-}
 
 /**
  * Download-Frist für Punkt 14, PROPORTIONAL zur Bytezahl des Modells, das gerade geladen wird
@@ -472,7 +432,7 @@ async function runPartialDownloadCheck(cdp: Cdp): Promise<void> {
       return;
     }
     await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].refreshEngineState(); return true;`);
-    const gemessen = await pollUntil(
+    const gemessen = await warteBis(
       () =>
         cdp.evaluate<{ cta: string; text: string; kind: string }>(`
           const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
@@ -483,7 +443,7 @@ async function runPartialDownloadCheck(cdp: Cdp): Promise<void> {
       (m) => m.kind === "not-downloaded" && m.cta !== "",
       20_000,
       "warte auf den Teil-Download-Zustand",
-      500,
+      { intervalMs: 500 },
     );
     if (gemessen === null) {
       record(NAME_28, false, "Panel kam nach dem Cache-Eingriff nicht in den Zustand „not-downloaded“ mit CTA");
@@ -504,12 +464,12 @@ async function runPartialDownloadCheck(cdp: Cdp): Promise<void> {
     // Aufraeumen gehoert dem Punkt, nicht dem naechsten: 15/16/24 und die img2img-Punkte
     // brauchen `ready`. Gegen den lokalen Mock ist das eine Datei in etwa einer Sekunde.
     await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].startDownload(); return true;`).catch(() => undefined);
-    await pollUntil(
+    await warteBis(
       () => cdp.evaluate<string>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].getEngineState().kind;`),
       (k) => k === "ready",
       120_000,
       "warte auf die Wiederherstellung des Modells",
-      500,
+      { intervalMs: 500 },
     );
   }
 }
@@ -554,7 +514,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     const stepsMax29 = await cdp.evaluate<string>(`return document.querySelector(".lig-steps")?.getAttribute("max") ?? "";`);
     record(NAME_29, stepsMax29 === "8", `max=${stepsMax29}`);
 
-    let st = await pollUntil(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", 500);
+    let st = await warteBis(engineState, (e) => e.kind !== "gpu-checking", 30_000, "warte auf den GPU-Check", { intervalMs: 500 });
     if (st?.kind === "gpu-missing") {
       record("13. Engine auf „Eingebaut“ — Panel zeigt den Modellzustand", true, `GPU fehlt (${st.reason}) — Panel meldet es; 14–16, 24, 30 gegenstandslos`);
       for (const n of [
@@ -578,7 +538,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     // Erweiterung: „1 s · Fortschritt gesehen: false"). removeModel() auf leerem Cache ist
     // ein No-op.
     await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].removeModel(); return true;`);
-    st = await pollUntil(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", 500);
+    st = await warteBis(engineState, (e) => e.kind === "not-downloaded", 30_000, "warte auf das Entfernen", { intervalMs: 500 });
     // Gerendert messen, nicht die Klasse lesen: die war beim Bug vom 2026-08-21 gesetzt, während
     // die Zeile im Bild stand. Punkt 17 prüft das systematisch — hier bleibt es als Vorbedingung
     // von 14/15 stehen, weil ein Panel mit sichtbarem Negativ-Prompt kein builtin-Panel ist.
@@ -633,7 +593,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     const downloadDeadline14 = downloadDeadlineMs(totalBytes(filesFor(DEFAULT_BUILTIN_MODEL_ID)));
     await klick(cdp, `document.querySelector(".lig-empty button")`);
     let sawProgress = false;
-    const done14 = await pollUntil(
+    const done14 = await warteBis(
       async () => {
         const e = await engineState();
         if (e.kind === "downloading" && (e.received ?? 0) > 0) sawProgress = true;
@@ -644,7 +604,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       (e) => e.kind === "ready" || e.kind === "error" || (sawProgress && e.kind === "not-downloaded"),
       downloadDeadline14,
       "warte auf den Modell-Download",
-      1000,
+      { intervalMs: 1000 },
     );
     const status14 = await statusText();
     record(
@@ -679,7 +639,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     const imageBefore15 = await cdp.evaluate<string>(`const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`);
     await klick(cdp, `document.querySelector(".lig-generate")`);
     let sawLoading = false;
-    const image15 = await pollUntil(
+    const image15 = await warteBis(
       async () => {
         const r = await cdp.evaluate<{ length: number; status: string; sig: string }>(`
           const img = document.querySelector(".lig-image");
@@ -692,7 +652,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
       (r) => (r.length > 5000 && r.sig !== imageBefore15 && r.status === readyText) || istFehler(r.status),
       generateTimeoutMs,
       "warte auf das Bild der eingebauten Engine",
-      500,
+      { intervalMs: 500 },
     );
     let note15: { model: string | null; steps: number | null } | null = null;
     if (image15 !== null && !istFehler(image15.status)) {
@@ -702,7 +662,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
         button.click(); return true;
       `);
-      const body = await pollUntil(
+      const body = await warteBis(
         () =>
           cdp.evaluate<string | null>(`
             const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
@@ -713,7 +673,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         (b) => b !== null,
         60_000,
         "warte auf die Ergebnis-Notiz",
-        1000,
+        { intervalMs: 1000 },
       );
       if (body) {
         const model = body.match(/^model:\s*(.+)$/m)?.[1]?.trim() ?? null;
@@ -762,7 +722,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
     if (image15 !== null && !istFehler(image15.status)) {
       try {
         await klick(cdp, `document.querySelector(".lig-init-from-result")`);
-        const denoiseSichtbar = await pollUntil(
+        const denoiseSichtbar = await warteBis(
           () =>
             cdp.evaluate<boolean>(`
               const el = document.querySelector(".lig-denoise");
@@ -771,7 +731,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
           (v) => v === true,
           15_000,
           "warte auf den sichtbaren Denoise-Regler",
-          500,
+          { intervalMs: 500 },
         );
         if (denoiseSichtbar !== true) {
           record(NAME_30, false, "Denoise-Regler wurde nach „als Vorlage“ nicht sichtbar — Vorlage nicht gesetzt?");
@@ -789,7 +749,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
           );
           const t30 = Date.now();
           await klick(cdp, `document.querySelector(".lig-generate")`);
-          const image30 = await pollUntil(
+          const image30 = await warteBis(
             () =>
               cdp.evaluate<{ length: number; status: string; sig: string }>(`
                 const img = document.querySelector(".lig-image");
@@ -799,7 +759,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
             (r) => (r.length > 5000 && r.sig !== imageBefore30 && r.status === readyText) || istFehler(r.status),
             generateTimeoutMs,
             "warte auf das Bild des Denoise-Laufs",
-            500,
+            { intervalMs: 500 },
           );
           if (image30 === null || istFehler(image30.status)) {
             record(
@@ -814,7 +774,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
               if (!button) throw new Error("Knopf nicht gefunden: " + ${JSON.stringify(createLabel)});
               button.click(); return true;
             `);
-            const body30 = await pollUntil(
+            const body30 = await warteBis(
               () =>
                 cdp.evaluate<string | null>(`
                   const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
@@ -825,7 +785,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
               (b) => b !== null,
               60_000,
               "warte auf die Ergebnis-Notiz (Denoise-Lauf)",
-              1000,
+              { intervalMs: 1000 },
             );
             const denoisingLine = body30?.match(/^denoising:\s*(.+)$/m)?.[1]?.trim() ?? null;
             record(
@@ -847,7 +807,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
         // Aufgeraeumt wird im finally-Muster der Nachbarpunkte, nicht am Ende des Erfolgspfads:
         // ein Abbruch mittendrin hinterliesse den Zustand sonst erst recht.
         await klick(cdp, `document.querySelector(".lig-init-clear")`).catch(() => undefined);
-        const vorlageWeg = await pollUntil(
+        const vorlageWeg = await warteBis(
           () =>
             cdp.evaluate<boolean>(`
               const el = document.querySelector(".lig-denoise");
@@ -856,7 +816,7 @@ async function runBuiltinChecks(cdp: Cdp, assetsBase: string, generateTimeoutMs:
           (v) => v === true,
           10_000,
           "warte darauf, dass die img2img-Vorlage wieder entfernt ist",
-          500,
+          { intervalMs: 500 },
         );
         if (vorlageWeg !== true) {
           console.log("    ⚠️ Die img2img-Vorlage aus Punkt 30 liess sich nicht entfernen — spaetere Punkte (25) messen dann img2img statt txt2img.");
@@ -1269,12 +1229,12 @@ async function runApiFailureCheck(cdp: Cdp, endpoint: string): Promise<void> {
   // Vorbedingung HERSTELLEN statt erben: ein Panel, das schon vorher einen Fehler zeigt,
   // koennte den Fremdlauf-Fehler nicht von seinem eigenen unterscheiden — der Punkt waere
   // gruen, ohne seinen Gegenstand beruehrt zu haben.
-  const before = await pollUntil(
+  const before = await warteBis(
     statusLine,
     (line) => !line.cls.includes("is-error") && !istFehler(line.text),
     15_000,
     "warte auf ein fehlerfreies Panel",
-    500,
+    { intervalMs: 500 },
   );
   if (!before) {
     nichtGemessen(NAME, "Panel zeigt schon VOR dem Fremdlauf einen Fehler — sein eigener Fund waere nicht zuordenbar");
@@ -1547,7 +1507,7 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
     return true;
   `);
 
-  const lauf = (await pollUntil(
+  const lauf = (await warteBis(
     () =>
       cdp.evaluate<{ fertig: boolean; ok?: boolean; reason?: string; denoising?: number | null }>(
         `return window.__ligSmokeImg2Img ?? { fertig: false };`,
@@ -1555,7 +1515,7 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
     (v) => v.fertig,
     generateTimeoutMs,
     "warte auf den img2img-Lauf",
-    1000,
+    { intervalMs: 1000 },
   )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
 
   await cdp.evaluate(`delete window.__ligSmokeImg2Img; return true;`).catch(() => undefined);
@@ -1768,9 +1728,9 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
       return;
     }
     const geklickt = await klick(cdp, `document.querySelector(".lig-init-crop")`);
-    const modal = await pollUntil(
+    const modal = await warteBis(
       () => cdp.evaluate<boolean>(`const f = document.querySelector(".okit-crop-frame"); return !!f && f.getClientRects().length > 0 && document.querySelector(".okit-crop-img")?.naturalWidth > 0;`),
-      (v) => v === true, 5000, "warte auf das CropModal", 100,
+      (v) => v === true, 5000, "warte auf das CropModal", { intervalMs: 100 },
     );
     if (!geklickt || modal !== true) {
       nichtGemessen(NAME, `CropModal nicht erschienen (Klick angekommen: ${String(geklickt)})`);
@@ -1818,9 +1778,9 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
         })().catch((e) => { window.__ligCropRun = { fertig: true, ok: false, reason: String(e) }; });
         return true;
       `);
-      const lauf = (await pollUntil(
+      const lauf = (await warteBis(
         () => cdp.evaluate<{ fertig: boolean; ok?: boolean; crop?: unknown; reason?: string | null }>(`return window.__ligCropRun ?? { fertig: false };`),
-        (v) => v.fertig, generateTimeoutMs, "warte auf den Crop-Lauf", 500,
+        (v) => v.fertig, generateTimeoutMs, "warte auf den Crop-Lauf", { intervalMs: 500 },
       )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
       await cdp.evaluate(`delete window.__ligCropRun; return true;`).catch(() => undefined);
       const nachher = mockLastInit();
@@ -1891,7 +1851,7 @@ async function downloadModelViaMock(cdp: Cdp, id: BuiltinModelId, timeoutMs: num
   `);
   if (id !== DEFAULT_BUILTIN_MODEL_ID) {
     const confirmLabel = t("confirm.bigModel.cta");
-    const clicked = await pollUntil(
+    const clicked = await warteBis(
       () =>
         cdp.evaluate<boolean>(`
           const btn = [...document.querySelectorAll(".modal-button-container button")]
@@ -1902,16 +1862,16 @@ async function downloadModelViaMock(cdp: Cdp, id: BuiltinModelId, timeoutMs: num
       (v) => v === true,
       10_000,
       `warte auf den Bestätigungs-Dialog (${id})`,
-      300,
+      { intervalMs: 300 },
     );
     if (clicked !== true) return { ok: false, detail: "Bestätigungs-Dialog nicht gefunden" };
   }
-  const done = await pollUntil(
+  const done = await warteBis(
     () => cdp.evaluate<{ done: boolean; error?: string }>(`return window.__ligSmokeDl ?? { done: false };`),
     (v) => v.done,
     timeoutMs,
     `warte auf den Download von ${id}`,
-    1500,
+    { intervalMs: 1500 },
   );
   await cdp.evaluate(`delete window.__ligSmokeDl; return true;`).catch(() => undefined);
   if (done === null) return { ok: false, detail: "Zeitlimit" };
@@ -2226,7 +2186,7 @@ async function runConfirmNoBytesCheck(cdp: Cdp, generateTimeoutMs: number): Prom
       .catch((e) => { window.__ligSmokeCancel = { done: true, error: String(e) }; });
     return true;
   `);
-  const geklickt = await pollUntil(
+  const geklickt = await warteBis(
     () =>
       cdp.evaluate<boolean>(`
         const btn = [...document.querySelectorAll(".modal-button-container button")]
@@ -2237,14 +2197,14 @@ async function runConfirmNoBytesCheck(cdp: Cdp, generateTimeoutMs: number): Prom
     (v) => v === true,
     10_000,
     "warte auf den Bestätigungs-Dialog",
-    300,
+    { intervalMs: 300 },
   );
-  const fertig = await pollUntil(
+  const fertig = await warteBis(
     () => cdp.evaluate<{ done: boolean }>(`return window.__ligSmokeCancel ?? { done: false };`),
     (v) => v.done,
     15_000,
     "warte auf den Abbruch von startDownload()",
-    500,
+    { intervalMs: 500 },
   );
   await cdp.evaluate(`delete window.__ligSmokeCancel; return true;`).catch(() => undefined);
 
@@ -2400,7 +2360,7 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
       `const img = document.querySelector(".lig-image"); return img ? String(img.src.length) + ":" + img.src.slice(-48) : "";`,
     );
     await klick(cdp, `document.querySelector(".lig-generate")`);
-    const image25 = await pollUntil(
+    const image25 = await warteBis(
       () =>
         cdp.evaluate<{ length: number; status: string; sig: string }>(`
           const img = document.querySelector(".lig-image");
@@ -2410,7 +2370,7 @@ async function runSdxlContentCheck(cdp: Cdp, generateTimeoutMs: number): Promise
       (r) => (r.length > 5000 && r.sig !== imageBefore && r.status === readyText) || istFehler(r.status),
       generateTimeoutMs,
       "warte auf das SDXL-Turbo-Bild (Punkt 25)",
-      500,
+      { intervalMs: 500 },
     );
 
     if (image25 === null || istFehler(image25.status)) {
@@ -2513,7 +2473,7 @@ async function runBuiltinImg2ImgCheck(
           .catch((e) => { window[${JSON.stringify(slot)}] = { fertig: true, ok: false, reason: String(e) }; });
         return true;
       `);
-      const r = await pollUntil(
+      const r = await warteBis(
         () =>
           cdp.evaluate<{ fertig: boolean; ok?: boolean; reason?: string; denoising?: number | null }>(
             `const v = window[${JSON.stringify(slot)}] ?? { fertig: false }; return { fertig: v.fertig, ok: v.ok, reason: v.reason, denoising: v.denoising };`,
@@ -2521,7 +2481,7 @@ async function runBuiltinImg2ImgCheck(
         (v) => v.fertig,
         generateTimeoutMs,
         kennung,
-        1000,
+        { intervalMs: 1000 },
       );
       return r === null ? { ok: false, reason: "Zeitlimit" } : { ok: r.ok === true, denoising: r.denoising, reason: r.reason };
     };
@@ -2822,7 +2782,7 @@ async function runComfyWorkflowStatusCheck(cdp: Cdp, brokenPath: string, validPa
   await setzeWorkflow(validPath);
   const erwarteterOkText = t("status.ready");
   const gueltig =
-    (await pollUntil(lesen, (r) => r.isOk || r.text === erwarteterOkText, 10_000, "warte auf is-ok nach gueltigem Workflow", 500)) ??
+    (await warteBis(lesen, (r) => r.isOk || r.text === erwarteterOkText, 10_000, "warte auf is-ok nach gueltigem Workflow", { intervalMs: 500 })) ??
     (await lesen());
 
   const erwarteterFehlertext = t("workflow.err.noSampler");
@@ -2886,7 +2846,7 @@ async function runComfyRealRunCheck(cdp: Cdp, comfyEndpoint: string, generateTim
     return true;
   `);
 
-  const lauf = (await pollUntil(
+  const lauf = (await warteBis(
     () =>
       cdp.evaluate<{ fertig: boolean; ok?: boolean; base64?: string; steps?: number; reason?: string }>(
         `return window.__ligComfyRun ?? { fertig: false };`,
@@ -2894,7 +2854,7 @@ async function runComfyRealRunCheck(cdp: Cdp, comfyEndpoint: string, generateTim
     (v) => v.fertig,
     generateTimeoutMs,
     "warte auf den ComfyUI-Lauf",
-    1000,
+    { intervalMs: 1000 },
   )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
   await cdp.evaluate(`delete window.__ligComfyRun; return true;`).catch(() => undefined);
 
@@ -2962,7 +2922,7 @@ async function runComfyNoteChecks(cdp: Cdp, vorbedingungErreicht: boolean): Prom
     return;
   }
 
-  const body = await pollUntil(
+  const body = await warteBis(
     () =>
       cdp.evaluate<string | null>(`
         const files = app.vault.getFiles().filter((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
@@ -2973,7 +2933,7 @@ async function runComfyNoteChecks(cdp: Cdp, vorbedingungErreicht: boolean): Prom
     (b) => b !== null,
     30_000,
     "warte auf die Ergebnis-Notiz",
-    1000,
+    { intervalMs: 1000 },
   );
   const notizSteps = body?.match(/^steps:\s*(\d+)$/m)?.[1];
 
@@ -3040,12 +3000,12 @@ async function runComfyProgressSocketCheck(cdp: Cdp, generateTimeoutMs: number):
       .catch((e) => { window.__ligComfyPct.fertig = true; window.__ligComfyPct.ok = false; window.__ligComfyPct.fehler = String(e); });
     return true;
   `);
-  const lauf = (await pollUntil(
+  const lauf = (await warteBis(
     () => cdp.evaluate<{ fertig: boolean; ok?: boolean; pcts: (number | null)[]; fehler?: string }>(`return window.__ligComfyPct ?? { fertig: false, pcts: [] };`),
     (v) => v.fertig,
     generateTimeoutMs,
     "warte auf den ComfyUI-Lauf mit Socket",
-    500,
+    { intervalMs: 500 },
   )) ?? { fertig: false, ok: false, pcts: [] as (number | null)[] };
   await cdp.evaluate(`delete window.__ligComfyPct; return true;`).catch(() => undefined);
 
@@ -3594,7 +3554,7 @@ async function main(): Promise<void> {
       await app.plugins.enablePlugin(${JSON.stringify(PLUGIN_ID)});
       return true;
     `);
-    const reloaded = await pollUntil(
+    const reloaded = await warteBis(
       () => cdp.evaluate<boolean>(`return !!app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.settings;`),
       (ok) => ok === true,
       15_000,
@@ -4068,12 +4028,12 @@ async function main(): Promise<void> {
       // Normalfall, nicht die Ausnahme. Geprüft wird, dass sich die Zeile überhaupt bewegt:
       // eine eingefrorene Statuszeile ist von einem Hänger nicht zu unterscheiden.
       const firstStatus = started ?? "";
-      const movedStatus = await pollUntil(
+      const movedStatus = await warteBis(
         () => cdp.evaluate<string>(`const el = document.querySelector(".lig-status-text"); return el ? el.textContent.trim() : "";`),
         (text) => text !== firstStatus && text !== "",
         30_000,
         "warte auf Bewegung in der Statuszeile",
-        1500,
+        { intervalMs: 1500 },
       );
       record(
         "6. Die Statuszeile bewegt sich während des Laufs",
@@ -4082,7 +4042,7 @@ async function main(): Promise<void> {
       );
 
       // --- 7. Das Bild kommt an ------------------------------------------------
-      const image = await pollUntil(
+      const image = await warteBis(
         () =>
           cdp.evaluate<{ visible: boolean; length: number; status: string; sig: string }>(`
             const card = document.querySelector(".lig-card");
@@ -4136,7 +4096,7 @@ async function main(): Promise<void> {
         button.click();
         return true;
       `);
-      const note = await pollUntil(
+      const note = await warteBis(
         () =>
           cdp.evaluate<{ path: string; body: string } | null>(`
             const file = app.vault.getFiles().find((f) => f.path.startsWith(${JSON.stringify(`${SMOKE_FOLDER}/`)}) && f.extension === "md");
@@ -4146,7 +4106,7 @@ async function main(): Promise<void> {
         (r) => r !== null,
         60_000,
         "warte auf die Ergebnis-Notiz",
-        1000,
+        { intervalMs: 1000 },
       );
       const modelLine = note?.body.match(/^model:\s*(.+)$/m)?.[1]?.trim() ?? null;
       record(
@@ -4241,7 +4201,7 @@ async function main(): Promise<void> {
       // sonst schiebt er seinen Eintrag nach der Wiederherstellung nach und der Smoke
       // hinterlässt genau das, was er aufräumen wollte.
       console.log("    … warte auf das Ende des Reroll-Laufs (Aufräum-Voraussetzung)");
-      const settled = await pollUntil(
+      const settled = await warteBis(
         () => cdp.evaluate<string>(`const el = document.querySelector(".lig-status-text"); return el ? el.textContent.trim() : "";`),
         (text) => text === readyText || text.startsWith(t("status.error", "").trim()),
         generateTimeoutMs,
