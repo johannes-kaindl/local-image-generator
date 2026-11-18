@@ -19,16 +19,8 @@
  * andere Session arbeitet. Dieser Treiber laeuft deshalb gegen eine eigene Instanz mit eigenem
  * Profil und eigenem Port; `--port` ist Pflicht, es gibt keinen Standardport.
  *
- * ```bash
- * UD=/tmp/obs-test-local-image-generator                 # Profil je Repo
- * pgrep -f "user-data-dir=$UD"                           # leer, sonst auf ein anderes Profil ausweichen
- * lsof -nP -iTCP:<port> -sTCP:LISTEN                     # leer
- * cp ~/Library/Application\ Support/obsidian/obsidian-*.asar "$UD"/   # aktuelle Version, Pflicht
- * # $UD/obsidian.json: Vault ($STAGING_VAULTS_DIR/local-image-generator) und "language":"en" eintragen
- * /Applications/Obsidian.app/Contents/MacOS/Obsidian --user-data-dir="$UD" --remote-debugging-port=<port> &
- * python3 ~/.claude/hooks/obsidian-cdp-lock.py acquire --label local-image-generator \
- *   --intent "GUI-Smoke" --exclusive focus --port <port> --ttl 900     # danach: … release
- * ```
+ * Lauf: `tools/obsidian-cdp/messlauf.sh` (Dach, README § Messlauf in einem Aufruf) startet die Zweitinstanz, hält den Lock (`--exclusive focus`, davor, mit `export`)
+ * und räumt auf; das Rezept steht nur dort. Für diesen Treiber: `REPO=local-image-generator OHNE_SETUP=1`.
  *
  * Vertrauensdialog und Restricted Mode eines frischen Profils erledigt der Treiber selbst
  * (`bereiteInstanzVor`); je Messlauf ein frischer Prozess, der erste Lauf nach der Profilanlage ist
