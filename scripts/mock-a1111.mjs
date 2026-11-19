@@ -20,13 +20,30 @@
 // Danach den Plugin-Endpunkt auf http://127.0.0.1:7861 stellen und `npm run smoke:gui`.
 // Erwartung seit 598f050: genau EINE /progress-Anfrage pro Lauf (Poller stoppt nach 404).
 import http from "node:http";
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import { writeFileSync } from "node:fs";
 
 const PORT = Number(process.env.MOCK_PORT ?? 7861);
 const DELAY_MS = Number(process.env.MOCK_DELAY_MS ?? 6000);
 const COUNTS_FILE = new URL("../.mock-a1111-counts.json", import.meta.url);
 const LAST_FILE = new URL("../.mock-a1111-last.json", import.meta.url);
+
+/** Das erste Pixel (links oben) eines 8-Bit-PNG (RGB oder RGBA, nicht verschachtelt). Beim ersten Pixel der ersten Zeile ist der
+ *  Vorgänger überall 0, also ist der Rohwert hinter dem Filterbyte für jeden Filtertyp (None, Sub, Up, Average, Paeth) der Pixelwert. */
+function ersterPixel(buf) {
+  try {
+    const bitDepth = buf[24], colorType = buf[25], interlace = buf[28];
+    if (bitDepth !== 8 || interlace !== 0 || (colorType !== 2 && colorType !== 6)) return {};
+    const idat = [];
+    for (let pos = 8; pos + 8 <= buf.length;) {
+      const len = buf.readUInt32BE(pos);
+      if (buf.toString("latin1", pos + 4, pos + 8) === "IDAT") idat.push(buf.subarray(pos + 8, pos + 8 + len));
+      pos += 12 + len;
+    }
+    const raw = inflateSync(Buffer.concat(idat));
+    return { initPixel: [raw[1], raw[2], raw[3]] };
+  } catch { return {}; }
+}
 
 function crc32(buf) {
   let c, crc = 0xffffffff;
@@ -105,7 +122,13 @@ http.createServer((req, res) => {
         if (img2img && typeof parsed.init_images[0] === "string") {
           const head = Buffer.from(parsed.init_images[0].slice(0, 64), "base64");
           if (head.length >= 24 && head.toString("latin1", 1, 4) === "PNG") {
-            writeFileSync(LAST_FILE, JSON.stringify({ initW: head.readUInt32BE(16), initH: head.readUInt32BE(20) }));
+            // Seit Welle 36 auch das ERSTE Pixel (links oben) und die Maße der Anfrage: das Plugin bringt die Vorlage auf
+            // width×height, also sagt die Größe allein nicht mehr, ob der Ausschnitt oder das ganze Bild ankam.
+            writeFileSync(LAST_FILE, JSON.stringify({
+              initW: head.readUInt32BE(16), initH: head.readUInt32BE(20),
+              reqW: Number(parsed.width), reqH: Number(parsed.height),
+              ...ersterPixel(Buffer.from(parsed.init_images[0], "base64")),
+            }));
           }
         }
       } catch { /* kein JSON → Default */ }

@@ -169,6 +169,7 @@ const PUNKTE = [
   "48. Ausschnitt-Wahl: Rahmen ziehen und skalieren, OK — der Server bekommt nur den Ausschnitt",
   "49. Regler-Zeilen bei 300 px: Beschriftung, Regler und Wert jeder Gruppe stehen auf einer Zeile",
   "50. Gegenprobe zu 49: ohne das Raster (Klasse lig-controls) stehen die Gruppen versetzt — der Punkt wird rot",
+  "51. Eine Vorlage mit abweichenden Maßen kommt am echten Bild-Server an (er verlangt width×height)",
 ] as const;
 
 /** Klick-Modus des Laufs (`--halten <ms>`, `--klick-gegenprobe`); Default 0 ms ohne Gegenprobe (Welle 21). */
@@ -1473,8 +1474,9 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
     `)
     .catch(() => undefined);
   const vorher = mockCounts();
-  if (vorher === null) {
-    nichtGemessen(NAME, "kein Mock-Server (Zählerdatei fehlt) — am echten Server nicht messbar");
+  // Die Zählerdatei überlebt den Mock-Prozess (Altbestand liest sich als „Mock läuft“): erst die Antwort des Mocks belegt, dass er da ist.
+  if (vorher === null || !(await setMockFailure(endpoint, false))) {
+    nichtGemessen(NAME, `kein Mock unter ${endpoint} (/mock/fail antwortet nicht) — die Anfragen am echten Server zählt niemand`);
     return;
   }
 
@@ -1528,6 +1530,66 @@ async function runImg2ImgCheck(cdp: Cdp, generateTimeoutMs: number, serverErreic
 }
 
 
+const NAME_51 = "51. Eine Vorlage mit abweichenden Maßen kommt am echten Bild-Server an (er verlangt width×height)";
+
+/**
+ * Punkt 51: ein Lauf mit einer Vorlage, deren Maße NICHT zur gewählten Größe passen (400×200 gegen 512×512), liefert ein Bild.
+ *
+ * Draw Things antwortet auf `init_images` mit abweichenden Maßen mit HTTP 422 („init_images height doesn't match …“, gemessen
+ * 2026-11-18, App 26.1020.0); A1111 skaliert selbst. Bis 0.22.0 schickte das Plugin die Vorlage unverändert, img2img gegen Draw Things
+ * scheiterte also bei jeder Vorlage, die nicht zufällig die Zielgröße hatte, und kein Punkt sah es: 19 und 48 messen am Mock, der jede
+ * Größe nimmt. Dieser Punkt läuft deshalb nur gegen einen ECHTEN Server (antwortet `/mock/fail`, ist es der Mock und der Punkt
+ * „nichts gemessen“), und zwar ohne Zähler: gemessen wird, dass der Lauf ein Bild liefert, das als img2img ausgewiesen ist.
+ */
+async function runVorlagenMasseCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichbar: boolean, endpoint: string): Promise<void> {
+  const NAME = NAME_51;
+  if (!serverErreichbar) {
+    nichtGemessen(NAME, `Bild-Server unter ${endpoint} nicht erreichbar — der Lauf haette keinen Adressaten`);
+    return;
+  }
+  if (await setMockFailure(endpoint, false)) {
+    nichtGemessen(NAME, `unter ${endpoint} antwortet der Mock (/mock/fail) — er nimmt jede Größe; der Punkt braucht einen echten Server (Draw Things)`);
+    return;
+  }
+  await cdp
+    .evaluate(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      if (p.settings.engine !== "server") await p.setEngine("server");
+      return true;
+    `)
+    .catch(() => undefined);
+  await cdp.evaluate(`
+    const api = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]?.api;
+    window.__ligSmoke51 = { fertig: false };
+    (async () => {
+      const c = document.createElement("canvas"); c.width = 400; c.height = 200;
+      const g = c.getContext("2d");
+      const grad = g.createLinearGradient(0, 0, 400, 0); grad.addColorStop(0, "#f00"); grad.addColorStop(1, "#00f");
+      g.fillStyle = grad; g.fillRect(0, 0, 400, 200);
+      const url = c.toDataURL("image/png");
+      const r = await api.generate({ prompt: "smoke 51", initImage: url.slice(url.indexOf(",") + 1), denoising: 0.4, steps: 1 });
+      window.__ligSmoke51 = r.ok ? { fertig: true, ok: true, denoising: r.image.params.denoising } : { fertig: true, ok: false, reason: r.reason };
+    })().catch((e) => { window.__ligSmoke51 = { fertig: true, ok: false, reason: String(e) }; });
+    return true;
+  `);
+  const lauf = (await warteBis(
+    () => cdp.evaluate<{ fertig: boolean; ok?: boolean; reason?: string; denoising?: number | null }>(`return window.__ligSmoke51 ?? { fertig: false };`),
+    (v) => v.fertig,
+    generateTimeoutMs,
+    "warte auf den Lauf mit abweichender Vorlage",
+    { intervalMs: 500 },
+  )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
+  await cdp.evaluate(`delete window.__ligSmoke51; return true;`).catch(() => undefined);
+  const ok = lauf.ok === true && lauf.denoising === 0.4;
+  record(
+    NAME,
+    ok,
+    ok
+      ? "400×200-Vorlage gegen 512×512: Lauf ok, als img2img ausgewiesen (denoising 0.4)"
+      : `Lauf ${lauf.ok === true ? "ok" : `fehlgeschlagen (${String(lauf.reason ?? "unbekannt")})`} · denoising ${String(lauf.denoising)} (erwartet 0.4)`,
+  );
+}
+
 const NAME_49 = "49. Regler-Zeilen bei 300 px: Beschriftung, Regler und Wert jeder Gruppe stehen auf einer Zeile";
 const NAME_50 = "50. Gegenprobe zu 49: ohne das Raster (Klasse lig-controls) stehen die Gruppen versetzt — der Punkt wird rot";
 const NAME_48 = "48. Ausschnitt-Wahl: Rahmen ziehen und skalieren, OK — der Server bekommt nur den Ausschnitt";
@@ -1551,11 +1613,11 @@ async function ziehe(cdp: Cdp, von: { x: number; y: number }, nach: { x: number;
 }
 
 /** Letzte vom Mock empfangene Vorlagen-Groesse (`.mock-a1111-last.json`), null ohne Datei. */
-function mockLastInit(): { initW: number; initH: number } | null {
+function mockLastInit(): { initW: number; initH: number; reqW?: number; reqH?: number; initPixel?: number[] } | null {
   const file = join(process.cwd(), ".mock-a1111-last.json");
   if (!existsSync(file)) return null;
   try {
-    return JSON.parse(readFileSync(file, "utf8")) as { initW: number; initH: number };
+    return JSON.parse(readFileSync(file, "utf8")) as { initW: number; initH: number; reqW?: number; reqH?: number; initPixel?: number[] };
   } catch {
     return null;
   }
@@ -1690,8 +1752,8 @@ async function runSliderLayoutCheck(cdp: Cdp): Promise<void> {
  */
 async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichbar: boolean, endpoint: string): Promise<void> {
   const NAME = NAME_48;
-  if (!serverErreichbar || mockCounts() === null) {
-    nichtGemessen(NAME, `Bild-Mock unter ${endpoint} nicht erreichbar — der Lauf haette keinen Adressaten`);
+  if (!serverErreichbar || mockCounts() === null || !(await setMockFailure(endpoint, false))) {
+    nichtGemessen(NAME, `Bild-Mock unter ${endpoint} nicht erreichbar (/mock/fail antwortet nicht) — der Lauf haette keinen Adressaten`);
     return;
   }
   const quelle = `${SMOKE_FOLDER}/crop-quelle.png`;
@@ -1701,7 +1763,7 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
       if (p.settings.engine !== "server") await p.setEngine("server");
       const c = document.createElement("canvas"); c.width = 400; c.height = 200;
       const g = c.getContext("2d");
-      const grad = g.createLinearGradient(0, 0, 400, 0); grad.addColorStop(0, "#c33"); grad.addColorStop(1, "#33c");
+      const grad = g.createLinearGradient(0, 0, 400, 0); grad.addColorStop(0, "#f00"); grad.addColorStop(1, "#00f");
       g.fillStyle = grad; g.fillRect(0, 0, 400, 200);
       const blob = await new Promise((r) => c.toBlob(r, "image/png"));
       const bytes = await blob.arrayBuffer();
@@ -1776,11 +1838,21 @@ async function runCropCheck(cdp: Cdp, generateTimeoutMs: number, serverErreichba
       )) ?? { fertig: false, ok: false, reason: "Zeitlimit" };
       await cdp.evaluate(`delete window.__ligCropRun; return true;`).catch(() => undefined);
       const nachher = mockLastInit();
-      const quadratisch = nachher !== null && nachher.initW === nachher.initH;
-      const kleiner = nachher !== null && nachher.initW < 400;
-      const erwartet = Math.round(zustand.crop.w * 400);
-      serverOk = lauf.ok === true && nachher !== null && quadratisch && kleiner && Math.abs(nachher.initW - erwartet) <= 1 && lauf.crop !== null && lauf.crop !== undefined;
-      server = `Lauf ${lauf.ok === true ? "ok" : `fehlgeschlagen (${String(lauf.reason)})`} · Server sah ${nachher === null ? "?" : `${nachher.initW}×${nachher.initH}`} (erwartet ${erwartet}×${erwartet}, Original 400×200; vorher ${vorher === null ? "?" : `${vorher.initW}×${vorher.initH}`}) · params.initCrop ${lauf.crop ? "gesetzt" : "fehlt"}`;
+      // Seit Welle 36 bringt das Plugin die Vorlage auf width×height der Anfrage (Draw Things lehnt abweichende Maße ab): die Größe
+      // sagt nicht mehr, ob der Ausschnitt ankam. Das tut das erste Pixel: Farbverlauf rot→blau über 400 px, links oben im
+      // Ausschnitt ist Rot an der Stelle crop.x; das ganze Bild (zentriertes Quadrat) begänne bei x=100 (Rot 191).
+      const sollPx = Math.round(zustand.crop.x * 400);
+      const sollRot = Math.round(255 * (1 - sollPx / 400));
+      const ganzRot = 191;
+      const rot = nachher?.initPixel?.[0];
+      const passtZurAnfrage = nachher !== null && nachher.reqW === nachher.initW && nachher.reqH === nachher.initH && nachher.initW === nachher.initH;
+      const trennt = Math.abs(sollRot - ganzRot) > 10;
+      const ausschnittAngekommen = rot !== undefined && Math.abs(rot - sollRot) <= 10;
+      serverOk = lauf.ok === true && passtZurAnfrage && trennt && ausschnittAngekommen && lauf.crop !== null && lauf.crop !== undefined;
+      server =
+        `Lauf ${lauf.ok === true ? "ok" : `fehlgeschlagen (${String(lauf.reason)})`} · Server sah ${nachher === null ? "?" : `${nachher.initW}×${nachher.initH}`} ` +
+        `(angefragt ${nachher?.reqW ?? "?"}×${nachher?.reqH ?? "?"}; vorher ${vorher === null ? "?" : `${vorher.initW}×${vorher.initH}`}) · ` +
+        `Rot links oben ${rot ?? "?"} (Ausschnitt ab x=${sollPx}: ${sollRot}, ganzes Bild: ${ganzRot}${trennt ? "" : " — NICHT unterscheidbar, Rahmen zu nah an der Mitte"}) · params.initCrop ${lauf.crop ? "gesetzt" : "fehlt"}`;
     }
     record(
       NAME,
@@ -4288,6 +4360,9 @@ async function main(): Promise<void> {
 
     // --- 48. Ausschnitt-Wahl der Vorlage (Welle 24, Teil C) ------------------
     await runCropCheck(cdp, generateTimeoutMs, probe.reachable, endpoint);
+
+    // --- 51. Vorlage mit abweichenden Maßen am echten Server (Welle 36) ------
+    await runVorlagenMasseCheck(cdp, generateTimeoutMs, probe.reachable, endpoint);
 
     // --- 49/50. Regler-Zeilen im schmalen Panel (Welle 26) -------------------
     // Kein Server, kein Download: nur Server-Modus, eine Vorlage und `getBoundingClientRect`.

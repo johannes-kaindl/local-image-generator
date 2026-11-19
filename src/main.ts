@@ -47,7 +47,7 @@ import { createShortcutsBridge, type ShortcutsBridge } from "./vendor/kit-obsidi
 import { DownloadAborted, IntegrityError, ModelStore } from "./obsidian/model-store";
 import { checkGpu, createOrtSession, initOrt } from "./obsidian/ort-host";
 import { base64OfDataUrl, decodeInitImage, rgbaToDataUrl } from "./obsidian/png";
-import { cropImageToBase64 } from "./vendor/kit-obsidian/image-crop";
+import { cropImageToBase64, fitImageToBase64 } from "./vendor/kit-obsidian/image-crop";
 import { CropModal } from "./vendor/kit-obsidian/crop-modal";
 import type { Crop } from "./vendor/kit/crop";
 import { dataUrlToBytes } from "./vendor/kit/data-url";
@@ -1000,12 +1000,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       });
     }, 1000);
     try {
-      // Server (und ComfyUI/Playground, falls sie je img2img koennen): das Plugin schneidet den
-      // gewaehlten Ausschnitt VOR dem Absenden zu — sonst entschiede der Server selbst, welchen
-      // Teil des Bildes er rechnet. builtin schneidet beim Dekodieren.
-      const sentInit = !builtin && initImageData !== null && params.initCrop !== null
-        ? await cropImageToBase64(initImageData, params.initCrop)
-        : initImageData;
+      // Server: das Plugin bringt die Vorlage VOR dem Absenden auf genau width×height (Ausschnitt oder ganzes Bild,
+      // Cover) — Draw Things lehnt abweichende Maße mit 422 ab, und sonst entschiede der Server selbst, welchen Teil
+      // des Bildes er rechnet. ComfyUI/Playground (falls sie je img2img koennen): nur der Ausschnitt. builtin schneidet beim Dekodieren.
+      const sentInit = builtin || initImageData === null
+        ? initImageData
+        : this.settings.engine === "server"
+          ? await fitImageToBase64(initImageData, params.initCrop, params.width, params.height)
+          : params.initCrop !== null
+            ? await cropImageToBase64(initImageData, params.initCrop)
+            : initImageData;
       const png = await backend.generate({ ...params, initImageData: sentInit, signal: opts?.signal });
       phase = "done";
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann

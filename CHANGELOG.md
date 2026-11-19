@@ -8,6 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **img2img against Draw Things works again for any template image.** Draw Things refuses a template whose pixel size differs from the chosen size (HTTP 422, "init_images height doesn't match …", measured with app 26.1020.0); until now the plugin sent the file unchanged, so a run with a template failed unless the image happened to have exactly the selected size. The plugin now scales the template (or the chosen crop) to the selected size before sending, centred and without distortion, as the built-in engine already did. A template that already has the selected size and no crop is sent as it is.
 - Result notes no longer write a link that points at the wrong file when the image path (or the path of the template image) contains `#`, `^`, `[`, `]` or `|`: Obsidian allows those characters in names, but a wikilink breaks at them. The path is then written as plain text, and the image is embedded as `![](<path>)`.
 
 ### Changed
