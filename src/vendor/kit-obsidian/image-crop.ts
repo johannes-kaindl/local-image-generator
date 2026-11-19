@@ -1,4 +1,4 @@
-// vendored from obsidian-kit@0.92.0, src/obsidian/image-crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from obsidian-kit@0.101.0, src/obsidian/image-crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /**
  * Ausschnitt eines Bildes zeichnen: Base64 → Bitmap → Canvas, begrenzt durch einen `Crop` (code-kit `pure/crop`). Das Gegenstück zum
  * `CropModal` (`obsidian/crop-modal`): das Modal wählt den Rahmen, dieses Modul schneidet ihn aus.
@@ -10,6 +10,12 @@
  * Beides ist reine Bildgeometrie ohne Fachinhalt; der Gegenleser des Bibliothek-Gates lehnte die Ausnahme ab (Welle 25), der Master entschied
  * „im Kit bauen“ (Präzedenz Welle 24, `folder-scope`). `drawCroppedImage` ist die gemeinsame Hälfte; was lig danach mit den Pixeln tut
  * (`getImageData` → Float32), bleibt dort.
+ *
+ * ## `fitImageToBase64` (Welle 36, kc)
+ *
+ * Dritte Funktion: das Bild auf genau `width × height` bringen (Cover, `coverSourceRect` aus code-kit `crop`), Herkunft `fitInitImageToSize` aus
+ * `local-image-generator/src/obsidian/png.ts` (Draw Things lehnt abweichende Maße mit HTTP 422 ab). Anders als `drawCroppedImage` ist die Quelle bei
+ * `crop === null` das ganze Bild, nicht das Quadrat. Passt das Bild schon und gibt es keinen Ausschnitt, kommt die Eingabe unverändert zurück.
  *
  * ## Gleichstand mit lig
  *
@@ -37,7 +43,7 @@
  */
 
 import { base64ToBytes } from "../kit/data-url";
-import { cropSourceRect, type Crop } from "../kit/crop";
+import { cropSourceRect, coverSourceRect, type Crop } from "../kit/crop";
 
 /** Die Berührungspunkte zur Plattform; ohne Angabe die echten. */
 export interface ImageCropPorts {
@@ -53,6 +59,12 @@ const defaultCanvas = (): HTMLCanvasElement => createEl("canvas");
 /** Nackte Base64 (ohne `data:`-Präfix) → Bitmap. Der Aufrufer schließt es. */
 export function base64ToImageBitmap(base64: string, ports: ImageCropPorts = {}): Promise<ImageBitmap> {
   return (ports.decode ?? defaultDecode)(base64ToBytes(base64));
+}
+
+/** Die Base64 hinter dem Komma einer Daten-URL (`data:image/png;base64,QUJD` → `QUJD`). Nicht `dataUrlToBytes` aus code-kit `data-url`: das
+ *  dekodiert, hier bleibt der Text Text (der Server bekommt die nackte Base64). */
+function base64OfDataUrl(dataUrl: string): string {
+  return dataUrl.slice(dataUrl.indexOf(",") + 1);
 }
 
 function checkTarget(name: string, v: number | undefined): void {
@@ -86,6 +98,39 @@ export async function drawCroppedImage(
 /** Der gewählte Ausschnitt als PNG-Base64 in Originalauflösung, ohne `data:`-Präfix — für Server, die nur den gewählten Bereich bekommen sollen. */
 export async function cropImageToBase64(base64: string, crop: Crop, ports: ImageCropPorts = {}): Promise<string> {
   const canvas = await drawCroppedImage(base64, crop, undefined, undefined, ports);
-  const dataUrl = canvas.toDataURL("image/png");
-  return dataUrl.slice(dataUrl.indexOf(",") + 1);
+  return base64OfDataUrl(canvas.toDataURL("image/png"));
+}
+
+/** Das Bild (oder der gewählte Ausschnitt) auf genau `width` × `height` gebracht, als PNG-Base64 ohne `data:`-Präfix: Cover, so viel
+ *  abgeschnitten, wie das Seitenverhältnis verlangt, nie verzerrt (`coverSourceRect` aus code-kit `crop`). Quelle ist der Ausschnitt `crop`
+ *  oder, bei `null`, das GANZE Bild (nicht das Quadrat wie bei `drawCroppedImage`: ein Ziel wie 2048×1152 würde sonst verzerrt oder
+ *  verlöre den Rest). Für Server, die eine Vorlage in genau der Erzeugungsgröße verlangen: Draw Things lehnt `init_images` mit abweichenden
+ *  Maßen mit HTTP 422 ab (gemessen 2026-11-18, App 26.1020.0), A1111 skaliert selbst.
+ *
+ *  **Hat das Bild schon die Zielmaße und gibt es keinen Ausschnitt, kommt die Eingabe unverändert zurück** (derselbe String, kein Zeichnen,
+ *  kein Neukodieren, kein Qualitätsverlust; das Bitmap wird für die Maße dennoch gelesen und geschlossen). Das Ergebnis ist sonst immer PNG,
+ *  auch wenn die Eingabe JPEG oder WebP war. Wirft `RangeError` bei einer Zielgröße, die keine positive ganze Zahl ist (vor dem Dekodieren),
+ *  bei einer Base64, die kein Bild ist, und wenn kein 2D-Kontext zu haben ist (das Bitmap wird auch dann geschlossen).
+ *
+ *  Herkunft: local-image-generator `fitInitImageToSize` (`src/obsidian/png.ts`, Welle 36, Bestellung über die Breite); die sieben Tests des
+ *  Bestellers laufen gegen diese Fassung (`tests/image-crop.test.ts`). */
+export async function fitImageToBase64(
+  base64: string, crop: Crop | null, width: number, height: number, ports: ImageCropPorts = {},
+): Promise<string> {
+  checkTarget("width", width);
+  checkTarget("height", height);
+  const bmp = await base64ToImageBitmap(base64, ports);
+  try {
+    if (crop === null && bmp.width === width && bmp.height === height) return base64;
+    const { sx, sy, sw, sh } = coverSourceRect(bmp.width, bmp.height, crop, width, height);
+    const canvas = (ports.createCanvas ?? defaultCanvas)();
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas 2d context unavailable");
+    ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, width, height);
+    return base64OfDataUrl(canvas.toDataURL("image/png"));
+  } finally {
+    bmp.close();
+  }
 }

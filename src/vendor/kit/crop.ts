@@ -1,4 +1,4 @@
-// vendored from code-kit@0.75.0, src/ts/pure/crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.80.0, src/ts/pure/crop.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 /** The frame of a crop on an image: a square in pixels, stored relative to the size of the original, with the arithmetic to move it,
  *  resize it and cut it out. Pure — no DOM, no canvas; the modal that draws and drags the frame lives in obsidian-kit.
  *
@@ -53,6 +53,38 @@ export function cropSourceRect(imgW: number, imgH: number, crop: Crop | null): {
   const sw = Math.max(1, Math.min(Math.round(crop.w * imgW), imgW - sx));
   const sh = Math.max(1, Math.min(Math.round(crop.h * imgH), imgH - sy));
   return { sx, sy, sw, sh };
+}
+
+/** The source rectangle that fills a `width` × `height` target completely ("cover"): the part of the source (the frame `crop`, or the
+ *  whole image where it is `null`) that keeps the aspect ratio of the target, centred in the source, so the drawing is cut and never
+ *  stretched. Same four names as `cropSourceRect` and drawn the same way — `drawImage(bmp, sx, sy, sw, sh, 0, 0, width, height)`.
+ *
+ *  **`null` is not the centred square here.** `cropSourceRect(…, null)` is the square of the shorter side because the built-in engine
+ *  draws a square; a target that is not square would lose the rest of the image for nothing, so the source of a cover with no frame is
+ *  the whole image. A frame is read exactly as `cropSourceRect` reads it (rounded, clamped).
+ *
+ *  The rectangle is NOT rounded (`sw`, `sh`, `sx`, `sy` can be fractions): the canvas takes fractions and a rounded edge would make the
+ *  aspect ratio drift by up to a pixel. One side always equals the source side, the other is shorter or equal.
+ *
+ *  Origin: local-image-generator `fitInitImageToSize` (Welle 36, order over width), whose Draw Things server refuses an init image of
+ *  other size with HTTP 422. Throws `RangeError` where the target is no positive integer (a canvas has whole pixels) or the image has
+ *  no positive finite size — the same error obsidian-kit's `drawCroppedImage` raises for its target. */
+export function coverSourceRect(
+  imgW: number, imgH: number, crop: Crop | null, width: number, height: number,
+): { sx: number; sy: number; sw: number; sh: number } {
+  for (const [name, v] of [["width", width], ["height", height]] as const) {
+    if (!(Number.isInteger(v) && v > 0)) throw new RangeError(`${name} must be a positive integer`);
+  }
+  for (const [name, v] of [["imgW", imgW], ["imgH", imgH]] as const) {
+    if (!(Number.isFinite(v) && v > 0)) throw new RangeError(`${name} must be a positive finite number`);
+  }
+  const src = crop === null ? { sx: 0, sy: 0, sw: imgW, sh: imgH } : cropSourceRect(imgW, imgH, crop);
+  // Which side of the target needs the larger factor decides which side of the source is used whole. Computed per side (not as
+  // `width / scale`) so the whole side comes out exactly, not one ulp off.
+  const byWidth = width / src.sw >= height / src.sh;
+  const sw = byWidth ? src.sw : (width * src.sh) / height;
+  const sh = byWidth ? (height * src.sw) / width : src.sh;
+  return { sx: src.sx + (src.sw - sw) / 2, sy: src.sy + (src.sh - sh) / 2, sw, sh };
 }
 
 /** The largest centred square — the starting frame, equal to the centre crop. */
