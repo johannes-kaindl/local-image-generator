@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.1] — 2026-11-20
+
 ### Fixed
 
 - **img2img against Draw Things works again for any template image.** Draw Things refuses a template whose pixel size differs from the chosen size (HTTP 422, "init_images height doesn't match …", measured with app 26.1020.0); until now the plugin sent the file unchanged, so a run with a template failed unless the image happened to have exactly the selected size. The plugin now scales the template (or the chosen crop) to the selected size before sending, centred and without distortion, as the built-in engine already did. A template that already has the selected size and no crop is sent as it is.
