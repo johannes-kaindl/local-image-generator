@@ -149,3 +149,184 @@ export function patchWorkflow(graph: ComfyGraph, slots: WorkflowSlots, v: PatchV
 
   return out;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Rolle eines ComfyUI-Workflows am Graphen erkennen — Erzeugen, Bearbeiten, Hochskalieren. Pure.
+//
+// Wie `inspectWorkflow` (workflow.ts) erkennt dieses Modul die Einfügestellen an der Verlinkung der Knoten, nicht an
+// Klassennamen. Ein Bild-Eingang ist ein Knoten, dessen Eingang `image` ein Dateiname (String-Literal) ist und der
+// selbst keinen Verweis entgegennimmt (ComfyUIs `LoadImage` hat genau diese Form). Die txt2img-Prüfung bleibt
+// `inspectWorkflow`; ohne Bild-Eingang entscheidet sie allein.
+//
+// Bearbeiten ist bewusst eng gefasst: der Bild-Eingang muss in den Latent des Samplers münden, ohne `VAEEncode`
+// (das wäre img2img mit Denoise, eine andere Zusage) und ohne ControlNet (dort mündet das Bild nur als Führung in
+// die Konditionierung). Beides wird mit eigenem Grund abgewiesen, statt still als „Bearbeiten“ durchzulaufen.
+// Einen Negativ-Slot hat Bearbeiten nicht: läuft die Konditionierung durch einen Referenz-Knoten wie
+// `ReferenceMultiLatent`, sind von `positive` aus beide Text-Knoten erreichbar und nicht zu trennen.
+
+export type WorkflowRole = "txt2img" | "edit" | "upscale";
+
+export interface EditSlots {
+  /** Der Bild-Eingang — bekommt den Namen der hochgeladenen Vorlage. */
+  image: string;
+  sampler: string;
+  /** Der eine Text-Knoten stromaufwärts von `positive` — bekommt die Anweisung. */
+  prompt: string;
+  seedField: "seed" | "noise_seed";
+  stepsField: "steps";
+  /** Wie `WorkflowSlots.workflowSteps`: Startwert des Reglers, null bei einem Verweis statt einer Zahl. */
+  workflowSteps: number | null;
+}
+
+export interface UpscaleSlots {
+  image: string;
+  /** Knoten mit `width`/`height`, der direkt am Bild-Eingang hängt und vor dem Upscaler liegt (ComfyUIs
+   *  `ImageScale`). Das Plugin setzt ihn auf die Maße der Vorlage. null: keiner da — der Workflow läuft, auf
+   *  Apple-GPUs liefern die Upscale-Modelle ohne diesen Schritt aber Streifen. */
+  prescale: string | null;
+}
+
+export type RoleError =
+  | InspectError
+  | { kind: "ambiguous-image-input"; ids: string[] }
+  | { kind: "img2img-unsupported" }
+  | { kind: "controlnet-unsupported" }
+  | { kind: "image-not-in-latent" }
+  | { kind: "no-prompt-node" }
+  | { kind: "ambiguous-prompt-node"; ids: string[] }
+  | { kind: "no-upscaler" };
+
+export type Classified =
+  | { role: "txt2img"; slots: WorkflowSlots }
+  | { role: "edit"; slots: EditSlots }
+  | { role: "upscale"; slots: UpscaleSlots }
+  | { role: null; error: RoleError };
+
+function isImageInput(n: ComfyNode): boolean {
+  if (typeof n.inputs.image !== "string") return false;
+  return Object.values(n.inputs).every((v) => refTarget(v) === null);
+}
+
+/** Alle Knoten, von denen `start` abhängt, `start` eingeschlossen (Breitensuche über jeden Verweis). */
+function upstream(nodes: Record<string, unknown>, start: string): Set<string> {
+  const seen = new Set<string>([start]);
+  const queue = [start];
+  while (queue.length > 0) {
+    const n = nodes[queue.shift()!];
+    if (!isNode(n)) continue;
+    for (const v of Object.values(n.inputs)) {
+      const t = refTarget(v);
+      if (t !== null && !seen.has(t)) {
+        seen.add(t);
+        queue.push(t);
+      }
+    }
+  }
+  return seen;
+}
+
+export function classifyWorkflow(graph: unknown): Classified {
+  if (typeof graph !== "object" || graph === null || Array.isArray(graph)) {
+    return { role: null, error: { kind: "not-an-object" } };
+  }
+  const nodes = graph as Record<string, unknown>;
+  const ids = Object.keys(nodes);
+  const node = (id: string): ComfyNode | null => (isNode(nodes[id]) ? nodes[id] : null);
+
+  const images = ids.filter((id) => {
+    const n = node(id);
+    return n !== null && isImageInput(n);
+  });
+  if (images.length > 1) return { role: null, error: { kind: "ambiguous-image-input", ids: images } };
+  if (images.length === 0) {
+    const r = inspectWorkflow(graph);
+    return r.ok ? { role: "txt2img", slots: r.slots } : { role: null, error: r.error };
+  }
+  const image = images[0]!;
+
+  const samplers = ids.filter((id) => {
+    const n = node(id);
+    return n !== null && LINK_FIELDS.every((f) => f in n.inputs);
+  });
+
+  if (samplers.length === 0) {
+    const upscaler = ids.find((id) => refTarget(node(id)?.inputs.upscale_model) !== null);
+    if (upscaler === undefined) return { role: null, error: { kind: "no-upscaler" } };
+    const before = upstream(nodes, upscaler);
+    const prescale = ids.find((id) => {
+      const n = node(id);
+      return n !== null && before.has(id) && typeof n.inputs.width === "number" && typeof n.inputs.height === "number"
+        && refTarget(n.inputs.image) === image;
+    });
+    return { role: "upscale", slots: { image, prescale: prescale ?? null } };
+  }
+  if (samplers.length > 1) return { role: null, error: { kind: "ambiguous-sampler", ids: samplers } };
+  const samplerId = samplers[0]!;
+  const sampler = node(samplerId)!;
+
+  if (ids.some((id) => refTarget(node(id)?.inputs.control_net) !== null)) {
+    return { role: null, error: { kind: "controlnet-unsupported" } };
+  }
+  const latentId = refTarget(sampler.inputs.latent_image);
+  const latent = latentId === null ? null : node(latentId);
+  if (latentId === null || latent === null) {
+    return { role: null, error: { kind: "dangling-ref", field: "latent_image", id: String(latentId ?? "") } };
+  }
+  if (refTarget(latent.inputs.pixels) !== null) return { role: null, error: { kind: "img2img-unsupported" } };
+  if (!upstream(nodes, latentId).has(image)) return { role: null, error: { kind: "image-not-in-latent" } };
+
+  const positiveId = refTarget(sampler.inputs.positive);
+  if (positiveId === null || node(positiveId) === null) {
+    return { role: null, error: { kind: "dangling-ref", field: "positive", id: String(positiveId ?? "") } };
+  }
+  const reach = upstream(nodes, positiveId);
+  const texts = ids.filter((id) => reach.has(id) && "text" in (node(id)?.inputs ?? {}));
+  if (texts.length === 0) return { role: null, error: { kind: "no-prompt-node" } };
+  if (texts.length > 1) return { role: null, error: { kind: "ambiguous-prompt-node", ids: texts } };
+
+  if (!("steps" in sampler.inputs)) return { role: null, error: { kind: "no-steps-field" } };
+  const rawSteps = sampler.inputs.steps;
+  return {
+    role: "edit",
+    slots: {
+      image,
+      sampler: samplerId,
+      prompt: texts[0]!,
+      seedField: "noise_seed" in sampler.inputs ? "noise_seed" : "seed",
+      stepsField: "steps",
+      workflowSteps: typeof rawSteps === "number" && Number.isInteger(rawSteps) ? rawSteps : null,
+    },
+  };
+}
+
+/** Anweisung, Seed, Steps und den Namen der hochgeladenen Vorlage in eine **Kopie** setzen; alles andere bleibt.
+ *  **Aufrufvertrag** wie bei `patchWorkflow`: `slots` stammt aus `classifyWorkflow` desselben Graphen. */
+export function patchEdit(
+  graph: ComfyGraph,
+  slots: EditSlots,
+  v: { prompt: string; seed: number; steps: number; imageName: string },
+): ComfyGraph {
+  const out = JSON.parse(JSON.stringify(graph)) as ComfyGraph;
+  out[slots.prompt]!.inputs.text = v.prompt;
+  out[slots.sampler]!.inputs[slots.seedField] = v.seed;
+  out[slots.sampler]!.inputs[slots.stepsField] = v.steps;
+  out[slots.image]!.inputs.image = v.imageName;
+  return out;
+}
+
+/** Den Namen der hochgeladenen Vorlage und — falls vorhanden — die Maße der Zwischenskalierung in eine **Kopie**
+ *  setzen. Die Maße sind die der Vorlage: die Zwischenskalierung soll das Bild nicht verändern, nur umlegen.
+ *  **Aufrufvertrag** wie bei `patchEdit`. */
+export function patchUpscale(
+  graph: ComfyGraph,
+  slots: UpscaleSlots,
+  v: { imageName: string; width: number; height: number },
+): ComfyGraph {
+  const out = JSON.parse(JSON.stringify(graph)) as ComfyGraph;
+  out[slots.image]!.inputs.image = v.imageName;
+  if (slots.prescale !== null) {
+    out[slots.prescale]!.inputs.width = v.width;
+    out[slots.prescale]!.inputs.height = v.height;
+  }
+  return out;
+}
