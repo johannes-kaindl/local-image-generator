@@ -4,7 +4,7 @@
       "ref": "0.101.0"
     },
     "code-kit": {
-      "ref": "0.80.0"
+      "ref": "0.87.0"
     }
   },
   "targets": [
@@ -27,7 +27,9 @@
         "loopback",
         "model-choice",
         "model-list-cache",
+        "multipart-body",
         "num",
+        "png-size",
         "reasoning",
         "rel-path",
         "sampling-profiles",
@@ -96,6 +98,7 @@
         "model-picker",
         "plugin-api",
         "secrets",
+        "segmented-control",
         "setting-body-host",
         "settings_walker",
         "shortcuts-bridge",

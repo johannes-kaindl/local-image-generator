@@ -1,8 +1,8 @@
 {
   "source": "code-kit",
-  "version": "0.80.0",
-  "sha": "45a390b",
-  "vendored": "chat-archive.ts, chat-history.ts, crop.ts, data-url.ts, endpoint.ts, endpoint_config.ts, endpoint_diagnostics.ts, filename-template.ts, format-bytes.ts, i18n.ts, local-stamp.ts, loopback.ts, model-choice.ts, model-list-cache.ts, num.ts, reasoning.ts, rel-path.ts, sampling-profiles.ts, secrets.ts, settings.ts, settings_schema.ts, sha256.ts, split-list.ts, think-splitter.ts, timeout.ts, asset-store.ts, cache-download.ts",
+  "version": "0.87.0",
+  "sha": "7c6cc31",
+  "vendored": "chat-archive.ts, chat-history.ts, crop.ts, data-url.ts, endpoint.ts, endpoint_config.ts, endpoint_diagnostics.ts, filename-template.ts, format-bytes.ts, i18n.ts, local-stamp.ts, loopback.ts, model-choice.ts, model-list-cache.ts, multipart-body.ts, num.ts, png-size.ts, reasoning.ts, rel-path.ts, sampling-profiles.ts, secrets.ts, settings.ts, settings_schema.ts, sha256.ts, split-list.ts, think-splitter.ts, timeout.ts, asset-store.ts, cache-download.ts",
   "note": "Verbatim snapshot aus ZWEI Quellen (obsidian-kit + code-kit); welche Datei woher stammt, sagt ihr eigener Kopf. Never hand-edit. Pins in tools/kit-sync.json, re-vendor via tools/sync-kit.sh (zentrales kit-sync im Dach). version/sha gelten AUSSCHLIESSLICH fuer die unter \"vendored\" gelisteten Dateien; abweichende Einzelpins stehen dort inline (Datei (quelle@version, sha)). num.ts kommt nur als Abhaengigkeit mit: settings_schema.ts importiert clampInt daraus. kit-obsidian/ siehe dortige VENDOR.json.",
   "code_kit_version": "0.6.0",
   "code_kit_sha": "918ed85",

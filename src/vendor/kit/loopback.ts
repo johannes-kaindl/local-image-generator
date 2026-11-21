@@ -1,4 +1,4 @@
-// vendored from code-kit@0.80.0, src/ts/pure/loopback.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
+// vendored from code-kit@0.87.0, src/ts/pure/loopback.ts — do not hand-edit; re-vendor via tools/sync-kit.sh
 // New in code-kit (2026-11-03), lifted out of protocol-droid (`acceptedAssetBase`), after the same check had been built three times with different
 // coverage: protocol-droid (a regex, no `[::1]`), audio-interface `isLocalServiceUrl` (URL-parsed, `[::1]`, tested against `127.0.0.1.evil.test`) and
 // mailstone `isLoopback` (host only). This is the strictest of the three.
