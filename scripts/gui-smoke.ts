@@ -72,6 +72,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { deflateSync } from "node:zlib";
 import { join } from "node:path";
 // Die CDP-Brücke liegt seit 2026-08-16 zentral im Dach (tools/obsidian-cdp/) und wird
 // importiert, nicht vendored: sie ist plugin-neutral und lief zuvor byte-identisch in
@@ -170,6 +171,12 @@ const PUNKTE = [
   "49. Regler-Zeilen bei 300 px: Beschriftung, Regler und Wert jeder Gruppe stehen auf einer Zeile",
   "50. Gegenprobe zu 49: ohne das Raster (Klasse lig-controls) stehen die Gruppen versetzt — der Punkt wird rot",
   "51. Eine Vorlage mit abweichenden Maßen kommt am echten Bild-Server an (er verlangt width×height)",
+  "52. ComfyUI: Aufgaben-Schalter und Workflow-Dropdown — ein Wechsel auf sdxl-pixel-art schickt den LoRA-Graphen",
+  "53. ComfyUI: je Aufgabe sind genau die Regler sichtbar, die der Workflow nimmt (Erzeugen, Bearbeiten, Hochskalieren)",
+  "54. ComfyUI-Bearbeiten: Upload, neue Datei, Notiz mit task edit und der GEMESSENEN Größe (96×64)",
+  "55. ComfyUI-Hochskalieren: <quelle>-upscale.png, Notiz ohne Seed/Prompt, Breite = 4× Vorlage",
+  "56. ComfyUI: eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart",
+  "57. ComfyUI: Erzeugen nach Bearbeiten mit gesetzter Vorlage lädt nichts hoch",
 ] as const;
 
 /** Klick-Modus des Laufs (`--halten <ms>`, `--klick-gegenprobe`); Default 0 ms ohne Gegenprobe (Welle 21). */
@@ -2828,15 +2835,9 @@ async function runComfyWorkflowStatusCheck(cdp: Cdp, brokenPath: string, validPa
       };
     `);
 
+  // Seit dem Workflow-Ordner: jede Datei liegt in einem eigenen Ordner, der Ordner ist die Einstellung.
   const setzeWorkflow = async (path: string): Promise<void> => {
-    await cdp.evaluate(`
-      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-      p.settings.comfyWorkflowPath = ${JSON.stringify(path)};
-      await p.saveSettings();
-      await p.loadWorkflow();
-      p.refreshViews();
-      return true;
-    `);
+    await setzeComfyOrdner(cdp, path.slice(0, path.lastIndexOf("/")), path.slice(path.lastIndexOf("/") + 1));
   };
 
   await setzeWorkflow(brokenPath);
@@ -2849,7 +2850,8 @@ async function runComfyWorkflowStatusCheck(cdp: Cdp, brokenPath: string, validPa
     (await warteBis(lesen, (r) => r.isOk || r.text === erwarteterOkText, 10_000, "warte auf is-ok nach gueltigem Workflow", { intervalMs: 500 })) ??
     (await lesen());
 
-  const erwarteterFehlertext = t("workflow.err.noSampler");
+  // Der einzige Eintrag im Ordner ist ungueltig: die Statuszeile nennt Datei und Grund.
+  const erwarteterFehlertext = `${brokenPath.slice(brokenPath.lastIndexOf("/") + 1)}: ${t("workflow.err.noSampler")}`;
   const kaputtOk = kaputt.text === erwarteterFehlertext && kaputt.isError;
   const gueltigOk = gueltig.text === erwarteterOkText && gueltig.isOk;
 
@@ -3095,6 +3097,270 @@ async function runComfyProgressSocketCheck(cdp: Cdp, generateTimeoutMs: number):
   );
 }
 
+
+// --- Workflow-Ordner, Bearbeiten und Hochskalieren (Punkte 52–57) ------------------------------------------------
+
+const COMFY_TASK_NAMEN = [
+  "52. ComfyUI: Aufgaben-Schalter und Workflow-Dropdown — ein Wechsel auf sdxl-pixel-art schickt den LoRA-Graphen",
+  "53. ComfyUI: je Aufgabe sind genau die Regler sichtbar, die der Workflow nimmt (Erzeugen, Bearbeiten, Hochskalieren)",
+  "54. ComfyUI-Bearbeiten: Upload, neue Datei, Notiz mit task edit und der GEMESSENEN Größe (96×64)",
+  "55. ComfyUI-Hochskalieren: <quelle>-upscale.png, Notiz ohne Seed/Prompt, Breite = 4× Vorlage",
+  "56. ComfyUI: eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart",
+  "57. ComfyUI: Erzeugen nach Bearbeiten mit gesetzter Vorlage lädt nichts hoch",
+] as const;
+
+/** Workflow-Ordner setzen, eine Datei fuer Erzeugen waehlen und die Bibliothek neu lesen. */
+async function setzeComfyOrdner(cdp: Cdp, folder: string, txt2img: string): Promise<void> {
+  await cdp.evaluate(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    p.settings.comfyWorkflowFolder = ${JSON.stringify(folder)};
+    p.settings.comfyWorkflowSelection = { ...p.settings.comfyWorkflowSelection, txt2img: ${JSON.stringify(txt2img)} };
+    await p.saveSettings();
+    await p.loadComfyLibrary();
+    p.refreshViews();
+    return true;
+  `);
+}
+
+/** Ein graues PNG beliebiger Groesse als Base64 (Node-Seite) — Vorlage fuer Bearbeiten und Hochskalieren. */
+function grauesPng(w: number, h: number): string {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (b: Buffer): number => {
+    let c = 0xffffffff;
+    for (const x of b) c = crcTable[(c ^ x) & 0xff]! ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const c = Buffer.alloc(4);
+    c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const row = Buffer.alloc(1 + w * 3, 0x60);
+  row[0] = 0;
+  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0)),
+  ]).toString("base64");
+}
+
+/** Aufgabe per Klick auf den Segment-Schalter waehlen — der echte Bedienweg, nicht der State. */
+async function waehleAufgabe(cdp: Cdp, task: "txt2img" | "edit" | "upscale"): Promise<boolean> {
+  const ok = await klick(cdp, `document.querySelector('.lig-comfy-task-ctrl button[data-value="${task}"]')`);
+  await new Promise((r) => setTimeout(r, 300));
+  return ok;
+}
+
+/** Den Hauptknopf klicken und warten, bis der Lauf vorbei ist; liefert die Params des Ergebnisses (oder null). Ist der
+ *  Knopf nicht da oder gesperrt, kommt sofort `{ width: -1, … date: "<Grund>" }` zurueck statt einer Wartezeit bis zur
+ *  Frist — ein Klick ins Leere ist ein Befund ueber die Vorbedingung, kein langsamer Lauf. */
+async function klickeUndWarte(cdp: Cdp, timeoutMs: number, vorherDate: string | null): Promise<{ task?: string; workflow?: string; width: number; height: number; date: string } | null> {
+  const knopf = await cdp.evaluate<{ da: boolean; frei: boolean; status: string }>(`
+    const b = document.querySelector(".lig-generate");
+    return { da: b !== null, frei: b !== null && !b.disabled, status: document.querySelector(".lig-status-text")?.textContent?.trim() ?? "" };
+  `);
+  if (!knopf.da || !knopf.frei) return { width: -1, height: -1, date: `Knopf ${knopf.da ? "gesperrt" : "fehlt"} (Status „${knopf.status}“)` };
+  await klick(cdp, `document.querySelector(".lig-generate")`);
+  return warteBis(
+    () => cdp.evaluate<{ task?: string; workflow?: string; width: number; height: number; date: string } | null>(`
+      const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+      const st = p.state;
+      if (st.run.kind !== "idle" && st.run.kind !== "error") return null;
+      const params = st.image?.params ?? null;
+      if (params === null || params.date === ${JSON.stringify(vorherDate)}) return st.run.kind === "error" ? { width: -1, height: -1, date: "error: " + st.run.message } : null;
+      return { task: params.task, workflow: params.workflow, width: params.width, height: params.height, date: params.date };
+    `),
+    (v) => v !== null,
+    timeoutMs,
+    "warte auf das Ergebnis im Panel",
+    { intervalMs: 500 },
+  );
+}
+
+/** Neueste Notiz im Smoke-Ordner nach dem Speichern (createMode steht im Smoke auf "note"). */
+async function speichereUndLiesNotiz(cdp: Cdp): Promise<{ note: string | null; image: string | null }> {
+  const vorher = await cdp.evaluate<string[]>(`return app.vault.getFiles().map((f) => f.path);`);
+  await cdp.evaluate(`await app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].saveImage("create"); return true;`);
+  const neu = await warteBis(
+    () => cdp.evaluate<string[]>(`
+      const vorher = new Set(${JSON.stringify(vorher)});
+      return app.vault.getFiles().map((f) => f.path).filter((p) => !vorher.has(p));
+    `),
+    (v) => v.some((p) => p.endsWith(".md")),
+    15_000,
+    "warte auf die Ergebnis-Notiz",
+    { intervalMs: 500 },
+  ) ?? [];
+  const notePath = neu.find((p) => p.endsWith(".md")) ?? null;
+  const image = neu.find((p) => p.endsWith(".png")) ?? null;
+  const note = notePath === null ? null : await cdp.evaluate<string>(`return await app.vault.cachedRead(app.vault.getAbstractFileByPath(${JSON.stringify(notePath)}));`);
+  return { note, image };
+}
+
+/**
+ * Punkte 52–57: Workflow-Ordner mit den fuenf Referenz-Workflows aus `comfy/workflows`, eine Vorlage im Vault, Laeufe
+ * gegen den Mock. Gemessen wird am DOM (Schalter, Dropdown, Sichtbarkeit), an der Leitung (Mock: Graph, Upload) und am
+ * Produkt (Datei, Notiz) — die Groesse in der Notiz gegen die Groesse, die der Mock ABSICHTLICH anders liefert als das
+ * Rezept (Bearbeiten 96×64, Hochskalieren das Vierfache der Vorlage).
+ */
+async function runComfyTaskChecks(cdp: Cdp, generateTimeoutMs: number): Promise<void> {
+  const [N52, N53, N54, N55, N56, N57] = COMFY_TASK_NAMEN;
+  const ordner = `${SMOKE_FOLDER}/comfy-flows`;
+  const dateien = ["flux3-klein.api.json", "sdxl-base.api.json", "sdxl-pixel-art.api.json", "flux3-klein-edit.api.json", "upscale-4x-ultrasharp.api.json"];
+  const inhalte = Object.fromEntries(dateien.map((d) => [d, readFileSync(join(process.cwd(), "comfy", "workflows", d), "utf8")]));
+  const vorlage = `${SMOKE_FOLDER}/vorlage-turm.png`;
+  await cdp.evaluate(`
+    if (!app.vault.getAbstractFileByPath(${JSON.stringify(ordner)})) await app.vault.createFolder(${JSON.stringify(ordner)});
+    const inhalte = ${JSON.stringify(inhalte)};
+    for (const [name, text] of Object.entries(inhalte)) await app.vault.create(${JSON.stringify(ordner)} + "/" + name, text);
+    const bin = Uint8Array.from(atob(${JSON.stringify(grauesPng(40, 24))}), (c) => c.charCodeAt(0));
+    await app.vault.createBinary(${JSON.stringify(vorlage)}, bin.buffer);
+    return true;
+  `);
+  await setzeComfyOrdner(cdp, ordner, "flux3-klein.api.json");
+  // Vorbedingung herstellen, nicht erben: Punkt 46 laedt das Plugin neu und schliesst dabei das Panel.
+  await cdp.evaluate(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    await p.activateView();
+    p.state.comfyTask = "txt2img"; p.state.initImage = null; p.state.initCrop = null;
+    await p.checkServer();
+    p.refreshViews();
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 500));
+  const laufFrist = Math.min(generateTimeoutMs, 60_000);
+
+  // --- 52 ----------------------------------------------------------------------------------------------------------
+  const dom = await cdp.evaluate<{ tasks: string[]; options: string[]; selected: string }>(`
+    const sel = document.querySelector(".lig-comfy-workflow");
+    return {
+      tasks: [...document.querySelectorAll(".lig-comfy-task-ctrl button")].map((b) => b.getAttribute("data-value")),
+      options: sel ? [...sel.options].map((o) => o.value) : [],
+      selected: sel ? sel.value : "",
+    };
+  `);
+  await cdp.evaluate(`
+    const sel = document.querySelector(".lig-comfy-workflow");
+    sel.value = "sdxl-pixel-art.api.json";
+    sel.dispatchEvent(new Event("change"));
+    return true;
+  `);
+  await new Promise((r) => setTimeout(r, 400));
+  const gewaehlt = await cdp.evaluate<string>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.comfyWorkflowSelection.txt2img;`);
+  const vorDate = await cdp.evaluate<string | null>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].state.image?.params.date ?? null;`);
+  await cdp.evaluate(`const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]; p.state.prompt = "pixel art, a lighthouse"; p.refreshViews(); return true;`);
+  const lauf52 = await klickeUndWarte(cdp, laufFrist, vorDate);
+  const graph52 = mockComfyState()?.graph ?? {};
+  const lora = Object.values(graph52).some((n) => (n as { inputs?: Record<string, unknown> }).inputs?.lora_name === "pixel-art-xl.safetensors");
+  const erwOptionen = ["flux3-klein.api.json", "sdxl-base.api.json", "sdxl-pixel-art.api.json"];
+  const ok52 = JSON.stringify(dom.tasks) === JSON.stringify(["txt2img", "edit", "upscale"]) && JSON.stringify(dom.options) === JSON.stringify(erwOptionen)
+    && dom.selected === "flux3-klein.api.json" && gewaehlt === "sdxl-pixel-art.api.json" && lauf52?.workflow === "sdxl-pixel-art.api.json" && lora;
+  record(N52, ok52, `Schalter [${dom.tasks.join(", ")}] · Dropdown [${dom.options.join(", ")}], gewählt „${dom.selected}“ · nach Wechsel gespeichert „${gewaehlt}“ · Lauf-Workflow „${String(lauf52?.workflow)}“ · LoRA im empfangenen Graphen: ${String(lora)}`);
+
+  // --- 53 ----------------------------------------------------------------------------------------------------------
+  const ZEILEN = {
+    prompt: ".lig-prompt-row:not(.lig-negative-row)", chips: ".lig-chips", negative: ".lig-negative-row", init: ".lig-init-row",
+    size: ".lig-size-slot", steps: ".lig-steps", seed: ".lig-seed", denoise: ".lig-denoise", cfg: ".lig-cfg",
+  } as const;
+  const SOLL: Record<"txt2img" | "edit" | "upscale", (keyof typeof ZEILEN)[]> = {
+    txt2img: ["prompt", "chips", "negative", "size", "steps", "seed"],
+    edit: ["prompt", "init", "steps", "seed"],
+    upscale: ["init"],
+  };
+  const abweichungen: string[] = [];
+  for (const task of ["txt2img", "edit", "upscale"] as const) {
+    await waehleAufgabe(cdp, task);
+    const sicht = await comfySelectorSicht(cdp, Object.values(ZEILEN));
+    for (const [key, selector] of Object.entries(ZEILEN) as [keyof typeof ZEILEN, string][]) {
+      const s = sicht.find((x) => x.sel === selector);
+      const sichtbar = s !== undefined && !s.fehlt && s.display !== "none";
+      const soll = SOLL[task].includes(key);
+      if (sichtbar !== soll) abweichungen.push(`${task}: ${key} ${sichtbar ? "sichtbar" : "versteckt"} (soll ${soll ? "sichtbar" : "versteckt"})`);
+    }
+  }
+  record(N53, abweichungen.length === 0, abweichungen.length === 0 ? "drei Aufgaben × neun Zeilen je gegen die Tabelle der Spec (getComputedStyle)" : abweichungen.join(" · "));
+
+  // --- 54 ----------------------------------------------------------------------------------------------------------
+  await waehleAufgabe(cdp, "edit");
+  await cdp.evaluate(`
+    const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
+    await p.setInitImage(app.vault.getAbstractFileByPath(${JSON.stringify(vorlage)}));
+    p.state.prompt = "make it rain";
+    p.refreshViews();
+    return true;
+  `);
+  const uploadsVor = mockComfyState()?.counts.upload ?? 0;
+  const vor54 = await cdp.evaluate<string | null>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].state.image?.params.date ?? null;`);
+  const lauf54 = await klickeUndWarte(cdp, laufFrist, vor54);
+  const m54 = mockComfyState() as (ReturnType<typeof mockComfyState> & { task?: string; upload?: { size?: { width: number; height: number } | null } }) | null;
+  const { note: note54, image: bild54 } = await speichereUndLiesNotiz(cdp);
+  const fm = (n: string | null, k: string): string | undefined => n?.match(new RegExp(`^${k}:\\s*(.*)$`, "m"))?.[1];
+  const t54: string[] = [];
+  if (lauf54 === null || lauf54.task !== "edit") t54.push(`Lauf: ${JSON.stringify(lauf54)}`);
+  if ((m54?.counts.upload ?? 0) <= uploadsVor) t54.push("kein Upload am Mock");
+  if (m54?.task !== "edit") t54.push(`Mock sah Aufgabe „${String(m54?.task)}“`);
+  if (m54?.upload?.size?.width !== 40) t54.push(`hochgeladene Vorlage ${JSON.stringify(m54?.upload?.size)} statt 40×24`);
+  if (bild54 === null) t54.push("keine neue Bilddatei");
+  if (fm(note54, "task") !== "edit") t54.push(`Notiz task=${String(fm(note54, "task"))}`);
+  if (fm(note54, "width") !== "96" || fm(note54, "height") !== "64") t54.push(`Notiz ${String(fm(note54, "width"))}×${String(fm(note54, "height"))} statt 96×64 (gemessen, nicht Rezept)`);
+  if (fm(note54, "cfg") !== undefined || fm(note54, "denoising") !== undefined) t54.push("Notiz behauptet cfg oder denoising");
+  if (fm(note54, "workflow") !== "flux3-klein-edit.api.json") t54.push(`Notiz workflow=${String(fm(note54, "workflow"))}`);
+  record(N54, t54.length === 0, t54.length === 0 ? `Upload 40×24, Bild ${String(bild54)}, Notiz task edit, 96×64, workflow flux3-klein-edit.api.json, ohne cfg/denoising` : t54.join(" · "));
+
+  // --- 55 ----------------------------------------------------------------------------------------------------------
+  await waehleAufgabe(cdp, "upscale");
+  const vor55 = await cdp.evaluate<string | null>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].state.image?.params.date ?? null;`);
+  const histVor = await cdp.evaluate<number>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.history.length;`);
+  const lauf55 = await klickeUndWarte(cdp, laufFrist, vor55);
+  const histNach = await cdp.evaluate<number>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].settings.history.length;`);
+  const { note: note55, image: bild55 } = await speichereUndLiesNotiz(cdp);
+  const t55: string[] = [];
+  if (lauf55 === null || lauf55.task !== "upscale") t55.push(`Lauf: ${JSON.stringify(lauf55)}`);
+  if (bild55 === null || !/vorlage-turm-upscale(-\d+)?\.png$/.test(bild55)) t55.push(`Bilddatei ${String(bild55)} statt vorlage-turm-upscale.png`);
+  if (fm(note55, "width") !== "160" || fm(note55, "height") !== "96") t55.push(`Notiz ${String(fm(note55, "width"))}×${String(fm(note55, "height"))} statt 160×96`);
+  for (const k of ["seed", "prompt", "steps", "model", "cfg"]) if (fm(note55, k) !== undefined) t55.push(`Notiz behauptet ${k}`);
+  if (fm(note55, "task") !== "upscale") t55.push(`Notiz task=${String(fm(note55, "task"))}`);
+  if (histNach !== histVor) t55.push(`Verlauf wuchs von ${histVor} auf ${histNach} (Hochskalieren gehört nicht hinein)`);
+  record(N55, t55.length === 0, t55.length === 0 ? `Bild ${String(bild55)}, Notiz 160×96 ohne seed/prompt/steps/model/cfg, Verlauf unverändert (${histVor})` : t55.join(" · "));
+
+  // --- 56 ----------------------------------------------------------------------------------------------------------
+  await waehleAufgabe(cdp, "txt2img");
+  await cdp.evaluate(`await app.vault.delete(app.vault.getAbstractFileByPath(${JSON.stringify(`${ordner}/sdxl-base.api.json`)})); return true;`);
+  const nachLoeschen = await warteBis(
+    () => cdp.evaluate<string[]>(`const s = document.querySelector(".lig-comfy-workflow"); return s ? [...s.options].map((o) => o.value) : [];`),
+    (v) => !v.includes("sdxl-base.api.json"),
+    2_000,
+    "warte, bis die gelöschte Datei aus dem Dropdown verschwindet",
+    { intervalMs: 200 },
+  );
+  record(N56, nachLoeschen !== null, nachLoeschen !== null ? `Dropdown danach [${nachLoeschen.join(", ")}]` : "sdxl-base.api.json stand nach 2 s noch im Dropdown");
+
+  // --- 57 ----------------------------------------------------------------------------------------------------------
+  // Vorlage aus 54/55 ist noch gesetzt; Erzeugen darf sie nicht hochladen.
+  const hatVorlage = await cdp.evaluate<boolean>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].state.initImage !== null;`);
+  const uploads57 = mockComfyState()?.counts.upload ?? 0;
+  const vor57 = await cdp.evaluate<string | null>(`return app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}].state.image?.params.date ?? null;`);
+  await cdp.evaluate(`const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]; p.state.prompt = "a lighthouse 57"; p.refreshViews(); return true;`);
+  const lauf57 = await klickeUndWarte(cdp, laufFrist, vor57);
+  const m57 = mockComfyState() as (ReturnType<typeof mockComfyState> & { task?: string }) | null;
+  const ok57 = hatVorlage && lauf57 !== null && lauf57.task === undefined && (m57?.counts.upload ?? 0) === uploads57 && m57?.task === "txt2img";
+  record(N57, ok57, `Vorlage gesetzt: ${String(hatVorlage)} · Lauf ${JSON.stringify(lauf57)} · Uploads ${uploads57} → ${String(m57?.counts.upload)} · Mock-Aufgabe „${String(m57?.task)}“`);
+
+  await cdp.evaluate(`const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}]; p.state.initImage = null; p.state.initCrop = null; p.state.comfyTask = "txt2img"; p.refreshViews(); return true;`);
+}
+
 /**
  * Orchestriert Punkte 35–39: EIGENER Zustand (Endpunkt, Workflow-Pfad, Modus), im `finally`
  * vollstaendig zurueckgesetzt — Konvention „Vorbedingung herstellen, nicht erben" (wie
@@ -3110,6 +3376,7 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     NAME_39,
     NAME_46,
     NAME_47,
+    ...COMFY_TASK_NAMEN,
   ];
   const up = await fetch(`${comfyEndpoint.replace(/\/+$/, "")}/system_stats`, { signal: AbortSignal.timeout(3000) })
     .then((r) => r.status === 200)
@@ -3119,16 +3386,19 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     return;
   }
 
-  const vorher = await cdp.evaluate<{ engine: string; endpoint: string; comfyWorkflowPath: string }>(`
+  const vorher = await cdp.evaluate<{ engine: string; endpoint: string; comfyWorkflowFolder: string; comfyWorkflowSelection: unknown }>(`
     const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
-    return { engine: p.settings.engine, endpoint: p.settings.endpoint, comfyWorkflowPath: p.settings.comfyWorkflowPath };
+    return { engine: p.settings.engine, endpoint: p.settings.endpoint, comfyWorkflowFolder: p.settings.comfyWorkflowFolder, comfyWorkflowSelection: p.settings.comfyWorkflowSelection };
   `);
 
-  const validPath = `${SMOKE_FOLDER}/comfy-valid.json`;
-  const brokenPath = `${SMOKE_FOLDER}/comfy-broken.json`;
+  const validPath = `${SMOKE_FOLDER}/comfy-valid/comfy-valid.json`;
+  const brokenPath = `${SMOKE_FOLDER}/comfy-broken/comfy-broken.json`;
 
   try {
     await cdp.evaluate(`
+      for (const d of [${JSON.stringify(`${SMOKE_FOLDER}/comfy-valid`)}, ${JSON.stringify(`${SMOKE_FOLDER}/comfy-broken`)}]) {
+        if (!app.vault.getAbstractFileByPath(d)) await app.vault.createFolder(d);
+      }
       await app.vault.create(${JSON.stringify(validPath)}, ${JSON.stringify(JSON.stringify(COMFY_VALID_WORKFLOW))});
       await app.vault.create(${JSON.stringify(brokenPath)}, ${JSON.stringify(JSON.stringify(COMFY_BROKEN_WORKFLOW))});
       return true;
@@ -3137,10 +3407,11 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     await cdp.evaluate(`
       const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
       p.settings.endpoint = ${JSON.stringify(comfyEndpoint)};
-      p.settings.comfyWorkflowPath = ${JSON.stringify(validPath)};
+      p.settings.comfyWorkflowFolder = ${JSON.stringify(`${SMOKE_FOLDER}/comfy-valid`)};
+      p.settings.comfyWorkflowSelection = { txt2img: "comfy-valid.json", edit: "", upscale: "" };
       await p.saveSettings();
       if (p.settings.engine !== "comfy") { await p.setEngine("comfy"); }
-      else { await p.checkServer(); await p.loadWorkflow(); }
+      else { await p.checkServer(); await p.loadComfyLibrary(); }
       p.refreshViews();
       return true;
     `);
@@ -3151,13 +3422,15 @@ async function runComfyChecks(cdp: Cdp, comfyEndpoint: string, generateTimeoutMs
     await runComfyNoteChecks(cdp, base64 !== null);
     await runComfyReadinessCheck(cdp);
     await runComfyProgressSocketCheck(cdp, generateTimeoutMs);
+    await runComfyTaskChecks(cdp, generateTimeoutMs);
   } finally {
     await cdp
       .evaluate(`
         const p = app.plugins.plugins[${JSON.stringify(PLUGIN_ID)}];
         const before = ${JSON.stringify(vorher)};
         p.settings.endpoint = before.endpoint;
-        p.settings.comfyWorkflowPath = before.comfyWorkflowPath;
+        p.settings.comfyWorkflowFolder = before.comfyWorkflowFolder;
+        p.settings.comfyWorkflowSelection = before.comfyWorkflowSelection;
         await p.saveSettings();
         if (p.settings.engine !== before.engine) await p.setEngine(before.engine);
         else await p.checkServer();
