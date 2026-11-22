@@ -15,6 +15,14 @@
 //                              (Fallback-Probe: ComfyUI 0.30.0 tat das fuer Obsidians Origin).
 //   GET  /view             -> ein 1x1-PNG als rohe Bytes (kein JSON/Base64 — ComfyClient holt
 //                              es per requestUrl().arrayBuffer und base64-kodiert selbst)
+//   POST /upload/image     -> multipart wie ComfyUI (Feld image, type, overwrite), Antwort
+//                              { name, subfolder: "", type: "input" } (seit dem Workflow-Ordner)
+//
+// Bearbeiten und Hochskalieren (seit dem Workflow-Ordner): ein Graph mit `upscale_model`-Eingang
+// gilt als Hochskalieren, einer mit Bild-Eingang (String `image`) und Sampler als Bearbeiten. Das
+// Ergebnis hat dann ABSICHTLICH eine andere Groesse als das Rezept — Bearbeiten 96x64,
+// Hochskalieren das Vierfache der hochgeladenen Vorlage —, damit der Smoke misst, dass die Notiz
+// die Groesse aus dem PNG nimmt und nicht aus dem Rezept.
 //
 // Zaehler UND der zuletzt empfangene Graph landen in .mock-comfy-counts.json — an `graph`
 // misst Smoke-Punkt 38, ob die vom Server EMPFANGENE Schrittzahl (nicht der Workflow-Default,
@@ -28,6 +36,7 @@
 import http from "node:http";
 import { writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { deflateSync } from "node:zlib";
 
 const PORT = Number(process.env.MOCK_COMFY_PORT ?? 8189);
 const COUNTS_FILE = new URL("../.mock-comfy-counts.json", import.meta.url);
@@ -39,7 +48,80 @@ const PIXEL_PNG = Buffer.from(
   "base64",
 );
 
-const counts = { system_stats: 0, prompt: 0, history: 0, view: 0, ws_open: 0, ws_refused: 0, ws_progress: 0 };
+const counts = { system_stats: 0, prompt: 0, history: 0, view: 0, ws_open: 0, ws_refused: 0, ws_progress: 0, upload: 0 };
+
+// --- PNG beliebiger Groesse (grau, RGB) — fuer Bearbeiten- und Hochskalieren-Ergebnisse.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+const crc32 = (buf) => {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+const chunk = (type, data) => {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length);
+  const td = Buffer.concat([Buffer.from(type, "ascii"), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(td));
+  return Buffer.concat([len, td, crc]);
+};
+function makePng(w, h) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; ihdr[9] = 2; // 8 bit, RGB
+  const row = Buffer.alloc(1 + w * 3, 0x80);
+  row[0] = 0; // Filter: keiner
+  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+const pngSize = (buf) =>
+  buf.length >= 24 && buf.readUInt32BE(12) === 0x49484452 ? { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) } : null;
+
+/** Hochgeladene Vorlagen (Name -> Bytes) und was der letzte Upload mitschickte. */
+const uploads = new Map();
+let lastUpload = null;
+/** Aufgabe und Ergebnis der letzten Einreichung; `resultPng` liefert /view, solange gesetzt. */
+let lastTask = null;
+let resultPng = null;
+
+/** Ein multipart-Koerper in Felder zerlegen — genug fuer die drei Felder, die das Plugin schickt. */
+function parseMultipart(body, contentType) {
+  const m = /boundary=([^;]+)/.exec(contentType ?? "");
+  if (!m) return null;
+  const delim = Buffer.from(`--${m[1]}`);
+  const fields = {};
+  let at = body.indexOf(delim);
+  while (at !== -1) {
+    const next = body.indexOf(delim, at + delim.length);
+    if (next === -1) break;
+    const part = body.subarray(at + delim.length + 2, next - 2); // ohne CRLF nach dem Trenner und vor dem naechsten
+    const headEnd = part.indexOf("\r\n\r\n");
+    if (headEnd !== -1) {
+      const head = part.subarray(0, headEnd).toString("latin1");
+      const name = /name="([^"]*)"/.exec(head)?.[1];
+      const filename = /filename="([^"]*)"/.exec(head)?.[1];
+      if (name) fields[name] = { filename, data: part.subarray(headEnd + 4) };
+    }
+    at = next;
+  }
+  return fields;
+}
+
+function taskOf(graph) {
+  const nodes = Object.values(graph ?? {});
+  if (nodes.some((n) => Array.isArray(n?.inputs?.upscale_model))) return "upscale";
+  const hasImage = nodes.some((n) => typeof n?.inputs?.image === "string");
+  const hasSampler = nodes.some((n) => n?.inputs && "positive" in n.inputs && "latent_image" in n.inputs);
+  return hasImage && hasSampler ? "edit" : "txt2img";
+}
 // Socket-Beobachtungen fuer Punkt 47: was auf der Leitung ankam, nicht was der Treiber erwartet.
 const ws = { origin: null, clientId: null, postClientId: null };
 const STEPS = 4;
@@ -55,7 +137,7 @@ let lastGraph = null;
 // beim ersten Poll schon fertig ist (der Client pollt genau dafuer in einer Schleife).
 let pending = false;
 
-const persist = () => writeFileSync(COUNTS_FILE, JSON.stringify({ counts, graph: lastGraph, ws }));
+const persist = () => writeFileSync(COUNTS_FILE, JSON.stringify({ counts, graph: lastGraph, ws, task: lastTask, upload: lastUpload }));
 const json = (res, status, body) => {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
@@ -115,6 +197,13 @@ const server = http
         } catch {
           lastGraph = null;
         }
+        lastTask = taskOf(lastGraph);
+        if (lastTask === "edit") resultPng = makePng(96, 64);
+        else if (lastTask === "upscale") {
+          const imageName = Object.values(lastGraph ?? {}).find((n) => typeof n?.inputs?.image === "string")?.inputs.image;
+          const size = pngSize(uploads.get(imageName) ?? Buffer.alloc(0)) ?? { width: 1, height: 1 };
+          resultPng = makePng(size.width * 4, size.height * 4);
+        } else resultPng = null;
         pending = true;
         try {
           ws.postClientId = JSON.parse(body).client_id ?? null;
@@ -148,7 +237,32 @@ const server = http
       counts.view++;
       persist();
       res.writeHead(200, { "content-type": "image/png" });
-      return res.end(PIXEL_PNG);
+      return res.end(resultPng ?? PIXEL_PNG);
+    }
+
+    if (path === "/upload/image" && req.method === "POST") {
+      const parts = [];
+      req.on("data", (c) => parts.push(c));
+      req.on("end", () => {
+        counts.upload++;
+        const fields = parseMultipart(Buffer.concat(parts), req.headers["content-type"]);
+        const image = fields?.image;
+        if (!image?.filename) {
+          persist();
+          return json(res, 400, { error: { message: "no image field" } });
+        }
+        uploads.set(image.filename, Buffer.from(image.data));
+        lastUpload = {
+          name: image.filename,
+          bytes: image.data.length,
+          size: pngSize(image.data),
+          type: fields.type?.data.toString() ?? null,
+          overwrite: fields.overwrite?.data.toString() ?? null,
+        };
+        persist();
+        return json(res, 200, { name: image.filename, subfolder: "", type: "input" });
+      });
+      return;
     }
 
     res.writeHead(404);
