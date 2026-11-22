@@ -78,6 +78,8 @@ describe("validateSettings + SETTINGS_SCHEMA (Spec §8)", () => {
       builtinModel: "sdxl-turbo",
       showModelPicker: true,
       comfyWorkflowPath: "",
+      comfyWorkflowFolder: "W/flows",
+      comfyWorkflowSelection: { txt2img: "a.api.json", edit: "", upscale: "u.json" },
       serverEndpointChoice: { endpointId: "e1", model: "m1" },
       comfyEndpointChoice: { endpointId: "e2" },
       playgroundShortcutName: "Generate Image (Obsidian)",
@@ -392,5 +394,59 @@ describe("Image-Playground-Backend (Spec Baustein 5, Welle 13)", () => {
 
   it("playgroundShortcutName traegt per Default den in der Spec benannten Kurzbefehl-Namen", () => {
     expect(DEFAULT_SETTINGS.playgroundShortcutName).toBe("Generate Image (Obsidian)");
+  });
+});
+
+describe("ComfyUI-Workflow-Ordner und Auswahl je Rolle", () => {
+  it("Defaults: kein Ordner, keine Auswahl", () => {
+    expect(DEFAULT_SETTINGS.comfyWorkflowFolder).toBe("");
+    expect(DEFAULT_SETTINGS.comfyWorkflowSelection).toEqual({ txt2img: "", edit: "", upscale: "" });
+  });
+
+  it("Migration: ein alter Workflow-Pfad wird zu Ordner und txt2img-Auswahl, der Pfad bleibt", () => {
+    const s = validate(migrateSettings({ engine: "comfy", comfyWorkflowPath: "50_Ressourcen/x/sdxl-base-txt2img.api.json" }));
+    expect(s.comfyWorkflowFolder).toBe("50_Ressourcen/x");
+    expect(s.comfyWorkflowSelection).toEqual({ txt2img: "sdxl-base-txt2img.api.json", edit: "", upscale: "" });
+    expect(s.comfyWorkflowPath).toBe("50_Ressourcen/x/sdxl-base-txt2img.api.json");
+  });
+
+  it("Migration greift auch ohne engine-Migration (engine schon gesetzt) und auch bei engine playground", () => {
+    expect(validate(migrateSettings({ engine: "playground", comfyWorkflowPath: "a/b.json" })).comfyWorkflowFolder).toBe("a");
+  });
+
+  it("Migration: eine Datei in der Vault-Wurzel lässt den Ordner leer", () => {
+    const s = validate(migrateSettings({ engine: "comfy", comfyWorkflowPath: "w.json" }));
+    expect(s.comfyWorkflowFolder).toBe("");
+    expect(s.comfyWorkflowSelection.txt2img).toBe("");
+  });
+
+  it("Migration überschreibt einen gesetzten Ordner nie", () => {
+    const s = validate(migrateSettings({
+      engine: "comfy",
+      comfyWorkflowPath: "alt/x.json",
+      comfyWorkflowFolder: "neu",
+      comfyWorkflowSelection: { txt2img: "y.json", edit: "", upscale: "" },
+    }));
+    expect(s.comfyWorkflowFolder).toBe("neu");
+    expect(s.comfyWorkflowSelection.txt2img).toBe("y.json");
+  });
+
+  it("eine kaputte Auswahl fällt auf den Default", () => {
+    expect(validate({ comfyWorkflowSelection: { txt2img: 3 } }).comfyWorkflowSelection).toEqual({ txt2img: "", edit: "", upscale: "" });
+    expect(validate({ comfyWorkflowSelection: "x" }).comfyWorkflowSelection).toEqual({ txt2img: "", edit: "", upscale: "" });
+  });
+
+  it("Verlauf: task edit und workflow bleiben, Unsinn fällt weg, Alt-Einträge haben keins", () => {
+    const base = { prompt: "p", seed: 1, steps: 4, model: "unknown", created: "2026-11-22T00:00:00" };
+    const h = validate({ history: [
+      { ...base, task: "edit", workflow: "flux3-klein-edit.api.json" },
+      { ...base, task: "kaputt", workflow: 5 },
+      { ...base },
+    ] }).history;
+    expect(h[0]?.task).toBe("edit");
+    expect(h[0]?.workflow).toBe("flux3-klein-edit.api.json");
+    expect("task" in h[1]!).toBe(false);
+    expect("workflow" in h[1]!).toBe(false);
+    expect("task" in h[2]!).toBe(false);
   });
 });

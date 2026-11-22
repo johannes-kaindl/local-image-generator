@@ -52,6 +52,11 @@ export interface HistoryEntry {
   initImage: string | null;
   /** Ausschnitt der Vorlage, normalisiert (Teil des Rezepts, ohne Bilddaten). null = nicht gewaehlt. */
   initCrop: Crop | null;
+  /** Nur bei einem ComfyUI-Bearbeiten-Lauf gesetzt; fehlt bei Erzeugen-Laeufen und bei allen Alt-Eintraegen.
+   *  Hochskalieren kommt nicht in den Verlauf: es hat kein Rezept ausser Quelle und Workflow. */
+  task?: "edit";
+  /** Dateiname des ComfyUI-Workflows im Workflow-Ordner — fehlt ausserhalb des comfy-Modus und bei Alt-Eintraegen. */
+  workflow?: string;
 }
 
 export interface LigSettings {
@@ -106,6 +111,12 @@ export interface LigSettings {
    *  eine Aussage, kein Fehler — wie bei `endpoint`. Nur der Pfad, nie das JSON: ein
    *  Workflow ist 3–15 KB und data.json wird bei jedem saveSettings() ganz geschrieben. */
   comfyWorkflowPath: string;
+  /** Vault-Ordner mit den ComfyUI-Workflows (API-Format, `.json`); die Rolle jeder Datei erkennt das Plugin am Graphen.
+   *  Leer = keiner gesetzt. Ersetzt `comfyWorkflowPath`, das nur noch fuer die Migration und fuer aeltere Plugin-Staende
+   *  in derselben `data.json` gelesen wird. */
+  comfyWorkflowFolder: string;
+  /** Gewaehlte Datei je Rolle (Dateiname im Ordner). Leer oder nicht mehr vorhanden = die erste gueltige der Rolle. */
+  comfyWorkflowSelection: { txt2img: string; edit: string; upscale: string };
   /** Endpunktwahl gegenüber dem LLM Endpoint Manager für den Server-Modus (Capability
    *  "image", Entscheidung Johannes 2026-09-17: zwei ROLLEN am selben Manager statt zwei
    *  Settings-Felder). Ohne installierten Manager bleibt `endpoint` die eine Wahrheit für
@@ -147,6 +158,8 @@ export const DEFAULT_SETTINGS: LigSettings = {
   builtinModel: DEFAULT_BUILTIN_MODEL_ID,
   showModelPicker: false,
   comfyWorkflowPath: "",
+  comfyWorkflowFolder: "",
+  comfyWorkflowSelection: { txt2img: "", edit: "", upscale: "" },
   serverEndpointChoice: {},
   comfyEndpointChoice: {},
   playgroundShortcutName: "Generate Image (Obsidian)",
@@ -169,6 +182,8 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
         denoising?: unknown;
         initImage?: unknown;
         initCrop?: unknown;
+        task?: unknown;
+        workflow?: unknown;
       } =>
         isPlainObject(h) &&
         typeof h["prompt"] === "string" &&
@@ -177,8 +192,11 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
         typeof h["model"] === "string" &&
         typeof h["created"] === "string",
     )
-    .map((h) => ({
+    .map(({ task, workflow, ...h }) => ({
       ...h,
+      // Seit dem Workflow-Ordner: nur ein gueltiger Wert bleibt, ein Alt-Eintrag bekommt kein Feld (kein Default).
+      ...(task === "edit" ? { task: "edit" as const } : {}),
+      ...(typeof workflow === "string" && workflow !== "" ? { workflow } : {}),
       // Migration 0.3→0.4: Alt-Einträge sind alle SD-Turbo-512er.
       width: typeof h.width === "number" ? h.width : 512,
       height: typeof h.height === "number" ? h.height : 512,
@@ -206,10 +224,30 @@ function migrateHistory(raw: unknown[]): HistoryEntry[] {
  *  der Default "builtin" die Entscheidung schon getroffen. Pure. */
 export function migrateSettings(raw: unknown): unknown {
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
-  const s = raw as Record<string, unknown>;
-  if (s["engine"] !== undefined) return raw;
+  return migrateWorkflowFolder(migrateEngine(raw as Record<string, unknown>));
+}
+
+function migrateEngine(s: Record<string, unknown>): Record<string, unknown> {
+  if (s["engine"] !== undefined) return s;
   const endpoint = typeof s["endpoint"] === "string" ? s["endpoint"].trim() : "";
   return { ...s, engine: endpoint !== "" ? "server" : "builtin" };
+}
+
+/** Einzelner Workflow-Pfad → Workflow-Ordner: der Ordner der Datei wird der Ordner, die Datei die Auswahl fuer
+ *  Erzeugen. Greift nur, solange kein Ordner gesetzt ist, und nur bei einem Pfad mit Ordneranteil — ein leerer Ordner
+ *  heisst „nicht gesetzt“, die Vault-Wurzel ist damit nicht ausdrueckbar. Der alte Pfad bleibt stehen: ein aelterer
+ *  Plugin-Stand, der dieselbe `data.json` liest, rechnet damit weiter. */
+function migrateWorkflowFolder(s: Record<string, unknown>): Record<string, unknown> {
+  const folder = typeof s["comfyWorkflowFolder"] === "string" ? s["comfyWorkflowFolder"].trim() : "";
+  const path = typeof s["comfyWorkflowPath"] === "string" ? s["comfyWorkflowPath"].trim() : "";
+  const cut = path.lastIndexOf("/");
+  if (folder !== "" || cut <= 0) return s;
+  const sel = isPlainObject(s["comfyWorkflowSelection"]) ? s["comfyWorkflowSelection"] : {};
+  return {
+    ...s,
+    comfyWorkflowFolder: path.slice(0, cut),
+    comfyWorkflowSelection: { edit: "", upscale: "", ...sel, txt2img: path.slice(cut + 1) },
+  };
 }
 
 /** Die Spiegel-URL der Modell-Downloads ist eine Ziel-Erlaubnis, kein Freitext: nur https oder lokales http (127.0.0.1, localhost, [::1]).
@@ -256,4 +294,7 @@ export const SETTINGS_SCHEMA: SettingsSchema<LigSettings> = {
   historyView: oneOf<LigSettings["historyView"]>(["recent", "grouped"]),
   builtinModel: oneOf<BuiltinModelId>(["sd-turbo", "sdxl-turbo"]),
   showModelPicker: check<boolean>((v) => typeof v === "boolean"),
+  comfyWorkflowSelection: check<LigSettings["comfyWorkflowSelection"]>(
+    (v) => isPlainObject(v) && typeof v["txt2img"] === "string" && typeof v["edit"] === "string" && typeof v["upscale"] === "string",
+  ),
 };
