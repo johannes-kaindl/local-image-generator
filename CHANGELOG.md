@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-11-22
+
 ### Added
 
 - **ComfyUI mode: a workflow folder instead of a single workflow file.** Settings → *Workflow folder* takes a vault folder; the plugin reads every `.json` file in it and recognizes its role from the graph — *generate* (a sampler with a sized latent, as before), *edit* (an image input that feeds the sampler's latent through a reference node, as in the FLUX.3 klein edit template) or *upscale* (an image input and an upscale model, no sampler). The settings list each file with its role, or with the reason it is not usable. A file you add, change or delete appears in the panel without a restart. An existing *Workflow file* setting is migrated: its folder becomes the workflow folder and the file stays selected.
