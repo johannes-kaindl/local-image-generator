@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/core/comfy/**"
-  - "src/obsidian/workflow-picker.ts"
+  - "comfy/workflows/**"
   - "scripts/mock-comfy.mjs"
 ---
 

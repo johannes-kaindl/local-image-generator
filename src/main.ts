@@ -874,6 +874,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return this.state.server;
   }
 
+  /** Der zuletzt gelesene Workflow-Ordner (Einstellungen zeigen je Datei Rolle oder Grund). */
+  comfyLibrary(): LibraryState {
+    return this.state.comfyLibrary;
+  }
+
   /** Der Workflow, mit dem eine Rolle rechnet: die gewaehlte Datei, sonst die erste gueltige, sonst null. */
   comfyWorkflow(role: WorkflowRole): ActiveWorkflow | null {
     return activeEntry(this.state.comfyLibrary, role, this.settings.comfyWorkflowSelection[role]);

@@ -23,7 +23,8 @@ import { App, Notice, PluginSettingTab, Setting, type SettingDefinitionItem } fr
 import { STEPS } from "../core/generation";
 import { BUILTIN_MODELS, DEFAULT_ASSET_BASE_URL, filesFor, isBuiltinModelId, modelById, totalBytes, type AssetFile, type BuiltinModelId } from "../core/model-manifest";
 import { DEFAULT_SETTINGS, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "../core/settings";
-import { formatBytes, type EngineState } from "../core/viewmodel";
+import { formatBytes, workflowProblemText, type EngineState } from "../core/viewmodel";
+import { FolderSuggest } from "../vendor/kit-obsidian/folder-suggest";
 import { localImageEndpoints, type EndpointRole } from "../core/resolve-endpoint";
 import { t } from "../vendor/kit/i18n";
 import { validateSettings } from "../vendor/kit/settings_schema";
@@ -33,7 +34,6 @@ import { buildEndpointSourceSection, findEndpointManager, type EndpointSourceBas
 import { deleteLegacyCache, hasLegacyCache } from "./legacy-cache";
 import { helpDefinition } from "./help-row";
 import { renderPresetEditor } from "./preset-editor";
-import { WorkflowPickerModal } from "./workflow-picker";
 import type LocalImageGeneratorPlugin from "../main";
 
 export class LigSettingTab extends PluginSettingTab {
@@ -409,30 +409,45 @@ export class LigSettingTab extends PluginSettingTab {
       );
   }
 
-  /** Workflow-Pfad-Textfeld und Auswahl-Knopf teilen sich eine Zeile — wie renderServer.
-   *  Nach dem Speichern liest `loadWorkflow()` die Datei neu und beurteilt sie; der Tab
-   *  wird danach neu gezeichnet, damit das Textfeld den (evtl. per Picker gesetzten) Pfad
-   *  zeigt und eine bedingte Nachbarzeile den frischen Zustand sieht. */
+  /** Workflow-Ordner (Textfeld mit Ordner-Vorschlaegen) und darunter je Datei ihre Rolle oder der Grund, warum sie
+   *  nicht benutzbar ist. Nach jedem Speichern liest `loadComfyLibrary()` den Ordner neu, danach zeichnet sich der Tab
+   *  neu, damit die Liste den frischen Stand zeigt. */
   private renderWorkflow(setting: Setting): void {
-    setting
-      .addText((tf) => {
-        tf.setPlaceholder(t("settings.workflow.pick"));
-        tf.setValue(this.plugin.settings.comfyWorkflowPath).onChange(async (v) => {
-          await this.setControlValue("comfyWorkflowPath", v);
-          void this.plugin.loadComfyLibrary();
-        });
-      })
-      .addButton((b) =>
-        b.setButtonText(t("settings.workflow.pick")).onClick(() => {
-          new WorkflowPickerModal(this.app, (file) => {
-            void (async () => {
-              await this.setControlValue("comfyWorkflowPath", file.path);
-              void this.plugin.loadComfyLibrary();
-              this.refreshUi();
-            })();
-          }).open();
-        }),
-      );
+    setting.addText((tf) => {
+      tf.setPlaceholder(t("settings.workflow.placeholder"));
+      tf.setValue(this.plugin.settings.comfyWorkflowFolder);
+      new FolderSuggest(this.app, tf.inputEl);
+      tf.onChange(async (v) => {
+        await this.setControlValue("comfyWorkflowFolder", v.trim());
+        await this.plugin.loadComfyLibrary();
+        this.refreshUi();
+      });
+    });
+    const host = settingBodyHost(setting);
+    const lib = this.plugin.comfyLibrary();
+    if (lib.kind === "missing") {
+      host.createEl("p", { text: t("status.workflowFolderMissing", lib.folder), cls: "setting-item-description mod-warning" });
+      return;
+    }
+    if (lib.kind !== "ok") return;
+    if (lib.entries.length === 0) {
+      host.createEl("p", { text: t("settings.workflow.empty"), cls: "setting-item-description" });
+      return;
+    }
+    const list = host.createEl("ul", { cls: "lig-workflow-list" });
+    for (const e of lib.entries) {
+      const li = list.createEl("li");
+      li.createSpan({ text: e.file, cls: "lig-workflow-file" });
+      const c = e.classified;
+      if (c.role === null) {
+        li.createSpan({ text: ` — ${t("settings.workflow.rejected", workflowProblemText(c.error))}`, cls: "lig-workflow-problem mod-warning" });
+      } else {
+        li.createSpan({ text: ` — ${t(`workflow.role.${c.role}`)}`, cls: "lig-workflow-role" });
+        if (c.role === "upscale" && c.slots.prescale === null) {
+          li.createSpan({ text: ` (${t("workflow.noPrescale")})`, cls: "lig-workflow-problem mod-warning" });
+        }
+      }
+    }
   }
 
   /** Der Preset-Editor zeichnet je Preset eine eigene Zeile plus einen Hinzufügen-Knopf —

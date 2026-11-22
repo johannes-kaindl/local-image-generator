@@ -175,24 +175,6 @@
 .okit-crop-handle:focus-visible { outline: 2px solid var(--background-primary); outline-offset: -4px; }
 .okit-crop-info { color: var(--text-muted); font-size: var(--font-ui-small); margin-top: var(--size-4-2); }
 
-/* ── Zuletzt, und das ist der Punkt ──────────────────────────────────────────
-   `.is-hidden` ist die Aus-Schaltung fuer jede Zeile, die ein Backend nicht kann
-   (Negativ-Prompt, CFG, Groesse — die Keine-Attrappen-Linie). Sie traegt nur eine
-   Klasse, kollidiert also mit jeder anderen Ein-Klassen-Regel, die `display` setzt,
-   und bei gleicher Spezifitaet gewinnt die spaetere im Stylesheet.
-
-   Genau das war passiert: `.lig-prompt-row { display: flex }` steht seit `2914aba`
-   (Prompt-Historie) weiter unten als das damalige `.is-hidden` — die Negativ-Zeile
-   blieb im builtin-Modus sichtbar, obwohl das Panel sie korrekt als versteckt
-   markierte. CFG und Groesse funktionierten, weil deren Elemente keine eigene
-   `display`-Regel haben; der Fehler traf also genau eine Zeile und sah nach einer
-   Design-Entscheidung aus. Gefunden hat ihn am 2026-08-21 ein README-Screenshot,
-   nicht ein Test.
-
-   Am Dateiende gewinnt die Regel gegen alles davor. Wer hier etwas anhaengt, haengt
-   es DARUEBER an — oder gibt der neuen Regel eine hoehere Spezifitaet. */
-.is-hidden { display: none; }
-
 /* Segment-Schalter im ComfyUI-Modus (Erzeugen | Bearbeiten | Hochskalieren): `SEGMENTED_CONTROL_CSS` unveraendert aus `vendor/kit-obsidian/segmented-control.ts`, das Kit injiziert kein CSS. Neu kopieren, wenn der Pin steigt. */
 .okit-segmented {
   display: inline-flex; flex-wrap: nowrap; align-items: stretch;
@@ -214,3 +196,27 @@
 }
 .okit-segmented-btn:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
 .okit-segmented-btn:disabled { color: var(--text-faint); cursor: not-allowed; }
+
+/* ComfyUI: Aufgaben-Schalter und Workflow-Wahl ueber dem Prompt, Dateiliste in den Einstellungen. */
+.lig-comfy-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); }
+.lig-comfy-workflow { flex: 1 1 10em; min-width: 0; }
+.lig-workflow-list { margin: var(--size-2-2) 0 0; padding-inline-start: var(--size-4-5); font-size: var(--font-ui-small); }
+.lig-workflow-role { color: var(--text-muted); }
+
+/* ── Zuletzt, und das ist der Punkt ──────────────────────────────────────────
+   `.is-hidden` ist die Aus-Schaltung fuer jede Zeile, die ein Backend nicht kann
+   (Negativ-Prompt, CFG, Groesse — die Keine-Attrappen-Linie). Sie traegt nur eine
+   Klasse, kollidiert also mit jeder anderen Ein-Klassen-Regel, die `display` setzt,
+   und bei gleicher Spezifitaet gewinnt die spaetere im Stylesheet.
+
+   Genau das war passiert: `.lig-prompt-row { display: flex }` steht seit `2914aba`
+   (Prompt-Historie) weiter unten als das damalige `.is-hidden` — die Negativ-Zeile
+   blieb im builtin-Modus sichtbar, obwohl das Panel sie korrekt als versteckt
+   markierte. CFG und Groesse funktionierten, weil deren Elemente keine eigene
+   `display`-Regel haben; der Fehler traf also genau eine Zeile und sah nach einer
+   Design-Entscheidung aus. Gefunden hat ihn am 2026-08-21 ein README-Screenshot,
+   nicht ein Test.
+
+   Am Dateiende gewinnt die Regel gegen alles davor. Wer hier etwas anhaengt, haengt
+   es DARUEBER an — oder gibt der neuen Regel eine hoehere Spezifitaet. */
+.is-hidden { display: none; }

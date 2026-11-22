@@ -6,6 +6,8 @@ import { t } from "../vendor/kit/i18n";
 import { buildViewModel, comfyActive } from "../core/viewmodel";
 import { CFG, DENOISING, SIZES, STEPS, type SizeOption } from "../core/generation";
 import type { BuiltinModelId } from "../core/model-manifest";
+import type { ComfyTask } from "../core/generation";
+import { buildSegmentedControl, type SegmentedControl } from "../vendor/kit-obsidian/segmented-control";
 import type { HistoryEntry } from "../core/settings";
 import type { HubPanel, TabId } from "./hub";
 import type { PanelRecipe, ViewHost } from "./view";
@@ -31,6 +33,18 @@ export class GeneratePanel implements HubPanel<TabId> {
    *  jedem Neuzeichnen seine Auswahl, deshalb nur bei tatsaechlicher Aenderung neu bauen. */
   private renderedModelIds = "";
   private promptEl!: HTMLTextAreaElement;
+  private promptRowEl!: HTMLElement;
+  /** ComfyUI: Aufgaben-Schalter und Workflow-Wahl (nur im comfy-Modus sichtbar). */
+  private comfyRowEl!: HTMLElement;
+  private comfyTaskSlotEl!: HTMLElement;
+  private comfyTaskCtrl: SegmentedControl<ComfyTask> | null = null;
+  /** Signatur der Tooltips des Schalters — neu gebaut nur, wenn sich ein Grund aendert. */
+  private renderedTaskSig = "";
+  private comfyWorkflowEl!: HTMLSelectElement;
+  private comfyWorkflowLabelEl!: HTMLElement;
+  private renderedWorkflowIds = "";
+  /** Zuletzt aktiver Workflow — ein Wechsel setzt den Steps-Regler auf den Wert des Workflows. */
+  private renderedActiveFile: string | null = null;
   private negativePromptEl!: HTMLTextAreaElement;
   private stepsLabelEl!: HTMLElement;
   private stepsEl!: HTMLInputElement;
@@ -77,7 +91,18 @@ export class GeneratePanel implements HubPanel<TabId> {
     const modelRow = root.createDiv({ cls: "lig-row lig-model-row" });
     this.modelInfoEl = modelRow.createSpan({ cls: "lig-model-info" });
 
+    // ComfyUI: welche Aufgabe, mit welchem Workflow. Ueber dem Prompt, weil die Aufgabe bestimmt, was darunter steht.
+    this.comfyRowEl = root.createDiv({ cls: "lig-row lig-comfy-row" });
+    this.comfyTaskSlotEl = this.comfyRowEl.createSpan({ cls: "lig-comfy-task" });
+    this.comfyWorkflowLabelEl = this.comfyRowEl.createSpan({ text: t("comfy.workflow"), cls: "lig-label lig-comfy-workflow-label" });
+    this.comfyWorkflowEl = this.comfyRowEl.createEl("select", { cls: "dropdown lig-comfy-workflow" });
+    this.comfyWorkflowEl.setAttribute("aria-label", t("comfy.workflow"));
+    this.comfyWorkflowEl.addEventListener("change", () => {
+      this.host.selectComfyWorkflow(this.host.getPanelState().comfyTask, this.comfyWorkflowEl.value);
+    });
+
     const promptRow = root.createDiv({ cls: "lig-prompt-row" });
+    this.promptRowEl = promptRow;
     this.promptEl = promptRow.createEl("textarea", {
       cls: "lig-prompt",
       attr: { placeholder: t("generate.promptPlaceholder"), rows: "3" },
@@ -376,6 +401,11 @@ export class GeneratePanel implements HubPanel<TabId> {
     const state = this.host.getPanelState();
     this.renderChips();
     const vm = buildViewModel(state);
+    this.renderComfy(vm, state);
+    this.promptRowEl.toggleClass("is-hidden", !vm.controls.prompt);
+    this.chipsEl.toggleClass("is-hidden", !vm.controls.chips);
+    this.promptEl.setAttribute("placeholder", vm.generateLabel === "edit" ? t("generate.instructionPlaceholder") : t("generate.promptPlaceholder"));
+    this.generateBtn.setText(t(`generate.button.${vm.generateLabel}`));
 
     this.modelInfoEl.setText(vm.modelLabel);
     // Regler pro Modus (Keine-Attrappen-Linie): die eingebaute Engine kennt weder Negativ-Prompt
@@ -485,6 +515,51 @@ export class GeneratePanel implements HubPanel<TabId> {
     setIcon(this.statusIconEl, vm.status.icon);
     this.statusIconEl.setAttribute("aria-label", vm.status.text);
     this.statusTextEl.setText(vm.status.text);
+  }
+
+  /** Aufgaben-Schalter und Workflow-Dropdown. Der Schalter haelt alle drei Stellungen waehlbar: der Kit-Baustein kennt
+   *  kein Sperren einzelner Stellungen (die Pfeiltasten wuerden ein von aussen gesperrtes Feld trotzdem waehlen). Der
+   *  Tooltip nennt den Grund, Statuszeile und Knopf sagen, warum in dieser Stellung nichts geht. */
+  private renderComfy(vm: ReturnType<typeof buildViewModel>, state: ReturnType<ViewHost["getPanelState"]>): void {
+    const c = vm.comfy;
+    this.comfyRowEl.toggleClass("is-hidden", c === null);
+    if (c === null) return;
+    const sig = c.tasks.map((x) => `${x.task}:${x.reason ?? ""}`).join("|");
+    if (sig !== this.renderedTaskSig || this.comfyTaskCtrl === null) {
+      this.renderedTaskSig = sig;
+      this.comfyTaskSlotEl.empty();
+      this.comfyTaskCtrl = buildSegmentedControl<ComfyTask>(this.comfyTaskSlotEl, {
+        options: c.tasks.map((x) => ({ value: x.task, label: t(`comfy.task.${x.task}`), ...(x.reason !== null ? { title: x.reason } : {}) })),
+        value: c.task,
+        ariaLabel: t("comfy.taskGroup"),
+        onChange: (task) => this.host.setComfyTask(task),
+        cls: "lig-comfy-task-ctrl",
+      });
+    }
+    this.comfyTaskCtrl.setValue(c.task);
+    const ids = `${c.task}|${c.options.map((o) => `${o.file}=${o.label}`).join(",")}`;
+    if (ids !== this.renderedWorkflowIds) {
+      this.renderedWorkflowIds = ids;
+      this.comfyWorkflowEl.empty();
+      for (const o of c.options) this.comfyWorkflowEl.createEl("option", { text: o.label, attr: { value: o.file } });
+    }
+    const none = c.options.length === 0;
+    this.comfyWorkflowEl.toggleClass("is-hidden", none);
+    this.comfyWorkflowLabelEl.toggleClass("is-hidden", none);
+    if (c.selected !== null) this.comfyWorkflowEl.value = c.selected;
+    // Ein anderer aktiver Workflow bringt seine eigene Schrittzahl mit: sie ist der bessere Startwert als der alte.
+    const active = comfyActive(state);
+    const file = active === null ? null : `${active.role}:${active.file}`;
+    if (file !== this.renderedActiveFile) {
+      const first = this.renderedActiveFile === null;
+      this.renderedActiveFile = file;
+      const steps = active !== null && active.role !== "upscale" ? active.slots.workflowSteps : null;
+      if (!first && steps !== null) {
+        this.stepsEl.value = String(steps);
+        this.stepsValueEl.setText(String(steps));
+        this.host.setRecipe(this.currentRecipe());
+      }
+    }
   }
 
   destroy(): void {}

@@ -104,6 +104,7 @@ export const EN: Record<string, string> = {
   "comfy.task.upscale": "Upscale",
   "comfy.task.none": "No valid {0} workflow in the workflow folder",
   "comfy.workflow": "Workflow",
+  "comfy.taskGroup": "ComfyUI task",
   "generate.button.edit": "Edit",
   "generate.button.upscale": "Upscale",
   "generate.instructionPlaceholder": "Describe the change, e.g. “turn it into a rainy evening, keep the shop unchanged”",
@@ -213,11 +214,12 @@ export const EN: Record<string, string> = {
   "settings.endpointSource.imported": "Copied: {0} new, {1} merged.",
   "settings.endpointSource.importFailed": "Copying failed.",
   "settings.endpointSource.saveFailed": "Could not save the choice.",
-  "settings.workflow.name": "Workflow file",
+  "settings.workflow.name": "Workflow folder",
   "settings.workflow.desc":
-    "A workflow exported from ComfyUI in API format. The plugin fills in prompt, negative prompt, seed, steps and size — sampler, scheduler, CFG, LoRAs and upscalers stay as you built them.",
-  "settings.workflow.pick": "Choose…",
-  "workflow.pickerTitle": "Pick a ComfyUI workflow (.json)",
+    "A vault folder with workflows exported from ComfyUI in API format (.json). The plugin recognizes each file's role from its graph — generate, edit or upscale — and fills in prompt, seed, steps and, when generating, negative prompt and size. Sampler, scheduler, CFG, LoRAs and upscalers stay as you built them.",
+  "settings.workflow.placeholder": "Folder, e.g. Resources/ComfyUI",
+  "settings.workflow.empty": "The folder holds no .json files.",
+  "settings.workflow.rejected": "not usable: {0}",
 
   // Image Playground (Apple shortcut, Spec Baustein 5): honest about its limits right here,
   // not only in the docs — stylized output only, no negative prompts, no size control, no
@@ -344,6 +346,7 @@ export const DE: Record<string, string> = {
   "comfy.task.upscale": "Hochskalieren",
   "comfy.task.none": "Kein gültiger Workflow für {0} im Workflow-Ordner",
   "comfy.workflow": "Workflow",
+  "comfy.taskGroup": "ComfyUI-Aufgabe",
   "generate.button.edit": "Bearbeiten",
   "generate.button.upscale": "Hochskalieren",
   "generate.instructionPlaceholder": "Beschreibe die Änderung, z. B. „mach daraus einen regnerischen Abend, der Laden bleibt unverändert“",
@@ -453,11 +456,12 @@ export const DE: Record<string, string> = {
   "settings.endpointSource.imported": "Übernommen: {0} neu, {1} zusammengeführt.",
   "settings.endpointSource.importFailed": "Übernahme fehlgeschlagen.",
   "settings.endpointSource.saveFailed": "Die Wahl konnte nicht gespeichert werden.",
-  "settings.workflow.name": "Workflow-Datei",
+  "settings.workflow.name": "Workflow-Ordner",
   "settings.workflow.desc":
-    "Ein aus ComfyUI im API-Format exportierter Workflow. Das Plugin setzt Prompt, Negativ-Prompt, Seed, Steps und Größe ein — Sampler, Scheduler, CFG, LoRAs und Upscaler bleiben, wie du sie gebaut hast.",
-  "settings.workflow.pick": "Wählen…",
-  "workflow.pickerTitle": "ComfyUI-Workflow wählen (.json)",
+    "Ein Vault-Ordner mit aus ComfyUI im API-Format exportierten Workflows (.json). Das Plugin erkennt die Rolle jeder Datei an ihrem Graphen — Erzeugen, Bearbeiten oder Hochskalieren — und setzt Prompt, Seed, Steps und beim Erzeugen Negativ-Prompt und Größe ein. Sampler, Scheduler, CFG, LoRAs und Upscaler bleiben, wie du sie gebaut hast.",
+  "settings.workflow.placeholder": "Ordner, z. B. Ressourcen/ComfyUI",
+  "settings.workflow.empty": "Der Ordner enthält keine .json-Dateien.",
+  "settings.workflow.rejected": "nicht benutzbar: {0}",
 
   "settings.playground.name": "Kurzbefehl-Name",
   "settings.playground.desc":
