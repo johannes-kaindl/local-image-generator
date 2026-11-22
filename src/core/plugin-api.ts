@@ -269,7 +269,7 @@ export interface ApiDeps {
    *  Als Union, nicht als flaches Objekt: `{ ready: false }` OHNE Grund waere ein Zustand,
    *  ueber den status() und generate() verschieden urteilen muessten — der Typ macht ihn
    *  gar nicht erst konstruierbar. */
-  readiness(): { ready: true } | { ready: false; reason: ApiFailure };
+  readiness(role?: WorkflowRole): { ready: true } | { ready: false; reason: ApiFailure };
   /** EIN Netzaufruf, der den Serverzustand neu ermittelt. Wirft nicht — ein nicht
    *  erreichbarer Server ist ein Ergebnis, keine Ausnahme; `recheck()` liest den neuen
    *  Stand danach ueber `readiness()`, nicht aus dem Rueckgabewert. */
@@ -377,12 +377,12 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   /** Bereitschaft fuer Bearbeiten und Hochskalieren: dieselbe wie fuer Erzeugen, nur zaehlt ein fehlender
    *  Erzeugen-Workflow nicht — diese Aufgaben rechnen mit ihrem eigenen. `not-configured` heisst im comfy-Modus
    *  „kein Erzeugen-Workflow“ ODER „kein Endpunkt“; ist der Erzeugen-Workflow da, bleibt nur der Endpunkt. */
-  const readyFor = (): ApiFailure | null => {
+  // Bereitschaft JE ROLLE: ohne Erzeugen-Workflow ist Erzeugen nicht eingerichtet, Bearbeiten oder Hochskalieren mit
+  // eigenem Workflow aber sehr wohl — und dann zaehlt wieder der Server (ein toter Server ist `unreachable`, kein `failed`).
+  const readyFor = (role: "edit" | "upscale"): ApiFailure | null => {
     if (deps.isBusy()) return "busy";
-    const r = deps.readiness();
-    if (r.ready) return null;
-    if (r.reason === "not-configured" && deps.comfyWorkflow("txt2img") === null) return null;
-    return r.reason;
+    const r = deps.readiness(role);
+    return r.ready ? null : r.reason;
   };
   const supports = (role: "edit" | "upscale"): string | null =>
     deps.getMode() === "comfy" ? (deps.comfyWorkflow(role)?.file ?? null) : null;
@@ -390,7 +390,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   const editImage = async (req: ApiRequest, abgebrochen: () => boolean): Promise<ApiResult> => {
     const workflow = supports("edit");
     if (workflow === null || typeof req.initImage !== "string" || req.initImage === "") return { ok: false, reason: "unsupported" };
-    const notReady = readyFor();
+    const notReady = readyFor("edit");
     if (notReady !== null) return { ok: false, reason: notReady };
     // Dieselbe ausdrueckliche Uebersetzung wie in `generate`: `initImage` ist hier Base64, die Haertung bekommt nur die
     // Aussage „es gibt eine Vorlage ohne benennbare Herkunft“.
@@ -494,7 +494,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
       if (abgebrochen()) return { ok: false, reason: "aborted" };
       const workflow = supports("upscale");
       if (workflow === null || typeof req.image !== "string" || req.image === "") return { ok: false, reason: "unsupported" };
-      const notReady = readyFor();
+      const notReady = readyFor("upscale");
       if (notReady !== null) return { ok: false, reason: notReady };
       // Gehaertet wird nur, damit Zeitstempel und Kontext dieselben sind wie in einem Panel-Lauf; das Rezept selbst
       // gibt es nicht und kommt nicht zurueck.

@@ -610,10 +610,25 @@ describe("Plugin-API — Bearbeiten und Hochskalieren", () => {
     const nurUp = deps({
       getMode: () => "comfy",
       comfyWorkflow: (role) => (role === "upscale" ? activeEntry(lib, role, "") : null),
-      readiness: () => ({ ready: false, reason: "not-configured" }),
+      // Bereitschaft je Rolle: ohne Erzeugen-Workflow ist Erzeugen nicht eingerichtet, Hochskalieren sehr wohl.
+      readiness: (role = "txt2img") => (role === "upscale" ? { ready: true } : { ready: false, reason: "not-configured" }),
       run: async () => ({ ok: true, base64: "BIG", width: 8, height: 8 }),
     });
     expect((await createImageGenerationApi(nurUp).upscale({ image: "AAAA" })).ok).toBe(true);
+  });
+
+  it("ohne Erzeugen-Workflow meldet Hochskalieren und Bearbeiten einen toten Server als unreachable, nicht als failed", async () => {
+    let gerechnet = 0;
+    const nurUpUndEdit = deps({
+      getMode: () => "comfy",
+      comfyWorkflow: (role) => (role === "txt2img" ? null : activeEntry(lib, role, "")),
+      readiness: (role = "txt2img") => (role === "txt2img" ? { ready: false, reason: "not-configured" } : { ready: false, reason: "unreachable" }),
+      run: async () => { gerechnet++; return { ok: false, message: "fetch failed" }; },
+    });
+    const api = createImageGenerationApi(nurUpUndEdit);
+    expect(await api.upscale({ image: "AAAA" })).toEqual({ ok: false, reason: "unreachable" });
+    expect(await api.generate({ prompt: "x", task: "edit", initImage: "AAAA" })).toEqual({ ok: false, reason: "unreachable" });
+    expect(gerechnet).toBe(0);
   });
 
   it("upscale meldet not-configured, wenn der Erzeugen-Workflow da ist (dann fehlt der Endpunkt)", async () => {

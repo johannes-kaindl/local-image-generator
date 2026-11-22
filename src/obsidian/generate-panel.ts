@@ -3,7 +3,7 @@
 import { setIcon, setTooltip } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
 import { t } from "../vendor/kit/i18n";
-import { buildViewModel, comfyActive } from "../core/viewmodel";
+import { buildViewModel, comfyActive, workflowStepsFor, type RenderedWorkflow } from "../core/viewmodel";
 import { CFG, DENOISING, SIZES, STEPS, type SizeOption } from "../core/generation";
 import type { BuiltinModelId } from "../core/model-manifest";
 import type { ComfyTask } from "../core/generation";
@@ -43,8 +43,9 @@ export class GeneratePanel implements HubPanel<TabId> {
   private comfyWorkflowEl!: HTMLSelectElement;
   private comfyWorkflowLabelEl!: HTMLElement;
   private renderedWorkflowIds = "";
-  /** Zuletzt aktiver Workflow — ein Wechsel setzt den Steps-Regler auf den Wert des Workflows. */
-  private renderedActiveFile: string | null = null;
+  /** Zuletzt aktiver Workflow — ein Wechsel innerhalb derselben Aufgabe setzt den Steps-Regler auf den Wert des
+   *  Workflows (`workflowStepsFor`). */
+  private renderedActive: RenderedWorkflow | null = null;
   private negativePromptEl!: HTMLTextAreaElement;
   private stepsLabelEl!: HTMLElement;
   private stepsEl!: HTMLInputElement;
@@ -547,14 +548,16 @@ export class GeneratePanel implements HubPanel<TabId> {
     this.comfyWorkflowEl.toggleClass("is-hidden", none);
     this.comfyWorkflowLabelEl.toggleClass("is-hidden", none);
     if (c.selected !== null) this.comfyWorkflowEl.value = c.selected;
-    // Ein anderer aktiver Workflow bringt seine eigene Schrittzahl mit: sie ist der bessere Startwert als der alte.
+    // Ein anderer aktiver Workflow derselben Aufgabe bringt seine eigene Schrittzahl mit: sie ist der bessere Startwert
+    // als der alte. Ein Aufgabenwechsel laesst die Steps stehen.
     const active = comfyActive(state);
-    const file = active === null ? null : `${active.role}:${active.file}`;
-    if (file !== this.renderedActiveFile) {
-      const first = this.renderedActiveFile === null;
-      this.renderedActiveFile = file;
-      const steps = active !== null && active.role !== "upscale" ? active.slots.workflowSteps : null;
-      if (!first && steps !== null) {
+    const next: RenderedWorkflow | null = active === null
+      ? null
+      : { role: active.role, file: active.file, steps: active.role !== "upscale" ? active.slots.workflowSteps : null };
+    if (next?.role !== this.renderedActive?.role || next?.file !== this.renderedActive?.file) {
+      const steps = workflowStepsFor(this.renderedActive, next);
+      this.renderedActive = next;
+      if (steps !== null) {
         this.stepsEl.value = String(steps);
         this.stepsValueEl.setText(String(steps));
         this.host.setRecipe(this.currentRecipe());

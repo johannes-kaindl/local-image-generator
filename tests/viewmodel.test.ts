@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
-import { buildViewModel, formatBytes, formatElapsed, partialDownloadLabel, type GenParams, type PanelState } from "../src/core/viewmodel";
+import { buildViewModel, formatBytes, formatElapsed, partialDownloadLabel, workflowStepsFor, type GenParams, type PanelState } from "../src/core/viewmodel";
 import { assetsFor, RUNTIME_WASM, totalBytes } from "../src/core/model-manifest";
 import { libraryFrom, type LibraryState } from "../src/core/comfy/library";
 import sdxlFixture from "./fixtures/comfy-sdxl.json";
@@ -568,5 +568,28 @@ describe("controls.steps/seed (Keine-Attrappen-Linie, Image Playground)", () => 
       expect(vm.controls.steps).toBe(true);
       expect(vm.controls.seed).toBe(true);
     }
+  });
+});
+
+describe("workflowStepsFor — Steps-Startwert bei einem Workflow-Wechsel im Panel", () => {
+  const txtA = { role: "txt2img" as const, file: "a.api.json", steps: 4 };
+  const txtB = { role: "txt2img" as const, file: "b.api.json", steps: 30 };
+  const edit = { role: "edit" as const, file: "e.api.json", steps: 8 };
+  const up = { role: "upscale" as const, file: "u.api.json", steps: null };
+
+  it("ein anderer Workflow derselben Aufgabe bringt seine Schrittzahl mit", () => {
+    expect(workflowStepsFor(txtA, txtB)).toBe(30);
+  });
+
+  it("ein Aufgabenwechsel hin und zurück lässt die Steps stehen (Review-Befund M3)", () => {
+    expect(workflowStepsFor(txtA, edit)).toBeNull();
+    expect(workflowStepsFor(edit, txtA)).toBeNull();
+  });
+
+  it("der erste Workflow, derselbe Workflow und Hochskalieren setzen nichts", () => {
+    expect(workflowStepsFor(null, txtA)).toBeNull();
+    expect(workflowStepsFor(txtA, txtA)).toBeNull();
+    expect(workflowStepsFor(up, { ...up, file: "u2.api.json" })).toBeNull();
+    expect(workflowStepsFor(txtA, null)).toBeNull();
   });
 });

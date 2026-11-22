@@ -137,6 +137,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** Entprellung des Ordner-Watchers (comfy-Modus). */
   private libraryReloadTimer = 0;
+  private libraryLoadSeq = 0;
 
   async onload(): Promise<void> {
     registerI18n();
@@ -151,7 +152,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       presets: () => this.settings.presets,
       builtinModel: () => this.settings.builtinModel,
       comfyWorkflow: (role) => this.comfyWorkflow(role),
-      readiness: () => this.apiReadiness(),
+      readiness: (role) => this.apiReadiness(role),
       // Der EINE Netzaufruf hinter `api.recheck()`. `checkServer()` schreibt `state.server`
       // und wirft nicht — ein unerreichbarer Server ist dort ein Ergebnis; die Fassade liest
       // den neuen Stand danach ueber `readiness()`, nicht aus dem Rueckgabewert.
@@ -360,9 +361,12 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // Der Ordner ist das Bedienelement: ein hineingelegter, geaenderter oder geloeschter Workflow erscheint ohne Neustart.
     const onVaultChange = (path: string, oldPath?: string): void => {
       if (this.settings.engine !== "comfy") return;
-      const folder = this.settings.comfyWorkflowFolder.trim().replace(/\/+$/, "");
-      if (folder === "") return;
-      const inFolder = (p: string | undefined): boolean => p !== undefined && (p === folder || p.startsWith(`${folder}/`));
+      const folder = this.comfyFolderPath();
+      if (folder === null) return;
+      // Dieselbe Normalisierung wie beim Laden (`comfyFolderPath`): ein Ordner mit „/“ vorn oder hinten fand sonst
+      // Dateien, aber der Waechter sah deren Aenderungen nie. Die Vault-Wurzel („/“) hat Kinder ohne „/“ im Pfad.
+      const inFolder = (p: string | undefined): boolean =>
+        p !== undefined && (folder === "/" ? !p.includes("/") : p === folder || p.startsWith(`${folder}/`));
       if (!inFolder(path) && !inFolder(oldPath)) return;
       window.clearTimeout(this.libraryReloadTimer);
       this.libraryReloadTimer = window.setTimeout(() => void this.loadComfyLibrary(), 300);
@@ -415,7 +419,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
 
   /** Netzfreie Bereitschaft fuer status(). Spiegelt den zuletzt ermittelten Zustand —
    *  ein Netzaufruf gehoert hier nicht hin (der Vertrag sagt das zu). */
-  private apiReadiness(): { ready: true } | { ready: false; reason: ApiFailure } {
+  private apiReadiness(role: WorkflowRole = "txt2img"): { ready: true } | { ready: false; reason: ApiFailure } {
     if (this.settings.engine === "builtin") {
       const e = this.state.engine;
       if (e.kind === "ready") return { ready: true };
@@ -423,7 +427,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       return { ready: false, reason: "model-not-downloaded" };
     }
     if (this.settings.engine === "comfy") {
-      if (this.comfyWorkflow("txt2img") === null) return { ready: false, reason: "not-configured" };
+      if (this.comfyWorkflow(role) === null) return { ready: false, reason: "not-configured" };
       // Danach gilt dieselbe Server-Bedingung wie fuer A1111 — Fall-through nach unten.
     }
     if (this.settings.engine === "playground") {
@@ -912,11 +916,22 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     await this.saveSettings();
   }
 
+  /** Der Workflow-Ordner, wie Laden und Waechter ihn sehen: `null` = nicht gesetzt, sonst `normalizePath` (die
+   *  Vault-Wurzel bleibt „/“). */
+  private comfyFolderPath(): string | null {
+    const raw = this.settings.comfyWorkflowFolder.trim();
+    return raw === "" ? null : normalizePath(raw);
+  }
+
   /** Workflow-Ordner lesen und jede Datei beurteilen. Laeuft beim Start (nur im comfy-Modus), nach dem Setzen des
    *  Ordners, beim Moduswechsel und entprellt bei jeder Vault-Aenderung im Ordner — nicht vor jedem Lauf. */
   async loadComfyLibrary(): Promise<LibraryState> {
-    const folder = normalizePath(this.settings.comfyWorkflowFolder.trim() || "/");
-    const configured = this.settings.comfyWorkflowFolder.trim() !== "";
+    // Eine spaeter gestartete Ladung gewinnt: endet eine aeltere (langsames cachedRead) nach ihr, verwirft sie ihr
+    // Ergebnis, statt die neuere Bibliothek zu ueberschreiben.
+    const seq = ++this.libraryLoadSeq;
+    const configuredPath = this.comfyFolderPath();
+    const folder = configuredPath ?? "/";
+    const configured = configuredPath !== null;
     let files: { path: string; raw: string }[] | null = null;
     const dir = configured ? this.app.vault.getAbstractFileByPath(folder) : null;
     if (dir instanceof TFolder) {
@@ -931,6 +946,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       }
     }
     if (this.unloaded) return this.state.comfyLibrary; // keine spaeten State-Mutationen
+    if (seq !== this.libraryLoadSeq) return this.state.comfyLibrary; // ueberholt von einer neueren Ladung
     this.state.comfyLibrary = libraryFrom(configured ? folder : "", files);
     this.refreshViews();
     return this.state.comfyLibrary;
@@ -975,8 +991,11 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     onProgress?: ApiRequest["onProgress"],
     opts?: { external?: boolean; signal?: AbortSignal; comfyJob?: ComfyJob },
   ): Promise<{ ok: true; base64: string; width?: number; height?: number } | { ok: false; message: string }> {
-    const builtin = this.settings.engine === "builtin";
-    const playground = this.settings.engine === "playground";
+    // Der Modus wird EINMAL gelesen: zwischen hier und dem Backend-Bau liegt ein `await` (Endpunkt-Aufloesung), ein
+    // Moduswechsel in diesem Fenster darf einen Bearbeiten- oder Hochskalieren-Auftrag nicht an ein anderes Backend geben.
+    const engine = this.settings.engine;
+    const builtin = engine === "builtin";
+    const playground = engine === "playground";
     // GENAU EINE Aufloesung fuer den ganzen Lauf — Backend-Bau UND Fortschritts-Poller
     // (weiter unten) teilen sich diese eine URL, statt je einen eigenen Manager-Zugriff
     // zu machen. Ohne Manager ist das exakt `settings.endpoint`, wie vor der Aenderung.
@@ -994,7 +1013,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       ? this.ensureLocalEngine()
       : playground
         ? this.makePlaygroundBackend()
-        : this.settings.engine === "comfy"
+        : engine === "comfy"
           ? this.makeComfyClient(endpointUrl!, (p) => comfyProgress(p), opts?.comfyJob ?? null)
           : new A1111Client(endpointUrl!, httpPostJson);
     const external = opts?.external === true;
@@ -1033,7 +1052,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     let elapsed = 0;
     // Kein Poller im comfy-Modus: ComfyUIs Fortschritt kommt ueber den Socket (`comfyProgress`
     // oben), nicht ueber einen HTTP-Endpunkt.
-    const poller = this.settings.engine === "server"
+    const poller = engine === "server"
       ? new ProgressPoller(endpointUrl!, (u) => httpGetJson(u, 1000))
       : null;
     if (builtin) {
@@ -1083,13 +1102,15 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // des Bildes er rechnet. ComfyUI/Playground (falls sie je img2img koennen): nur der Ausschnitt. builtin schneidet beim Dekodieren.
       const sentInit = builtin || initImageData === null
         ? initImageData
-        : this.settings.engine === "server"
+        : engine === "server"
           ? await fitImageToBase64(initImageData, params.initCrop, params.width, params.height)
           : params.initCrop !== null
             ? await cropImageToBase64(initImageData, params.initCrop)
             : initImageData;
       const job = opts?.comfyJob;
       let out: { base64: string; width?: number; height?: number };
+      // Ein Auftrag ohne ComfyUI-Backend ist ein Fehler, kein Erzeugen: sonst liefe die Anweisung still als Prompt.
+      if (job !== undefined && !(backend instanceof ComfyClient)) throw new Error(`comfy: ${job.task} needs ComfyUI mode`);
       if (job !== undefined && backend instanceof ComfyClient) {
         // Bearbeiten und Hochskalieren: die Vorlage geht als PNG hoch (Ausschnitt oder ganzes Bild — `cropImageToBase64`
         // kodiert ueber Canvas immer PNG, auch aus einer JPEG- oder WebP-Vorlage), die Groesse kommt aus dem Ergebnis.

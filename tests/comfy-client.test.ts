@@ -127,6 +127,24 @@ describe("ComfyClient", () => {
     expect(view.url).toContain("type=temp");
   });
 
+  it("bevorzugt ein gespeichertes Bild (type output) vor einer Vorschau, die in den Ausgaben zuerst steht", async () => {
+    // Ein Edit-Workflow mit PreviewImage der Vorlage: die Vorschau ist nicht das Ergebnis.
+    const both = {
+      PID: {
+        status: { status_str: "success", completed: true, messages: [] },
+        outputs: {
+          "5": { images: [{ filename: "vorlage-preview.png", subfolder: "", type: "temp" }] },
+          "9": { images: [{ filename: "ergebnis.png", subfolder: "", type: "output" }] },
+        },
+      },
+    };
+    const { transport, calls } = stub({ historySteps: [both] });
+    await new ComfyClient("http://x", WORKFLOW, transport).generate(REQ);
+    const view = calls.find((c) => c.url.includes("/view"))!;
+    expect(view.url).toContain("filename=ergebnis.png");
+    expect(view.url).toContain("type=output");
+  });
+
   it("wirft mit Server-Klartext, wenn ComfyUI den Workflow ablehnt", async () => {
     const { transport } = stub({
       promptResponse: { status: 400, json: { error: { message: "model not found" } } },

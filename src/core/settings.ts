@@ -234,18 +234,18 @@ function migrateEngine(s: Record<string, unknown>): Record<string, unknown> {
 }
 
 /** Einzelner Workflow-Pfad → Workflow-Ordner: der Ordner der Datei wird der Ordner, die Datei die Auswahl fuer
- *  Erzeugen. Greift nur, solange kein Ordner gesetzt ist, und nur bei einem Pfad mit Ordneranteil — ein leerer Ordner
- *  heisst „nicht gesetzt“, die Vault-Wurzel ist damit nicht ausdrueckbar. Der alte Pfad bleibt stehen: ein aelterer
- *  Plugin-Stand, der dieselbe `data.json` liest, rechnet damit weiter. */
+ *  Erzeugen. Greift nur, solange kein Ordner gesetzt ist. Eine Datei in der Vault-Wurzel ergibt den Ordner „/“ — ein
+ *  leerer Ordner hiesse „nicht gesetzt“, Laden und Ordner-Waechter lesen „/“ als Wurzel. Der alte Pfad bleibt stehen:
+ *  ein aelterer Plugin-Stand, der dieselbe `data.json` liest, rechnet damit weiter. */
 function migrateWorkflowFolder(s: Record<string, unknown>): Record<string, unknown> {
   const folder = typeof s["comfyWorkflowFolder"] === "string" ? s["comfyWorkflowFolder"].trim() : "";
   const path = typeof s["comfyWorkflowPath"] === "string" ? s["comfyWorkflowPath"].trim() : "";
   const cut = path.lastIndexOf("/");
-  if (folder !== "" || cut <= 0) return s;
+  if (folder !== "" || path === "" || cut === path.length - 1) return s;
   const sel = isPlainObject(s["comfyWorkflowSelection"]) ? s["comfyWorkflowSelection"] : {};
   return {
     ...s,
-    comfyWorkflowFolder: path.slice(0, cut),
+    comfyWorkflowFolder: cut <= 0 ? "/" : path.slice(0, cut),
     comfyWorkflowSelection: { edit: "", upscale: "", ...sel, txt2img: path.slice(cut + 1) },
   };
 }

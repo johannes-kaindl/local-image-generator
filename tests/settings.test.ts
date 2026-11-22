@@ -404,20 +404,23 @@ describe("ComfyUI-Workflow-Ordner und Auswahl je Rolle", () => {
   });
 
   it("Migration: ein alter Workflow-Pfad wird zu Ordner und txt2img-Auswahl, der Pfad bleibt", () => {
-    const s = validate(migrateSettings({ engine: "comfy", comfyWorkflowPath: "50_Ressourcen/x/sdxl-base-txt2img.api.json" }));
-    expect(s.comfyWorkflowFolder).toBe("50_Ressourcen/x");
+    const s = validate(migrateSettings({ engine: "comfy", comfyWorkflowPath: "Ressourcen/x/sdxl-base-txt2img.api.json" }));
+    expect(s.comfyWorkflowFolder).toBe("Ressourcen/x");
     expect(s.comfyWorkflowSelection).toEqual({ txt2img: "sdxl-base-txt2img.api.json", edit: "", upscale: "" });
-    expect(s.comfyWorkflowPath).toBe("50_Ressourcen/x/sdxl-base-txt2img.api.json");
+    expect(s.comfyWorkflowPath).toBe("Ressourcen/x/sdxl-base-txt2img.api.json");
   });
 
   it("Migration greift auch ohne engine-Migration (engine schon gesetzt) und auch bei engine playground", () => {
     expect(validate(migrateSettings({ engine: "playground", comfyWorkflowPath: "a/b.json" })).comfyWorkflowFolder).toBe("a");
   });
 
-  it("Migration: eine Datei in der Vault-Wurzel lässt den Ordner leer", () => {
+  it("Migration: eine Datei in der Vault-Wurzel wird zu Ordner „/“ (Review-Befund M6)", () => {
     const s = validate(migrateSettings({ engine: "comfy", comfyWorkflowPath: "w.json" }));
-    expect(s.comfyWorkflowFolder).toBe("");
-    expect(s.comfyWorkflowSelection.txt2img).toBe("");
+    expect(s.comfyWorkflowFolder).toBe("/");
+    expect(s.comfyWorkflowSelection.txt2img).toBe("w.json");
+    const mitStrich = validate(migrateSettings({ engine: "comfy", comfyWorkflowPath: "/w.json" }));
+    expect(mitStrich.comfyWorkflowFolder).toBe("/");
+    expect(mitStrich.comfyWorkflowSelection.txt2img).toBe("w.json");
   });
 
   it("Migration überschreibt einen gesetzten Ordner nie", () => {

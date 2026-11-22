@@ -175,7 +175,7 @@ const PUNKTE = [
   "53. ComfyUI: je Aufgabe sind genau die Regler sichtbar, die der Workflow nimmt (Erzeugen, Bearbeiten, Hochskalieren)",
   "54. ComfyUI-Bearbeiten: Upload, neue Datei, Notiz mit task edit und der GEMESSENEN Größe (96×64)",
   "55. ComfyUI-Hochskalieren: <quelle>-upscale.png, Notiz ohne Seed/Prompt, Breite = 4× Vorlage",
-  "56. ComfyUI: eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart",
+  "56. ComfyUI: eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart (Ordner mit „/“ vorn und hinten)",
   "57. ComfyUI: Erzeugen nach Bearbeiten mit gesetzter Vorlage lädt nichts hoch",
 ] as const;
 
@@ -3105,7 +3105,7 @@ const COMFY_TASK_NAMEN = [
   "53. ComfyUI: je Aufgabe sind genau die Regler sichtbar, die der Workflow nimmt (Erzeugen, Bearbeiten, Hochskalieren)",
   "54. ComfyUI-Bearbeiten: Upload, neue Datei, Notiz mit task edit und der GEMESSENEN Größe (96×64)",
   "55. ComfyUI-Hochskalieren: <quelle>-upscale.png, Notiz ohne Seed/Prompt, Breite = 4× Vorlage",
-  "56. ComfyUI: eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart",
+  "56. ComfyUI: eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart (Ordner mit „/“ vorn und hinten)",
   "57. ComfyUI: Erzeugen nach Bearbeiten mit gesetzter Vorlage lädt nichts hoch",
 ] as const;
 
@@ -3337,6 +3337,9 @@ async function runComfyTaskChecks(cdp: Cdp, generateTimeoutMs: number): Promise<
 
   // --- 56 ----------------------------------------------------------------------------------------------------------
   await waehleAufgabe(cdp, "txt2img");
+  // Der Ordner steht absichtlich mit „/“ vorn und hinten in den Einstellungen: Laden und Wächter müssen ihn gleich
+  // normalisieren, sonst erkennt der Wächter die Löschung nicht (Review-Befund M7).
+  await setzeComfyOrdner(cdp, `/${ordner}/`, "flux3-klein.api.json");
   await cdp.evaluate(`await app.vault.delete(app.vault.getAbstractFileByPath(${JSON.stringify(`${ordner}/sdxl-base.api.json`)})); return true;`);
   const nachLoeschen = await warteBis(
     () => cdp.evaluate<string[]>(`const s = document.querySelector(".lig-comfy-workflow"); return s ? [...s.options].map((o) => o.value) : [];`),

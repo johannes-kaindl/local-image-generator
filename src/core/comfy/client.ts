@@ -292,6 +292,7 @@ export class ComfyClient implements ImageBackend {
   }
 
   private firstImage(outputs: Record<string, { images?: unknown[] }> | undefined): ComfyImageRef | null {
+    const refs: ComfyImageRef[] = [];
     for (const node of Object.values(outputs ?? {})) {
       for (const raw of node.images ?? []) {
         const img = raw as { filename?: unknown; subfolder?: unknown; type?: unknown };
@@ -299,14 +300,17 @@ export class ComfyClient implements ImageBackend {
         // subfolder und type kommen AUS DER ANTWORT: ein Workflow mit PreviewImage statt
         // SaveImage legt das Bild unter type "temp" ab, nicht "output". Wer das fest
         // verdrahtet, bricht genau die Workflows, die keine Zweitkopie sammeln wollen.
-        return {
+        refs.push({
           filename: img.filename,
           subfolder: typeof img.subfolder === "string" ? img.subfolder : "",
           type: typeof img.type === "string" ? img.type : "output",
-        };
+        });
       }
     }
-    return null;
+    // Ein gespeichertes Bild schlaegt eine Vorschau: ein Workflow, der zusaetzlich die Vorlage oder einen Zwischenschritt
+    // per PreviewImage zeigt, liefert sonst womoeglich genau diese Vorschau als Ergebnis. Ohne gespeichertes Bild bleibt
+    // die erste Vorschau das Ergebnis (Workflow nur mit PreviewImage).
+    return refs.find((r) => r.type === "output") ?? refs[0] ?? null;
   }
 
   private async fetchImage(img: ComfyImageRef): Promise<string> {

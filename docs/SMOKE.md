@@ -192,7 +192,7 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 53 | ComfyUI: je Aufgabe genau die Regler, die der Workflow nimmt | drei Aufgaben × neun Zeilen (Prompt, Chips, Negativ, Vorlage, Größe, Steps, Seed, Denoise, CFG) gegen die Tabelle der Spec, an den Zeilen-Containern über `getComputedStyle` (ein Feld in einer versteckten Zeile meldet selbst noch `block`). Gegenprobe 2026-11-22: Steps in jeder Aufgabe sichtbar → rot („upscale: steps sichtbar“) |
 | 54 | ComfyUI-Bearbeiten: Upload, neue Datei, Notiz mit `task: edit` und der **gemessenen** Größe | Vorlage 40×24 im Vault, Klick auf den Schalter und den Knopf; der Mock liefert absichtlich 96×64, das Rezept sagt 512×512 — die Notiz muss 96×64 tragen, `workflow`, keine `cfg`/`denoising`. Gegenprobe: Größe aus dem Rezept → rot („512×512 statt 96×64“) |
 | 55 | ComfyUI-Hochskalieren: `<quelle>-upscale.png`, Notiz ohne Seed/Prompt/Steps/Modell/CFG, Breite = 4× Vorlage | dieselbe Vorlage, Ergebnis 160×96; zusätzlich darf der Verlauf nicht wachsen (Hochskalieren hat kein Rezept). Gegenprobe wie 54 → rot |
-| 56 | Eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart | der Vault-Watcher (entprellt 300 ms) lädt die Bibliothek neu; Frist 2 s |
+| 56 | Eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart | der Ordner steht dazu absichtlich als `/<ordner>/` in den Einstellungen: Laden und Vault-Watcher (entprellt 300 ms) müssen ihn gleich normalisieren; Frist 2 s |
 | 57 | Erzeugen nach Bearbeiten mit gesetzter Vorlage lädt nichts hoch | die Vorlage bleibt im Zustand, Erzeugen darf sie nicht senden: Upload-Zähler des Mocks unverändert, Mock sieht `txt2img` |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine

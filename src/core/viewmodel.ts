@@ -6,6 +6,7 @@ import { backendCapabilities, toBackendContext, type ComfyTask, type SizeOption 
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
 import { activeEntry, entriesOf, type ActiveWorkflow, type LibraryState, type WorkflowProblem } from "./comfy/library";
 import type { EngineChoice } from "./settings";
+import type { WorkflowRole } from "./comfy/workflow";
 import { cropEquals, type Crop } from "../vendor/kit/crop";
 
 /** Erreichbarkeit/Konfiguration des A1111-kompatiblen Servers: ersetzt die
@@ -245,6 +246,18 @@ export function formatElapsed(totalSec: number): string {
  *  fälschlich: ein unbeobachtbarer Modellwechsel darf Generate nicht blockieren. Reroll ist
  *  davon unabhängig: der würfelt den Seed vorher neu und ist nie an generateEnabled
  *  gebunden (generate-panel.ts). */
+/** Was das Panel zuletzt als aktiven Workflow gezeigt hat — Grundlage fuer `workflowStepsFor`. */
+export type RenderedWorkflow = { role: WorkflowRole; file: string; steps: number | null };
+
+/** Steps-Startwert bei einem Wechsel des aktiven Workflows, `null` = Regler stehen lassen. Nur ein anderer Workflow
+ *  DERSELBEN Aufgabe bringt seine Schrittzahl mit; ein Aufgabenwechsel (Erzeugen ↔ Bearbeiten) laesst eine von Hand
+ *  gesetzte Zahl stehen, der erste gezeigte Workflow ebenso (dort gilt der Startwert des Panels). */
+export function workflowStepsFor(prev: RenderedWorkflow | null, next: RenderedWorkflow | null): number | null {
+  if (prev === null || next === null) return null;
+  if (prev.role !== next.role || prev.file === next.file) return null;
+  return next.steps;
+}
+
 /** Der Workflow, mit dem die gewaehlte Aufgabe rechnen wuerde — null ohne gueltigen. */
 export function comfyActive(s: Pick<PanelState, "comfyLibrary" | "comfyTask" | "comfySelection">): ActiveWorkflow | null {
   return activeEntry(s.comfyLibrary, s.comfyTask, s.comfySelection[s.comfyTask]);

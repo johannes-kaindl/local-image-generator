@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- ComfyUI edit and upscale: a workflow that also shows a preview (`PreviewImage`, for example of the template image) could return that preview as the result. A saved image (`SaveImage`) now wins over a preview; a workflow with previews only still works.
+- ComfyUI workflow folder: a folder entered with a leading or trailing `/` was read, but files added, changed or deleted in it did not show up until a restart. Loading and watching now normalize the folder the same way, and a slow, older reload no longer overwrites a newer one.
+- Panel: switching the task back and forth (*Generate* ↔ *Edit*) no longer resets a step count you set by hand; only choosing another workflow for the same task brings that workflow's steps.
+- Plugin API: in a vault without a generate workflow, `generate({ task: "edit" })` and `upscale()` reported a ComfyUI server that is down as `failed`; readiness is now checked per task and says `unreachable`.
+- Settings migration: a workflow file at the vault root (0.22 and earlier) now becomes the workflow folder `/` instead of leaving the folder empty.
+- A mode switch at the very start of an edit or upscale run can no longer hand the job to another backend (where the instruction would have run as a plain prompt); the run fails with a clear message.
+
 ### Changed
 
 - `comfy/reference-config.json` is now a template with placeholders, `comfy/reference-config.example.json`; `tools/vault-abgleich.mjs` reads your own values from `comfy/reference-config.local.json`, which git ignores, and refuses a missing file or a leftover placeholder with the keys named. Setup: `comfy/README.md`.
