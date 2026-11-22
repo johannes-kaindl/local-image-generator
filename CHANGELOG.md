@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.2] — 2026-11-22
+
 ### Fixed
 
 - ComfyUI edit and upscale: a workflow that also shows a preview (`PreviewImage`, for example of the template image) could return that preview as the result. A saved image (`SaveImage`) now wins over a preview; a workflow with previews only still works.
