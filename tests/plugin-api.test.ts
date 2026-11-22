@@ -71,6 +71,7 @@ describe("status()", () => {
       maxSteps: BUILTIN_MODELS["sd-turbo"].steps.max,
       fixedSize: BUILTIN_MODELS["sd-turbo"].sizes[0],
       sizes: BUILTIN_MODELS["sd-turbo"].sizes,
+      edit: false, upscale: false,
     });
   });
 
@@ -92,6 +93,7 @@ describe("status()", () => {
     expect(s.engine).toBe("server");
     expect(s.capabilities).toEqual({
       negativePrompt: true, cfg: true, initImage: true, maxSteps: STEPS.max, fixedSize: null, sizes: null,
+      edit: false, upscale: false,
     });
   });
 });
@@ -516,5 +518,110 @@ describe("Kit-Vertrag image-gen-provider (additiv, Auftrag E)", () => {
       deps({ saveToFolder: async () => ({ ok: false, message: "EACCES" }) }),
     ).generateImage("x", { targetFolder: "a" });
     expect(writeFailed).toMatchObject({ error: "failed", message: "EACCES" });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bearbeiten und Hochskalieren über die API (comfy-Modus, additiv, apiVersion bleibt 1).
+import { libraryFrom, activeEntry } from "../src/core/comfy/library";
+import flux3Wf from "../comfy/workflows/flux3-klein.api.json";
+import flux3EditWf from "../comfy/workflows/flux3-klein-edit.api.json";
+import upscaleWf from "../comfy/workflows/upscale-4x-ultrasharp.api.json";
+
+describe("Plugin-API — Bearbeiten und Hochskalieren", () => {
+  const lib = libraryFrom("W", [
+    { path: "W/flux3-klein.api.json", raw: JSON.stringify(flux3Wf) },
+    { path: "W/flux3-klein-edit.api.json", raw: JSON.stringify(flux3EditWf) },
+    { path: "W/upscale-4x-ultrasharp.api.json", raw: JSON.stringify(upscaleWf) },
+  ]);
+  const comfyDeps = (over: Partial<ApiDeps> = {}) => {
+    const runs: { job: string | undefined; init: string | null | undefined }[] = [];
+    const d = deps({
+      getMode: () => "comfy",
+      comfyWorkflow: (role) => activeEntry(lib, role, ""),
+      harden: (input) => ({ ...params, prompt: input.prompt, cfg: null, initImage: input.initImage?.ref ?? null }),
+      run: async (_p, _o, init, _s, job) => {
+        runs.push({ job, init });
+        return { ok: true, base64: "PNG", width: 1328, height: 768 };
+      },
+      ...over,
+    });
+    return { d, runs };
+  };
+
+  it("status meldet edit und upscale nur im comfy-Modus mit passendem Workflow", () => {
+    expect(createImageGenerationApi(comfyDeps().d).status().capabilities).toMatchObject({ edit: true, upscale: true });
+    const nurTxt = deps({ getMode: () => "comfy", comfyWorkflow: (role) => (role === "txt2img" ? activeEntry(lib, role, "") : null) });
+    expect(createImageGenerationApi(nurTxt).status().capabilities).toMatchObject({ edit: false, upscale: false });
+    expect(createImageGenerationApi(deps({ getMode: () => "server" })).status().capabilities).toMatchObject({ edit: false, upscale: false });
+  });
+
+  it("generate mit task edit ohne Vorlage ist unsupported, ohne Lauf", async () => {
+    const { d, runs } = comfyDeps();
+    expect(await createImageGenerationApi(d).generate({ prompt: "x", task: "edit" })).toEqual({ ok: false, reason: "unsupported" });
+    expect(runs).toHaveLength(0);
+  });
+
+  it("generate mit task edit im server-Modus ist unsupported", async () => {
+    expect(await createImageGenerationApi(deps({ getMode: () => "server" })).generate({ prompt: "x", task: "edit", initImage: "AAAA" }))
+      .toEqual({ ok: false, reason: "unsupported" });
+  });
+
+  it("generate mit task edit rechnet als Bearbeiten und meldet Aufgabe, Workflow und gemessene Größe", async () => {
+    const { d, runs } = comfyDeps();
+    const r = await createImageGenerationApi(d).generate({ prompt: "make it rain", task: "edit", initImage: "AAAA", width: 64, height: 64 });
+    expect(runs).toEqual([{ job: "edit", init: "AAAA" }]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.image.params).toMatchObject({ task: "edit", workflow: "flux3-klein-edit.api.json", width: 1328, height: 768, cfg: null, denoising: null });
+  });
+
+  it("generate ohne task bleibt Erzeugen und trägt keine Aufgabe", async () => {
+    const { d, runs } = comfyDeps({ run: async (_p, _o, _i, _s, job) => { runsJob.push(job); return { ok: true, base64: "PNG" }; } });
+    const runsJob: (string | undefined)[] = [];
+    void runs;
+    const r = await createImageGenerationApi(d).generate({ prompt: "a cat" });
+    expect(runsJob).toEqual([undefined]);
+    expect(r.ok && "task" in r.image.params).toBe(false);
+  });
+
+  it("upscale rechnet ohne Rezept und liefert nur Workflow, Größe und Zeit", async () => {
+    const { d, runs } = comfyDeps({ run: async (_p, _o, init, _s, job) => { runs.push({ job, init }); return { ok: true, base64: "BIG", width: 5312, height: 3072 }; } });
+    const r = await createImageGenerationApi(d).upscale({ image: "AAAA" });
+    expect(runs).toEqual([{ job: "upscale", init: "AAAA" }]);
+    expect(r).toEqual({ ok: true, image: { base64: "BIG", params: { task: "upscale", workflow: "upscale-4x-ultrasharp.api.json", width: 5312, height: 3072, created: params.date } } });
+  });
+
+  it("upscale ohne Upscale-Workflow oder außerhalb comfy ist unsupported", async () => {
+    expect(await createImageGenerationApi(deps({ getMode: () => "builtin" })).upscale({ image: "AAAA" })).toEqual({ ok: false, reason: "unsupported" });
+    const nurTxt = deps({ getMode: () => "comfy", comfyWorkflow: (role) => (role === "txt2img" ? activeEntry(lib, role, "") : null) });
+    expect(await createImageGenerationApi(nurTxt).upscale({ image: "AAAA" })).toEqual({ ok: false, reason: "unsupported" });
+  });
+
+  it("upscale ist bereit, auch wenn der Ordner keinen Erzeugen-Workflow hat", async () => {
+    const nurUp = deps({
+      getMode: () => "comfy",
+      comfyWorkflow: (role) => (role === "upscale" ? activeEntry(lib, role, "") : null),
+      readiness: () => ({ ready: false, reason: "not-configured" }),
+      run: async () => ({ ok: true, base64: "BIG", width: 8, height: 8 }),
+    });
+    expect((await createImageGenerationApi(nurUp).upscale({ image: "AAAA" })).ok).toBe(true);
+  });
+
+  it("upscale meldet einen unerreichbaren Server und ein abgebrochenes Signal", async () => {
+    const tot = deps({ getMode: () => "comfy", comfyWorkflow: (role) => activeEntry(lib, role, ""), readiness: () => ({ ready: false, reason: "unreachable" }) });
+    expect(await createImageGenerationApi(tot).upscale({ image: "AAAA" })).toEqual({ ok: false, reason: "unreachable" });
+    const ac = new AbortController();
+    ac.abort();
+    expect(await createImageGenerationApi(comfyDeps().d).upscale({ image: "AAAA", signal: ac.signal })).toEqual({ ok: false, reason: "aborted" });
+  });
+
+  it("save nimmt Upscale-Params ohne Seed an", async () => {
+    let gespeichert: unknown = null;
+    const d = deps({ save: async (img) => { gespeichert = img.params; return { ok: true, imagePath: "x-upscale.png", notePath: null }; } });
+    const up = { task: "upscale" as const, workflow: "u.json", width: 8, height: 8, created: "2026-11-22T01:00:00" };
+    expect(await createImageGenerationApi(d).save({ base64: "BIG", params: up })).toEqual({ ok: true, imagePath: "x-upscale.png", notePath: null });
+    expect(gespeichert).toEqual(up);
+    expect((await createImageGenerationApi(d).save({ base64: "BIG", params: { ...up, created: "kaputt" } })).ok).toBe(false);
   });
 });

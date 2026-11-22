@@ -162,6 +162,24 @@ dort kontinuierlich, genau wie beim Server-Backend. In beiden Fällen ist
 behandeln, nicht den eingegebenen Wert. Mehr Schritte geben ihm auch mehr Spielraum: derselbe
 `denoising`-Wert wirkt bei 4 Schritten anders als bei 8.
 
+**Bearbeiten und Hochskalieren (ComfyUI-Modus).** `capabilities.edit` und `capabilities.upscale` sagen, ob der Workflow-Ordner einen Bearbeiten- bzw. Hochskalieren-Workflow enthält; außerhalb des ComfyUI-Modus sind beide `false`. Beide nutzen den Workflow, den der Nutzer im Panel gewählt hat.
+
+```ts
+const caps = api.status().capabilities;
+if (caps.edit) {
+  const r = await api.generate({ task: "edit", prompt: "mach daraus einen regnerischen Abend, der Laden bleibt unverändert", initImage: pngBase64 });
+  // r.image.params.task === "edit"; Breite und Höhe sind am Ergebnis gemessen (der Bearbeiten-Workflow rechnet auf
+  // etwa ein Megapixel um), negativePrompt ist "", cfg und denoising sind null.
+}
+if (caps.upscale) {
+  const r = await api.upscale({ image: pngBase64 });
+  // r.image.params ist { task: "upscale", workflow, width, height, created } — ein Hochskalieren hat weder Prompt noch Seed noch Steps.
+  if (r.ok) await api.save(r.image);
+}
+```
+
+Beide Felder und `upscale()` sind additiv (`apiVersion` bleibt 1); ältere Installationen tragen sie nicht, prüfe deshalb `typeof api.upscale === "function"`.
+
 Die API startet nie selbst einen Download. Fehlt das Modell, bekommst du
 `{ ok: false, reason: "model-not-downloaded" }` — den Knopf muss der Nutzer selbst klicken.
 
@@ -182,6 +200,7 @@ Die `reason` bei einem Fehlschlag von `generate()`:
 | `model-not-downloaded` | eingebauter Modus, das Modell ist nicht heruntergeladen — dieses Plugin lädt nie von selbst |
 | `no-gpu` | eingebauter Modus, die GPU erfüllt die Anforderungen der eingebauten Engine nicht |
 | `failed` | das Backend hat beim Rechnen geworfen; `message` trägt seinen rohen, unübersetzten Text |
+| `unsupported` | `task: "edit"` (oder `upscale()`) außerhalb des ComfyUI-Modus, ohne passenden Workflow im Workflow-Ordner oder ohne Bild |
 
 `save(image, opts?)` liefert `{ ok: true, imagePath, notePath }` — `notePath` ist `null`, wenn
 keine Notiz angefragt war (`opts.createNote === false`, oder es gilt die eigene Einstellung des

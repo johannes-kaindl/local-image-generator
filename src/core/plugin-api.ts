@@ -84,6 +84,11 @@ export interface ApiRequest {
    *  minutenlang in "loading-model", und ein Konsument ohne dieses Signal zeigt einen
    *  Hänger statt einer Ladephase. */
   onProgress?: (pct: number | null, phase: "loading-model" | "generating") => void;
+  /** Seit dem Workflow-Ordner: `"edit"` bearbeitet `initImage` nach der Anweisung in `prompt` (nur im comfy-Modus mit
+   *  einem Bearbeiten-Workflow, s. `capabilities.edit`; benutzt den im Panel gewaehlten Workflow). Ohne `initImage` oder
+   *  ohne die Faehigkeit kommt `unsupported`. Groesse, Negativ-Prompt, CFG und Denoise sind dann ohne Wirkung (zurueck
+   *  kommen die gemessene Groesse, `""`, `null`, `null`). Fehlt das Feld, gilt `"generate"`. Additiv, `apiVersion` bleibt 1. */
+  task?: "generate" | "edit";
 }
 
 /** Was TATSÄCHLICH gerechnet wurde — nicht, was angefragt war. Der builtin-Modus
@@ -115,9 +120,27 @@ export interface ApiParams {
    *  oder kein img2img. Additiv, `apiVersion` bleibt 1: ein Konsument, der es nicht liest,
    *  merkt nichts. */
   initCrop: Crop | null;
+  /** Nur bei einem Bearbeiten-Lauf. Additiv: ein Erzeugen-Ergebnis traegt das Feld nicht. */
+  task?: "edit";
+  /** Dateiname des ComfyUI-Workflows (nur im comfy-Modus). */
+  workflow?: string;
+}
+
+/** Was ein Hochskalieren liefert — bewusst kein `ApiParams`: es hat kein Rezept (Prompt, Seed, Steps), und diese
+ *  Felder mit Nullen zu fuellen, behauptete etwas, das nicht stattgefunden hat. `width`/`height` sind gemessen. */
+export interface ApiUpscaleParams {
+  task: "upscale";
+  workflow: string;
+  width: number;
+  height: number;
+  /** Lokale Zeit ohne Offset, wie `ApiParams.created`. */
+  created: string;
 }
 
 export interface ApiImage { base64: string; params: ApiParams }   // PNG ohne data:-Präfix
+
+/** Ergebnis eines Hochskalierens — eigener Typ, damit `ApiImage.params` fuer bestehende Konsumenten `ApiParams` bleibt. */
+export interface ApiUpscaleImage { base64: string; params: ApiUpscaleParams }
 
 export type ApiResult =
   | { ok: true; image: ApiImage }
@@ -128,7 +151,18 @@ export type ApiResult =
    *  nicht „abgebrochen" sein — dieselbe Trennung wie bei `failed`. Ein Konsument, der
    *  `signal` nicht setzt, bekommt diesen Wert nie, die Erweiterung ist fuer ihn also
    *  unsichtbar (`apiVersion` bleibt 1, additiv wie `recheck()` in 0.10.0). */
-  | { ok: false; reason: "aborted" };
+  | { ok: false; reason: "aborted" }
+  /** Die Aufgabe geht im aktuellen Modus nicht (`task: "edit"` ausserhalb von comfy, ohne Bearbeiten-Workflow oder ohne
+   *  `initImage`). Wie `aborted` bewusst kein Wert in `ApiFailure`: ein Status kann nicht „nicht unterstuetzt“ sein. */
+  | { ok: false; reason: "unsupported" };
+
+/** Ergebnis von `upscale()`. */
+export type ApiUpscaleResult =
+  | { ok: true; image: ApiUpscaleImage }
+  | { ok: false; reason: ApiFailure }
+  | { ok: false; reason: "failed"; message: string }
+  | { ok: false; reason: "aborted" }
+  | { ok: false; reason: "unsupported" };
 
 /** Ein Stil-Baustein des Nutzers (`StylePreset` der Einstellungen) — `suffix` wird an den Prompt gehaengt. */
 export interface ImageStylePreset { id: string; label: string; suffix: string }
@@ -168,6 +202,11 @@ export interface ApiStatus {
      *  ein Eintrag (deckt sich mit `fixedSize`), bei SDXL-Turbo zwei (`fixedSize` ist dann
      *  null, weil keine der beiden Größen allein die Zusage traegt). */
     sizes: readonly SizeOption[] | null;
+    /** Kann das Backend ein Bild per Anweisung bearbeiten (`generate({ task: "edit" })`)? Nur im comfy-Modus mit einem
+     *  Bearbeiten-Workflow im Workflow-Ordner. Optional im Typ, weil aeltere Plugin-Staende das Feld nicht tragen. */
+    edit?: boolean;
+    /** Kann es hochskalieren (`upscale()`)? Nur im comfy-Modus mit einem Hochskalieren-Workflow. */
+    upscale?: boolean;
   };
 }
 // Konkret (builtin haengt vom AKTIVEN Modell ab, deps.builtinModel()):
@@ -197,11 +236,14 @@ export interface ImageGenerationApi extends ImageGenProviderApi {
    *  Serverzustand nicht heilen kann. */
   recheck(): Promise<ApiStatus>;
   generate(req: ApiRequest): Promise<ApiResult>;
+  /** Ein Bild (Base64, PNG/JPEG/WebP) hochskalieren — nur im comfy-Modus mit einem Hochskalieren-Workflow, sonst
+   *  `unsupported`. `signal` beendet wie im comfy-Modus von `generate` nur die Wartezeit. */
+  upscale(req: { image: string; signal?: AbortSignal }): Promise<ApiUpscaleResult>;
   /** Legt das Ergebnis nach den Ausgabeziel-Einstellungen des Nutzers ab (Ordner,
    *  Dateiname, Kollisions-Dedup, optional Ergebnis-Notiz). Der EINZIGE Vault-Write
    *  des Vertrags. */
   save(
-    image: ApiImage,
+    image: ApiImage | ApiUpscaleImage,
     /** `createNote` fehlt → es gilt die Nutzer-Einstellung (`settings.createMode === "note"`).
      *  Ein Konsument, der die Wahl des Nutzers respektieren will, laesst das Feld weg. */
     opts?: { createNote?: boolean },
@@ -233,7 +275,8 @@ export interface ApiDeps {
    *  Stand danach ueber `readiness()`, nicht aus dem Rueckgabewert. */
   recheckServer(): Promise<void>;
   isBusy(): boolean;
-  harden(input: HardenInput): GenParams;
+  /** `task` waehlt die Haertung der ComfyUI-Aufgabe (Default Erzeugen). */
+  harden(input: HardenInput, task?: "txt2img" | "edit" | "upscale"): GenParams;
   /** Rechnet. Wirft nicht — Fehlschlaege kommen als message zurueck, damit der Vertrag
    *  erwartbare Zustaende als Werte fuehrt statt als Ausnahmen. */
   run(
@@ -245,8 +288,10 @@ export interface ApiDeps {
     /** Durchgereicht aus `ApiRequest.signal`. Der Wirt gibt es an das Backend weiter; was
      *  ein Abbruch dort bewirkt, haengt am Modus (s. `ApiRequest.signal`). */
     signal?: AbortSignal,
-  ): Promise<{ ok: true; base64: string } | { ok: false; message: string }>;
-  save(image: ApiImage, createNote: boolean): Promise<ApiSaveResult>;
+    /** ComfyUI-Aufgabe, wenn es kein Erzeugen ist — der Wirt rechnet dann mit dem gewaehlten Workflow der Rolle. */
+    job?: "edit" | "upscale",
+  ): Promise<{ ok: true; base64: string; width?: number; height?: number } | { ok: false; message: string }>;
+  save(image: ApiImage | ApiUpscaleImage, createNote: boolean): Promise<ApiSaveResult>;
   /** Voreinstellung des Nutzers (settings.createMode === "note"). */
   defaultCreateNote(): boolean;
   /** Schreibt roh in einen VOM AUFRUFER benannten Ordner — anders als `save()`, das immer
@@ -266,8 +311,13 @@ function toApiParams(g: GenParams): ApiParams {
   // `initImage` die Base64-Vorlage des Konsumenten (ApiRequest). Beides unter einem Namen
   // zurueckzugeben, waere ein Feld mit zwei Bedeutungen; bei einem API-Lauf ist der Pfad
   // ohnehin immer null.
-  const { date, initImage: _pfad, ...rest } = g;
-  return { ...rest, created: date };
+  const { date, initImage: _pfad, task, workflow, ...rest } = g;
+  return {
+    ...rest,
+    created: date,
+    ...(task === "edit" ? { task } : {}),
+    ...(workflow !== undefined ? { workflow } : {}),
+  };
 }
 
 /** `save()` formt aus den uebergebenen Params einen VAULT-PFAD: `buildImageFilename`
@@ -278,9 +328,10 @@ function toApiParams(g: GenParams): ApiParams {
  *  zur Laufzeit kein number ist, formt den Pfad frei mit. Das ist KEINE Rechteausweitung
  *  (wer die API rufen kann, kann auch app.vault) — es haelt nur einen buggy Nachbarn davon
  *  ab, einen Pfad zu formen, den niemand gemeint hat. Rueckgabe: Grund, oder null wenn ok. */
-function unusableParams(p: ApiParams | undefined | null): string | null {
+function unusableParams(p: ApiParams | ApiUpscaleParams | undefined | null): string | null {
   if (p === undefined || p === null) return "image.params is missing";
-  if (typeof p.seed !== "number" || !Number.isFinite(p.seed)) return "params.seed must be a finite number";
+  // Ein Hochskalieren hat keinen Seed — sein Dateiname kommt aus der Quelle bzw. dem Zeitstempel.
+  if (p.task !== "upscale" && (typeof p.seed !== "number" || !Number.isFinite(p.seed))) return "params.seed must be a finite number";
   if (typeof p.created !== "string" || Number.isNaN(new Date(p.created).getTime()))
     return "params.created must be a readable timestamp";
   return null;
@@ -299,6 +350,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   // ein Konsument darf `const { recheck } = api` schreiben, und dann gaebe es kein `this`.
   const readStatus = (): ApiStatus => {
       const caps = backendCapabilities(toBackendContext(deps.getMode(), deps.builtinModel(), { task: "txt2img", workflow: deps.comfyWorkflow("txt2img") }));
+      const comfy = deps.getMode() === "comfy";
       const r = deps.readiness();
       // busy schlaegt jede andere Bereitschaft: das Backend mag geladen sein, aber es
       // rechnet gerade — ein Konsument, der jetzt anfragt, bekaeme eine Absage.
@@ -316,8 +368,41 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
           fixedSize: caps.fixedSize,
           initImage: caps.initImage,
           sizes: caps.sizes,
+          edit: comfy && deps.comfyWorkflow("edit") !== null,
+          upscale: comfy && deps.comfyWorkflow("upscale") !== null,
         },
       };
+  };
+
+  /** Bereitschaft fuer Bearbeiten und Hochskalieren: dieselbe wie fuer Erzeugen, nur zaehlt ein fehlender
+   *  Erzeugen-Workflow (`not-configured`) nicht — diese Aufgaben rechnen mit ihrem eigenen. */
+  const readyFor = (): ApiFailure | null => {
+    if (deps.isBusy()) return "busy";
+    const r = deps.readiness();
+    return r.ready || r.reason === "not-configured" ? null : r.reason;
+  };
+  const supports = (role: "edit" | "upscale"): string | null =>
+    deps.getMode() === "comfy" ? (deps.comfyWorkflow(role)?.file ?? null) : null;
+
+  const editImage = async (req: ApiRequest, abgebrochen: () => boolean): Promise<ApiResult> => {
+    const workflow = supports("edit");
+    if (workflow === null || typeof req.initImage !== "string" || req.initImage === "") return { ok: false, reason: "unsupported" };
+    const notReady = readyFor();
+    if (notReady !== null) return { ok: false, reason: notReady };
+    // Dieselbe ausdrueckliche Uebersetzung wie in `generate`: `initImage` ist hier Base64, die Haertung bekommt nur die
+    // Aussage „es gibt eine Vorlage ohne benennbare Herkunft“.
+    const hardened = deps.harden({ ...req, initImage: { ref: null }, initCrop: req.initCrop }, "edit");
+    const params: GenParams = { ...hardened, task: "edit", workflow };
+    const out = await deps.run(params, req.onProgress, req.initImage, req.signal, "edit");
+    if (!out.ok) {
+      if (abgebrochen()) return { ok: false, reason: "aborted" };
+      return { ok: false, reason: "failed", message: out.message };
+    }
+    if (out.width !== undefined && out.height !== undefined) {
+      params.width = out.width;
+      params.height = out.height;
+    }
+    return { ok: true, image: { base64: out.base64, params: toApiParams(params) } };
   };
 
   return {
@@ -370,6 +455,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
       // beschaeftigen. Im builtin-Modus kostet ein gestarteter Lauf Minuten GPU-Zeit, die
       // niemand mehr abholt.
       if (abgebrochen()) return { ok: false, reason: "aborted" };
+      if (req.task === "edit") return editImage(req, abgebrochen);
       if (deps.isBusy()) return { ok: false, reason: "busy" };
       const r = deps.readiness();
       if (!r.ready) return { ok: false, reason: r.reason };
@@ -396,7 +482,31 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
       return { ok: true, image: { base64: out.base64, params: toApiParams(params) } };
     },
 
-    async save(image: ApiImage, opts?: { createNote?: boolean }): Promise<ApiSaveResult> {
+    async upscale(req: { image: string; signal?: AbortSignal }): Promise<ApiUpscaleResult> {
+      const abgebrochen = (): boolean => req.signal?.aborted === true;
+      if (abgebrochen()) return { ok: false, reason: "aborted" };
+      const workflow = supports("upscale");
+      if (workflow === null || typeof req.image !== "string" || req.image === "") return { ok: false, reason: "unsupported" };
+      const notReady = readyFor();
+      if (notReady !== null) return { ok: false, reason: notReady };
+      // Gehaertet wird nur, damit Zeitstempel und Kontext dieselben sind wie in einem Panel-Lauf; das Rezept selbst
+      // gibt es nicht und kommt nicht zurueck.
+      const params: GenParams = { ...deps.harden({ prompt: "", initImage: { ref: null } }, "upscale"), task: "upscale", workflow };
+      const out = await deps.run(params, undefined, req.image, req.signal, "upscale");
+      if (!out.ok) {
+        if (abgebrochen()) return { ok: false, reason: "aborted" };
+        return { ok: false, reason: "failed", message: out.message };
+      }
+      return {
+        ok: true,
+        image: {
+          base64: out.base64,
+          params: { task: "upscale", workflow, width: out.width ?? params.width, height: out.height ?? params.height, created: params.date },
+        },
+      };
+    },
+
+    async save(image: ApiImage | ApiUpscaleImage, opts?: { createNote?: boolean }): Promise<ApiSaveResult> {
       // Vor dem Vault-Write, nicht danach: ein abgewiesener Auftrag darf keine Datei
       // hinterlassen. `write-failed` statt eines neuen Grundes — die Fehler-Union von v1
       // bleibt unveraendert, und "geschrieben wurde nichts" trifft beides.

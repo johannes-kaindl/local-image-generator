@@ -161,6 +161,24 @@ server backend. Either way, `r.image.params.denoising` is the value that governs
 as the source of truth, not the number you passed in. More steps also give it more room to
 matter: the same `denoising` value looks different at 4 steps than at 8.
 
+**Editing and upscaling (ComfyUI mode).** `capabilities.edit` and `capabilities.upscale` say whether the workflow folder holds an edit or an upscale workflow; both are `false` outside ComfyUI mode. Both use the workflow the user picked in the panel.
+
+```ts
+const caps = api.status().capabilities;
+if (caps.edit) {
+  const r = await api.generate({ task: "edit", prompt: "turn it into a rainy evening, keep the shop unchanged", initImage: pngBase64 });
+  // r.image.params.task === "edit"; width and height are measured from the result (the edit workflow resizes to
+  // about one megapixel), negativePrompt is "", cfg and denoising are null.
+}
+if (caps.upscale) {
+  const r = await api.upscale({ image: pngBase64 });
+  // r.image.params is { task: "upscale", workflow, width, height, created } — an upscale has no prompt, seed or steps.
+  if (r.ok) await api.save(r.image);
+}
+```
+
+Both fields and `upscale()` are additive (`apiVersion` stays 1); older installs don't carry them, so check `typeof api.upscale === "function"`.
+
 The API never starts a download. If the model is missing you get
 `{ ok: false, reason: "model-not-downloaded" }` — the user has to click that button
 themselves.
@@ -197,6 +215,7 @@ with `typeof api.recheck === "function"` if you support older installs.
 | `model-not-downloaded` | built-in mode, the model isn't downloaded — this plugin never downloads on its own |
 | `no-gpu` | built-in mode, the GPU doesn't meet the built-in engine's requirements |
 | `failed` | the backend threw while generating; `message` carries its raw, untranslated text |
+| `unsupported` | `task: "edit"` (or `upscale()`) outside ComfyUI mode, without a matching workflow in the workflow folder, or without an image |
 
 `save(image, opts?)` resolves to `{ ok: true, imagePath, notePath }` — `notePath` is `null`
 when no note was requested (`opts.createNote === false`, or it falls back to the user's own

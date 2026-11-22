@@ -32,6 +32,9 @@ import {
   createImageGenerationApi,
   type ApiFailure,
   type ApiImage,
+  type ApiParams,
+  type ApiUpscaleImage,
+  type ApiUpscaleParams,
   type ApiRequest,
   type ApiSaveResult,
   type ImageGenerationApi,
@@ -62,6 +65,19 @@ import { pickLang, setLang, t } from "./vendor/kit/i18n";
 
 /** Wie lange `onload` auf Server-Pruefung und Workflow-Lesen wartet, damit `api.status()` gleich nach dem Start den echten Stand kennt. */
 const START_PRUEFUNG_MS = 1000;
+
+/** API-Params → internes Rezept fuer Ablage und Notiz. Ein Hochskalieren hat kein Rezept: die leeren Felder sind
+ *  intern, `task: "upscale"` laesst Notiz und Dateiname sie weg (note.ts, filename.ts). */
+function genParamsOfApi(p: ApiParams | ApiUpscaleParams): GenParams {
+  if (p.task === "upscale") {
+    return {
+      prompt: "", negativePrompt: "", seed: 0, steps: 0, cfg: null, model: "unknown", width: p.width, height: p.height,
+      date: p.created, initImage: null, initCrop: null, denoising: null, task: "upscale", workflow: p.workflow,
+    };
+  }
+  const { created, ...rest } = p;
+  return { ...rest, date: created, initImage: null, initCrop: rest.initCrop };
+}
 
 /** Ein ComfyUI-Lauf, der kein Erzeugen ist: welche Aufgabe mit welchem Workflow. */
 type ComfyJob = { task: "edit" | "upscale"; workflow: ActiveWorkflow };
@@ -143,15 +159,21 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         await this.checkServer();
       },
       isBusy: () => this.isBusy(),
-      harden: (input) => hardenParams(input, this.hardenContext("txt2img")),
-      run: async (params, onProgress, initImageData, signal) => {
+      harden: (input, task) => hardenParams(input, this.hardenContext(task ?? "txt2img")),
+      run: async (params, onProgress, initImageData, signal, job) => {
         // Ein Konsument haelt seine api-Referenz ueber unser Entladen hinaus. Ohne diesen
         // Guard baut ensureLocalEngine() eine neue GPU-Session fuer eine Plugin-Instanz,
         // die es nicht mehr gibt — und niemand disposed sie je.
         if (this.unloaded) return { ok: false, message: "plugin unloaded" };
         this.apiRunning = true;
         try {
-          return await this.runGeneration(params, initImageData ?? null, onProgress, { external: true, signal });
+          const workflow = job !== undefined ? this.comfyWorkflow(job) : null;
+          if (job !== undefined && workflow === null) return { ok: false, message: "no workflow for this task" };
+          return await this.runGeneration(params, initImageData ?? null, onProgress, {
+            external: true,
+            signal,
+            ...(job !== undefined && workflow !== null ? { comfyJob: { task: job, workflow } } : {}),
+          });
         } finally {
           this.apiRunning = false;
         }
@@ -500,17 +522,16 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     await this.setInitImage(file);
   }
 
-  private async saveApiImage(image: ApiImage, createNote: boolean): Promise<ApiSaveResult> {
+  private async saveApiImage(image: ApiImage | ApiUpscaleImage, createNote: boolean): Promise<ApiSaveResult> {
     // Derselbe Grund wie beim `run`-Guard oben: ein Konsument haelt seine api-Referenz ueber
     // unser Entladen hinaus. Der Vertrag ist generate() → Mensch schaut sich das Bild an →
     // save() — genau in dieser Pause kann der Nutzer das Plugin deaktivieren. this.app bleibt
     // nach onunload gueltig, also wuerde createBinary anstandslos in den Vault schreiben; ein
     // entladenes Plugin darf den Vault aber nicht mehr anfassen.
     if (this.unloaded) return { ok: false, reason: "write-failed", message: "plugin unloaded" };
-    const { created, ...rest } = image.params;
     // `initImage` (der Vault-Pfad) bleibt null: ein API-Konsument schickt Bytes, keine
     // Vault-Datei. `denoising` kommt aus dem Vertrag — die Notiz nennt die Staerke.
-    const params: GenParams = { ...rest, date: created, initImage: null, initCrop: rest.initCrop };
+    const params = genParamsOfApi(image.params);
     let file: TFile;
     try {
       const path = await this.resolveImagePath(imageFilenameFor(params));
