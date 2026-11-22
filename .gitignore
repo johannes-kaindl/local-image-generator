@@ -2,6 +2,7 @@ node_modules/
 main.js
 # Gebuendelter GUI-Smoke-Treiber (npm run smoke:gui) — Quelle ist scripts/gui-smoke.ts
 .gui-smoke.mjs
+.vault-probe.mjs
 .DS_Store
 .claude/*
 !.claude/rules/
