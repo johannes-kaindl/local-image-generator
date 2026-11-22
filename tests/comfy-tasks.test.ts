@@ -175,3 +175,28 @@ describe("buildViewModel — ComfyUI-Aufgaben", () => {
     expect(vm.comfy?.tasks.every((t) => !t.enabled)).toBe(true);
   });
 });
+
+describe("buildViewModel — gewählter Workflow fehlt oder ist ungültig", () => {
+  it("eine gewählte, aber fehlende Datei wird in der Statuszeile genannt, samt der Datei, die stattdessen rechnet", () => {
+    const vm = buildViewModel(comfyState({ comfySelection: { ...NO_SEL, txt2img: "flux3-klein-v1.api.json" } }));
+    expect(vm.status.cls).toBe("is-error");
+    expect(vm.status.text).toContain("flux3-klein-v1.api.json");
+    expect(vm.status.text).toContain("flux3-klein.api.json");
+    expect(vm.generateEnabled).toBe(true);
+  });
+
+  it("eine gewählte Datei, die ungültig geworden ist, wird ebenso genannt", () => {
+    const lib = libraryFrom(F, [
+      { path: `${F}/flux3-klein.api.json`, raw: JSON.stringify(flux3) },
+      { path: `${F}/kaputt.api.json`, raw: "{" },
+    ]);
+    const vm = buildViewModel(comfyState({ comfyLibrary: lib, comfySelection: { ...NO_SEL, txt2img: "kaputt.api.json" } }));
+    expect(vm.status.text).toContain("kaputt.api.json");
+    expect(vm.status.cls).toBe("is-error");
+  });
+
+  it("keine Auswahl oder eine vorhandene Auswahl meldet nichts", () => {
+    expect(buildViewModel(comfyState()).status.cls).toBe("is-ok");
+    expect(buildViewModel(comfyState({ comfySelection: { ...NO_SEL, txt2img: "sdxl-pixel-art.api.json" } })).status.cls).toBe("is-ok");
+  });
+});

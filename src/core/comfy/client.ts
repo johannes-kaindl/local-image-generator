@@ -178,6 +178,12 @@ export class ComfyClient implements ImageBackend {
   async runUpscale(wf: ActiveWorkflow, req: { imagePng: Uint8Array; signal?: AbortSignal }): Promise<ComfyImageResult> {
     if (wf.role !== "upscale") throw new Error(`comfy: workflow role mismatch (${wf.role}, expected upscale)`);
     const size = pngSizeOrThrow(req.imagePng, "init image");
+    // Vor dem Upload, nicht nach der Rechnung: ein Upscale-Modell vervierfacht, und ein 16 000-px-Ergebnis (Handyfoto)
+    // sprengt auf dem Rueckweg die Base64-Zeichenkette — nach Minuten auf dem Server. 2048 px ergeben 8192 px, das traegt.
+    const kante = Math.max(size.width, size.height);
+    if (kante > MAX_UPSCALE_EDGE) {
+      throw new Error(`comfy: template too large to upscale (${size.width}×${size.height}, longest edge ${kante} px, at most ${MAX_UPSCALE_EDGE} px) — scale it down or choose a crop first`);
+    }
     throwIfAborted(req.signal);
     const imageName = await this.uploadImage(req.imagePng);
     const graph = patchUpscale(JSON.parse(wf.json) as ComfyGraph, wf.slots, { imageName, ...size });
@@ -311,6 +317,10 @@ export class ComfyClient implements ImageBackend {
     return base64;
   }
 }
+
+/** Laengste Kante einer Vorlage fuers Hochskalieren. Ein Upscale-Modell vervierfacht; 2048 px ergeben 8192 px (PNG um
+ *  100–150 MB, Base64 rund 200 M Zeichen — unter der Stringgrenze von V8 bei rund 536 M). */
+export const MAX_UPSCALE_EDGE = 2048;
 
 function pngSizeOrThrow(png: Uint8Array, what: string): { width: number; height: number } {
   const size = readPngSize(png);

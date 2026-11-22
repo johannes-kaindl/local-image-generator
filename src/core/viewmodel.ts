@@ -322,6 +322,14 @@ function comfyStatus(s: PanelState): PanelViewModel["status"] {
     }
     return { icon: "circle-x", text: t("comfy.task.none", t(`workflow.role.${s.comfyTask}`)), cls: "is-error" };
   }
+  // Die gewaehlte Datei rechnet nicht (geloescht, umbenannt, ungueltig geworden, oder ein zurueckgeladenes Rezept nennt
+  // einen Workflow, den es nicht mehr gibt): die Auswahl faellt auf die erste gueltige zurueck, und das soll man sehen —
+  // sonst rechnet ein anderer Workflow, als man erwartet, und nur das Dropdown verraet es.
+  const gewaehlt = s.comfySelection[s.comfyTask];
+  const aktiv = comfyActive(s);
+  if (gewaehlt !== "" && aktiv !== null && aktiv.file !== gewaehlt && s.run.kind !== "error") {
+    return { icon: "circle-x", text: t("comfy.selectionFallback", gewaehlt, aktiv.file), cls: "is-error" };
+  }
   // Der SERVER-Teil bekommt eigene Saetze, obwohl der Zustand derselbe ist: der Endpunkt ist
   // zwischen Server- und comfy-Modus GETEILT. Wer umstellt, behaelt seinen A1111-Endpunkt —
   // der Statuscheck ist dann zu Recht streng, aber „ist die API aktiviert?" schickt den

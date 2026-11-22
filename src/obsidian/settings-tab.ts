@@ -417,10 +417,15 @@ export class LigSettingTab extends PluginSettingTab {
       tf.setPlaceholder(t("settings.workflow.placeholder"));
       tf.setValue(this.plugin.settings.comfyWorkflowFolder);
       new FolderSuggest(this.app, tf.inputEl);
+      // Beim Tippen nur speichern und neu lesen; neu gezeichnet wird erst beim Verlassen des Feldes. Ein Neuzeichnen je
+      // Tastendruck baute das Eingabefeld neu, und der Fokus waere nach dem ersten Zeichen weg.
+      const gezeichnet = this.plugin.settings.comfyWorkflowFolder;
       tf.onChange(async (v) => {
         await this.setControlValue("comfyWorkflowFolder", v.trim());
         await this.plugin.loadComfyLibrary();
-        this.refreshUi();
+      });
+      tf.inputEl.addEventListener("blur", () => {
+        if (this.plugin.settings.comfyWorkflowFolder !== gezeichnet) this.refreshUi();
       });
     });
     const host = settingBodyHost(setting);

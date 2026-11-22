@@ -412,6 +412,14 @@ describe("ComfyClient — Bearbeiten und Hochskalieren", () => {
     expect(uploads).toHaveLength(0);
   });
 
+  it("eine Vorlage über 2048 px Kante wird vor dem Upload abgewiesen (das 4-fache Ergebnis sprengte die Base64-Strecke)", async () => {
+    const { transport, uploads } = stubWithUpload();
+    await expect(new ComfyClient("http://h", "", transport).runUpscale(UPSCALE, { imagePng: pngBytes(4032, 3024) })).rejects.toThrow(/4032.*2048/);
+    expect(uploads).toHaveLength(0);
+    // genau an der Grenze geht es
+    await expect(new ComfyClient("http://h", "", transport).runUpscale(UPSCALE, { imagePng: pngBytes(2048, 1152) })).resolves.toBeDefined();
+  });
+
   it("ein Workflow der falschen Rolle wird abgewiesen", async () => {
     const { transport } = stubWithUpload();
     await expect(new ComfyClient("http://h", "", transport).runEdit(UPSCALE, { imagePng: pngBytes(4, 4), prompt: "x", seed: 1, steps: 1 })).rejects.toThrow(/role/);
