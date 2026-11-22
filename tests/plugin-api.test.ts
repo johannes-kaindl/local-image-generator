@@ -585,6 +585,14 @@ describe("Plugin-API — Bearbeiten und Hochskalieren", () => {
     expect(r.ok && "task" in r.image.params).toBe(false);
   });
 
+  it("generate ohne task nennt im comfy-Modus den Erzeugen-Workflow, mit dem gerechnet wurde", async () => {
+    const { d } = comfyDeps({ run: async () => ({ ok: true, base64: "PNG" }) });
+    const r = await createImageGenerationApi(d).generate({ prompt: "a cat" });
+    expect(r.ok && r.image.params.workflow).toBe("flux3-klein.api.json");
+    const server = await createImageGenerationApi(deps({ getMode: () => "server" })).generate({ prompt: "a cat" });
+    expect(server.ok && "workflow" in server.image.params).toBe(false);
+  });
+
   it("upscale rechnet ohne Rezept und liefert nur Workflow, Größe und Zeit", async () => {
     const { d, runs } = comfyDeps({ run: async (_p, _o, init, _s, job) => { runs.push({ job, init }); return { ok: true, base64: "BIG", width: 5312, height: 3072 }; } });
     const r = await createImageGenerationApi(d).upscale({ image: "AAAA" });

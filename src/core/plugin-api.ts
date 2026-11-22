@@ -467,11 +467,15 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
       // schriebe sie als `init_image: [[…]]` in die Ergebnis-Notiz. Die Uebersetzung ist
       // deshalb ausdruecklich, und `{ ref: null }` sagt genau das Richtige: es gibt eine
       // Vorlage, aber keine benennbare Herkunft.
-      const params = deps.harden({
+      const hardened = deps.harden({
         ...req,
         initImage: req.initImage !== undefined ? { ref: null } : undefined,
         initCrop: req.initCrop,
       });
+      // Im comfy-Modus gehoert der Workflow zum Rezept, wie im Panel: die Notiz nach `save()` nennt ihn, und ein Konsument
+      // sieht, womit gerechnet wurde (die Auswahl im Panel kann sich zwischen zwei Aufrufen aendern).
+      const workflow = deps.getMode() === "comfy" ? deps.comfyWorkflow("txt2img")?.file : undefined;
+      const params: GenParams = workflow !== undefined ? { ...hardened, workflow } : hardened;
       const out = await deps.run(params, req.onProgress, req.initImage ?? null, req.signal);
       if (!out.ok) {
         // Reihenfolge ist die Aussage: ein Fehlschlag WAEHREND eines abgebrochenen Laufs ist

@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Plugin API, ComfyUI mode: `generate()` without a task now reports the generate workflow it ran with in `params.workflow`, so a note written by `save()` names it like a note from the panel (0.23.0 left the field empty).
+
 ## [0.23.0] — 2026-11-22
 
 ### Added
