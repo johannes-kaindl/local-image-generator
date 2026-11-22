@@ -551,6 +551,10 @@ aufräumen wollte.
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
 
+### 2026-11-22 · 0.23.2 (Review-Nachlese) · Staging-Vault · beide Mocks · **41 grün · 0 rot · 16 übersprungen · 1 nichts gemessen** (58 Punkte)
+
+Aufbau wie im Eintrag darunter. Punkt 56 setzt den Ordner jetzt absichtlich als `/<ordner>/` (Laden und Watcher müssen gleich normalisieren). Gegenprobe: der Watcher mit dem alten Vergleich (`trim().replace(/\/+$/, "")`) → **rot genau an 56** („sdxl-base.api.json stand nach 2 s noch im Dropdown“), 40 grün · 1 rot; Quelle danach zurückgesetzt. Nichts gemessen wie zuvor: 51 (braucht einen echten Draw Things).
+
 ### 2026-11-22 · Workflow-Ordner, Bearbeiten, Hochskalieren · Staging-Vault · beide Mocks · **41 grün · 0 rot · 16 übersprungen · 1 nichts gemessen** (58 Punkte)
 
 Lauf über `messlauf.sh` (Port 9780, Lock `--exclusive focus`). Der Aufbau setzt `data.json` zurück und kennt keinen Endpunkt; `SHOTS_ENDPOINT` wirkt im `--setup` nicht. Deshalb schreibt `SETUP_BEFEHL` danach eine minimale `data.json`:
