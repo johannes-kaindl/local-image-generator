@@ -24,3 +24,6 @@ main.js
 dist-assets/
 tools/convert/.venv/
 tools/convert/__pycache__/
+
+# Eigene Werte fuer tools/vault-abgleich.mjs (Host, Endpunkt-ID, Vault) — nie ins Repo, Vorlage: comfy/reference-config.example.json
+comfy/reference-config.local.json

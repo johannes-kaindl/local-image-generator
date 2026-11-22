@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-// Vault-Abgleich: bringt local-image-generator in allen Vaults des Maintainers auf die Referenz-Config
-// (comfy/reference-config.json) und die Referenz-Workflows (comfy/workflows/).
+// Vault-Abgleich: bringt local-image-generator in allen Vaults unter <root> auf eine Referenz-Config und die
+// Referenz-Workflows (comfy/workflows/). Die Config mit den eigenen Werten (Host, Endpunkt-ID, Workflow-Ordner, Quell-Vault)
+// liegt lokal in comfy/reference-config.local.json (von git ignoriert); im Repo steht nur die Vorlage
+// comfy/reference-config.example.json mit Platzhaltern. Anleitung: comfy/README.md.
 //
-//   node tools/vault-abgleich.mjs [--dry] [--vault <name>] [--offene] [--root <dir>]
+//   node tools/vault-abgleich.mjs [--dry] [--vault <name>] [--offene] [--root <dir>] [--config <datei>]
 //
 // Was es tut, je Vault mit installiertem Plugin (<root>/<vault>/.obsidian/plugins/local-image-generator/data.json):
 //   1. setzt genau die Schluessel unter `settings` der Referenz; alle anderen (history, presets, playgroundShortcutName, ...)
@@ -14,6 +16,8 @@
 //      Vaults `endpointManager.sourceVault`); sonst bleibt dessen data.json byte-gleich.
 // Ein Vault, der laut obsidian.json gerade offen ist, wird ohne --offene uebersprungen: das laufende Plugin schreibt seine
 // data.json beim naechsten Speichern zurueck. Mit --offene wird geschrieben, danach muss das Plugin neu geladen werden.
+// "Offen" liest nur die obsidian.json des Hauptprofils: ein Vault, den eine Zweitinstanz mit eigenem Profil offen hat, gilt
+// als geschlossen — diese Instanz vorher schliessen.
 // --dry zeigt jede Aenderung und schreibt nichts. Exit 0: alles abgeglichen; 1: mindestens ein Vault uebersprungen oder
 // fehlerhaft; 2: Aufruf- oder Konfigurationsfehler.
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
@@ -48,12 +52,39 @@ function freierPapierkorbName(trash, name) {
   for (let n = 2; ; n++) if (!existsSync(join(trash, `${stem} ${n}${ext}`))) return `${stem} ${n}${ext}`;
 }
 
+/** Pfade aller Zeichenketten in `v`, die noch einen Platzhalter `<…>` aus der Beispiel-Datei tragen. */
+function platzhalter(v, pfad = "") {
+  if (typeof v === "string") return /<[^<>]+>/.test(v) ? [pfad] : [];
+  if (Array.isArray(v)) return v.flatMap((x, i) => platzhalter(x, `${pfad}[${i}]`));
+  if (v !== null && typeof v === "object") {
+    return Object.entries(v).flatMap(([k, x]) => (k === "comment" ? [] : platzhalter(x, pfad === "" ? k : `${pfad}.${k}`)));
+  }
+  return [];
+}
+
+/**
+ * Liest die lokale Referenz-Config. Wirft mit Klartext, wenn sie fehlt (Zeiger auf die Beispiel-Datei) oder noch
+ * Platzhalter traegt; `settings.comfyWorkflowPath` wird aus Ordner und Erzeugen-Auswahl abgeleitet, wenn er fehlt.
+ */
+export function ladeConfig(configPath, examplePath) {
+  if (!existsSync(configPath)) {
+    throw new Error(`${configPath} fehlt — ${examplePath} dorthin kopieren und die Platzhalter <…> durch die eigenen Werte ersetzen (Anleitung: comfy/README.md)`);
+  }
+  const config = readJson(configPath);
+  const offen = platzhalter(config);
+  if (offen.length > 0) throw new Error(`${configPath} traegt noch Platzhalter <…> in: ${offen.join(", ")}`);
+  const s = config.settings ?? {};
+  if (s.comfyWorkflowPath === undefined && typeof s.comfyWorkflowFolder === "string" && typeof s.comfyWorkflowSelection?.txt2img === "string") {
+    config.settings = { ...s, comfyWorkflowPath: `${s.comfyWorkflowFolder}/${s.comfyWorkflowSelection.txt2img}` };
+  }
+  return config;
+}
+
 /**
  * Der Abgleich als Funktion (fuer den Test); die CLI unten ist nur Argument-Lesen und Ausgabe.
  * @returns {{ vaults: { name: string, version: string | null, skipped: string | null, changes: string[] }[], exitCode: number }}
  */
-export function abgleich({ root, repoDir, obsidianJson, dry, offene, vault = null, log = console.log }) {
-  const config = readJson(join(repoDir, "comfy", "reference-config.json"));
+export function abgleich({ root, repoDir, config, obsidianJson, dry, offene, vault = null, log = console.log }) {
   const workflowsDir = join(repoDir, config.workflowsDir);
   const workflows = readdirSync(workflowsDir).filter((f) => f.endsWith(".json")).sort();
   const open = offeneVaults(obsidianJson);
@@ -158,16 +189,25 @@ if (istDirekt) {
     const i = args.indexOf(`--${n}`);
     return i === -1 ? null : (args[i + 1] ?? null);
   };
-  const bekannt = new Set(["--dry", "--offene", "--vault", "--root"]);
-  const unbekannt = args.filter((a, i) => a.startsWith("--") && !bekannt.has(a) && !["--vault", "--root"].includes(args[i - 1] ?? ""));
+  const mitWert = ["--vault", "--root", "--config"];
+  const bekannt = new Set(["--dry", "--offene", ...mitWert]);
+  const unbekannt = args.filter((a, i) => a.startsWith("--") && !bekannt.has(a) && !mitWert.includes(args[i - 1] ?? ""));
   if (unbekannt.length > 0) {
     console.error(`unbekannte Argumente: ${unbekannt.join(" ")}`);
     process.exit(2);
   }
   const repoDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+  let config;
+  try {
+    config = ladeConfig(resolve(flag("config") ?? join(repoDir, "comfy", "reference-config.local.json")), join(repoDir, "comfy", "reference-config.example.json"));
+  } catch (e) {
+    console.error(e instanceof Error ? e.message : String(e));
+    process.exit(2);
+  }
   const r = abgleich({
     root: flag("root") ?? join(homedir(), "Documents"),
     repoDir,
+    config,
     obsidianJson: join(homedir(), "Library", "Application Support", "obsidian", "obsidian.json"),
     dry: args.includes("--dry"),
     offene: args.includes("--offene"),

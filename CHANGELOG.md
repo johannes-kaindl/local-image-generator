@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `comfy/reference-config.json` is now a template with placeholders, `comfy/reference-config.example.json`; `tools/vault-abgleich.mjs` reads your own values from `comfy/reference-config.local.json`, which git ignores, and refuses a missing file or a leftover placeholder with the keys named. Setup: `comfy/README.md`.
+
 ## [0.23.1] — 2026-11-22
 
 ### Fixed

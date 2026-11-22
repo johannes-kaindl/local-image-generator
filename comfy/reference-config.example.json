@@ -1,0 +1,23 @@
+{
+  "comment": "Template for tools/vault-abgleich.mjs. Copy to comfy/reference-config.local.json (ignored by git) and replace every <...> with your own value; see comfy/README.md. The tool sets exactly the keys under settings in each vault's data.json and leaves all others (history, presets, ...) alone.",
+  "settings": {
+    "engine": "comfy",
+    "endpoint": "http://<comfyui-host>:<port>",
+    "comfyEndpointChoice": {
+      "endpointId": "<endpoint id in the LLM Endpoint Manager>"
+    },
+    "comfyWorkflowFolder": "<workflow folder in the vault>",
+    "comfyWorkflowSelection": {
+      "txt2img": "flux3-klein.api.json",
+      "edit": "flux3-klein-edit.api.json",
+      "upscale": "upscale-4x-ultrasharp.api.json"
+    }
+  },
+  "workflowsDir": "comfy/workflows",
+  "retire": [],
+  "endpointManager": {
+    "pluginId": "llm-endpoint-manager",
+    "endpointId": "<endpoint id in the LLM Endpoint Manager>",
+    "sourceVault": "<vault whose LLM Endpoint Manager holds that endpoint>"
+  }
+}

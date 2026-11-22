@@ -1,6 +1,6 @@
 # ComfyUI reference workflows
 
-API-format workflows (ComfyUI → Workflow → Export (API)) that local-image-generator uses in ComfyUI mode. Put them in the workflow folder set in the plugin settings; the plugin reads every `.json` file there and recognizes its role from the graph (generate, edit, upscale). `tools/vault-abgleich.mjs` copies this folder into the maintainer's vaults. The files are also the fixtures of `tests/comfy-roles.test.ts`, so a change here is a change to the tests.
+API-format workflows (ComfyUI → Workflow → Export (API)) that local-image-generator uses in ComfyUI mode. Put them in the workflow folder set in the plugin settings; the plugin reads every `.json` file there and recognizes its role from the graph (generate, edit, upscale). `tools/vault-abgleich.mjs` copies this folder into your vaults (setup: `../README.md`). The files are also the fixtures of `tests/comfy-roles.test.ts`, so a change here is a change to the tests.
 
 JSON carries no comments, so the provenance of each file is here. Model files are those of a ComfyUI 0.43 install with FLUX.3 klein (distilled, int8), SDXL base 1.0 and the 4x-UltraSharp upscaler; a workflow whose model is missing on the server fails at `/prompt` with ComfyUI's own message.
 

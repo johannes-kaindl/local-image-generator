@@ -6,13 +6,27 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { abgleich } from "./vault-abgleich.mjs";
+import { abgleich, ladeConfig } from "./vault-abgleich.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
-const CONFIG = JSON.parse(readFileSync(join(REPO, "comfy", "reference-config.json"), "utf8"));
-const EP_ID = CONFIG.endpointManager.endpointId;
-const FOLDER = CONFIG.settings.comfyWorkflowFolder;
-const COMFY_EP = { id: EP_ID, label: "ComfyUI", url: "http://macbookm5.fritz.box:8000", provider: "comfy", capabilities: ["image"], enabled: true };
+const EXAMPLE = join(REPO, "comfy", "reference-config.example.json");
+// Eigene Werte statt der Referenz des Maintainers: die liegt nur lokal (comfy/reference-config.local.json, ignoriert).
+const EP_ID = "ep-test-1";
+const FOLDER = "Workflows/ComfyUI";
+const CONFIG = {
+  settings: {
+    engine: "comfy",
+    endpoint: "http://comfy.example:8000",
+    comfyEndpointChoice: { endpointId: EP_ID },
+    comfyWorkflowFolder: FOLDER,
+    comfyWorkflowSelection: { txt2img: "flux3-klein.api.json", edit: "flux3-klein-edit.api.json", upscale: "upscale-4x-ultrasharp.api.json" },
+    comfyWorkflowPath: `${FOLDER}/flux3-klein.api.json`,
+  },
+  workflowsDir: "comfy/workflows",
+  retire: ["sdxl-base-txt2img.api.json", "z-image-turbo-txt2img.api.json"],
+  endpointManager: { pluginId: "llm-endpoint-manager", endpointId: EP_ID, sourceVault: "Quelle" },
+};
+const COMFY_EP = { id: EP_ID, label: "ComfyUI", url: "http://comfy.example:8000", provider: "comfy", capabilities: ["image"], enabled: true };
 
 const write = (p, text) => {
   mkdirSync(dirname(p), { recursive: true });
@@ -38,9 +52,9 @@ function baue() {
   const root = mkdtempSync(join(tmpdir(), "lig-abgleich-"));
   const plugin = (v) => join(root, v, ".obsidian", "plugins", "local-image-generator");
   const manager = (v) => join(root, v, ".obsidian", "plugins", "llm-endpoint-manager", "data.json");
-  writeJson(join(plugin("Pallas"), "data.json"), { engine: "comfy", endpoint: "http://macbookm5.fritz.box:8000", history: [], presets: [] });
-  writeJson(join(plugin("Pallas"), "manifest.json"), { version: "0.22.1" });
-  writeJson(manager("Pallas"), { version: 1, endpoints: [COMFY_EP] });
+  writeJson(join(plugin("Quelle"), "data.json"), { engine: "comfy", endpoint: "http://comfy.example:8000", history: [], presets: [] });
+  writeJson(join(plugin("Quelle"), "manifest.json"), { version: "0.22.1" });
+  writeJson(manager("Quelle"), { version: 1, endpoints: [COMFY_EP] });
   writeJson(join(plugin("A"), "data.json"), {
     engine: "playground", endpoint: "http://x", history: [{ prompt: "p", seed: 1 }], presets: [{ id: "a", label: "A", suffix: "s" }],
     playgroundShortcutName: "Mein Kurzbefehl", comfyWorkflowPath: "alt/sdxl-base-txt2img.api.json",
@@ -61,7 +75,7 @@ function baue() {
   return { root, plugin, manager, obsidianJson };
 }
 
-const run = (b, extra = {}) => abgleich({ root: b.root, repoDir: REPO, obsidianJson: b.obsidianJson, dry: false, offene: false, log: () => {}, ...extra });
+const run = (b, extra = {}) => abgleich({ root: b.root, repoDir: REPO, config: CONFIG, obsidianJson: b.obsidianJson, dry: false, offene: false, log: () => {}, ...extra });
 
 test("--dry schreibt nichts", () => {
   const b = baue();
@@ -137,4 +151,32 @@ test("--vault waehlt einen Vault, ein Vault ohne Plugin wird nicht angefasst", (
   const r = run(b, { vault: "B" });
   assert.deepEqual(r.vaults.map((v) => v.name), ["B"]);
   assert.equal(existsSync(join(b.root, "OhnePlugin", ".obsidian", "plugins")), false);
+});
+
+const tmpFile = (name, value) => {
+  const dir = mkdtempSync(join(tmpdir(), "lig-config-"));
+  const p = join(dir, name);
+  if (value !== undefined) writeFileSync(p, typeof value === "string" ? value : JSON.stringify(value));
+  return p;
+};
+
+test("eine fehlende lokale Config nennt die Beispiel-Datei", () => {
+  const p = tmpFile("reference-config.local.json");
+  assert.throws(() => ladeConfig(p, EXAMPLE), /reference-config\.example\.json/);
+});
+
+test("die Beispiel-Datei im Repo traegt nur Platzhalter und wird so abgelehnt", () => {
+  assert.throws(() => ladeConfig(EXAMPLE, EXAMPLE), (e) => {
+    assert.match(e.message, /Platzhalter/);
+    for (const k of ["settings.endpoint", "settings.comfyEndpointChoice.endpointId", "settings.comfyWorkflowFolder", "endpointManager.endpointId", "endpointManager.sourceVault"]) {
+      assert.ok(e.message.includes(k), k);
+    }
+    return true;
+  });
+});
+
+test("ladeConfig leitet comfyWorkflowPath aus Ordner und Erzeugen-Auswahl ab", () => {
+  const { comfyWorkflowPath: _weg, ...settings } = CONFIG.settings;
+  const c = ladeConfig(tmpFile("c.json", { ...CONFIG, settings }), EXAMPLE);
+  assert.equal(c.settings.comfyWorkflowPath, `${FOLDER}/flux3-klein.api.json`);
 });
