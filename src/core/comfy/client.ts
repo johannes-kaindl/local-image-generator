@@ -22,7 +22,17 @@ import { normalizeEndpoint } from "../../vendor/kit/endpoint";
 // zum Fork).
 import { type ImageBackend, type ImageRequest } from "../txt2img";
 import { comfyProgressSocketUrl, parseComfyProgress } from "./progress";
-import { inspectWorkflow, patchWorkflow, type ComfyGraph } from "./workflow";
+import { inspectWorkflow, patchEdit, patchUpscale, patchWorkflow, type ComfyGraph } from "./workflow";
+import type { ActiveWorkflow } from "./library";
+// ⚠️ Vierte eigene Abweichung gegenueber der Quelle (Workflow-Ordner): Vorlage hochladen (`uploadImage`, `/upload/image`
+// als multipart), Bearbeiten (`runEdit`) und Hochskalieren (`runUpscale`). Beide rechnen ueber denselben Weg wie
+// `generate` (Socket, /prompt, /history, /view) und lesen die Ergebnisgroesse aus dem PNG, nicht aus dem Rezept: ein
+// Edit-Workflow rechnet auf etwa ein Megapixel um, ein Upscaler vervierfacht.
+import { buildMultipartBody } from "../../vendor/kit/multipart-body";
+import { readPngSize } from "../../vendor/kit/png-size";
+import { sha256Hex } from "../../vendor/kit/sha256";
+import { base64ToBytes } from "../../vendor/kit/data-url";
+import { throwIfAborted } from "../engine";
 
 export interface ComfyProgress {
   value: number;
@@ -33,6 +43,9 @@ export interface ComfyTransport {
   postJson: (url: string, body: unknown) => Promise<{ status: number; json: unknown }>;
   getJson: (url: string) => Promise<{ status: number; json: unknown }>;
   getBase64: (url: string) => Promise<{ status: number; base64: string }>;
+  /** Rohe Bytes senden (multipart-Upload der Vorlage). Optional, damit ein reiner txt2img-Transport ohne bleibt; ohne
+   *  ihn scheitern Bearbeiten und Hochskalieren mit Klartext. */
+  postBytes?: (url: string, body: Uint8Array, contentType: string) => Promise<{ status: number; json: unknown }>;
   sleep: (ms: number) => Promise<void>;
   now: () => number;
   /** Optional: Fortschritts-Socket oeffnen (`ws://…/ws?clientId=…`). Wirft oder schweigt er,
@@ -51,6 +64,13 @@ export interface ComfyOptions {
   timeoutMs?: number;
   pollMs?: number;
   onProgress?: (p: ComfyProgress) => void;
+}
+
+/** Ein Ergebnis mit gemessener Groesse — Breite und Hoehe aus dem IHDR des gelieferten PNG. */
+export interface ComfyImageResult {
+  base64: string;
+  width: number;
+  height: number;
 }
 
 interface ComfyImageRef {
@@ -116,11 +136,62 @@ export class ComfyClient implements ImageBackend {
 
     // Vor dem Absenden: was noch nicht in ComfyUIs Queue liegt, muss auch nicht hinein.
     if (req.signal?.aborted === true) throw new Error("Lauf abgebrochen (aborted)");
+    return this.execute(patched, req.signal);
+  }
+
+  /** Vorlage hochladen und den Namen liefern, unter dem `LoadImage` sie findet. Der Dateiname ist der Inhalts-Hash:
+   *  derselbe Inhalt bekommt denselben Namen (ComfyUI darf dann aus seinem Cache antworten), ein anderer Inhalt nie
+   *  einen schon belegten. `overwrite=true`, damit ComfyUI bei gleichem Namen nicht selbst umbenennt. */
+  async uploadImage(png: Uint8Array): Promise<string> {
+    if (!this.transport.postBytes) throw new Error("comfy: transport cannot upload");
+    const hash = sha256Hex(png);
+    const { body, contentType } = buildMultipartBody(
+      [
+        { name: "image", filename: `lig-${hash.slice(0, 16)}.png`, contentType: "image/png", data: png },
+        { name: "type", value: "input" },
+        { name: "overwrite", value: "true" },
+      ],
+      `lig-boundary-${hash.slice(16, 48)}`,
+    );
+    const { status, json } = await this.transport.postBytes(`${this.base}/upload/image`, body, contentType);
+    if (status !== 200) throw new Error(errorMessageFrom(json) ?? `comfy: /upload/image HTTP ${status}`);
+    const r = json as { name?: unknown; subfolder?: unknown };
+    if (typeof r?.name !== "string" || r.name === "") throw new Error("comfy: no name in upload response");
+    return typeof r.subfolder === "string" && r.subfolder !== "" ? `${r.subfolder}/${r.name}` : r.name;
+  }
+
+  /** Bild per Anweisung bearbeiten. `imagePng` ist die Vorlage als PNG (der Wirt kodiert sie vorher um). */
+  async runEdit(
+    wf: ActiveWorkflow,
+    req: { imagePng: Uint8Array; prompt: string; seed: number; steps: number; signal?: AbortSignal },
+  ): Promise<ComfyImageResult> {
+    if (wf.role !== "edit") throw new Error(`comfy: workflow role mismatch (${wf.role}, expected edit)`);
+    pngSizeOrThrow(req.imagePng, "init image");
+    throwIfAborted(req.signal);
+    const imageName = await this.uploadImage(req.imagePng);
+    const graph = patchEdit(JSON.parse(wf.json) as ComfyGraph, wf.slots, { prompt: req.prompt, seed: req.seed, steps: req.steps, imageName });
+    throwIfAborted(req.signal);
+    return withSize(await this.execute(graph, req.signal));
+  }
+
+  /** Bild hochskalieren. Die Zwischenskalierung (falls der Workflow eine hat) bekommt die Maße der Vorlage. */
+  async runUpscale(wf: ActiveWorkflow, req: { imagePng: Uint8Array; signal?: AbortSignal }): Promise<ComfyImageResult> {
+    if (wf.role !== "upscale") throw new Error(`comfy: workflow role mismatch (${wf.role}, expected upscale)`);
+    const size = pngSizeOrThrow(req.imagePng, "init image");
+    throwIfAborted(req.signal);
+    const imageName = await this.uploadImage(req.imagePng);
+    const graph = patchUpscale(JSON.parse(wf.json) as ComfyGraph, wf.slots, { imageName, ...size });
+    throwIfAborted(req.signal);
+    return withSize(await this.execute(graph, req.signal));
+  }
+
+  /** Absenden, auf das Ergebnis warten, Bild holen — gemeinsamer Weg aller drei Aufgaben. */
+  private async execute(graph: ComfyGraph, signal?: AbortSignal): Promise<string> {
     let promptId: string | null = null;
     const socket = this.openProgressSocket(() => promptId);
     try {
-      promptId = await this.submit(patched);
-      const image = await this.waitForImage(promptId, req.signal);
+      promptId = await this.submit(graph);
+      const image = await this.waitForImage(promptId, signal);
       return await this.fetchImage(image);
     } finally {
       try { socket?.close(); } catch { /* schon zu */ }
@@ -239,4 +310,16 @@ export class ComfyClient implements ImageBackend {
     if (!base64) throw new Error("comfy: empty image");
     return base64;
   }
+}
+
+function pngSizeOrThrow(png: Uint8Array, what: string): { width: number; height: number } {
+  const size = readPngSize(png);
+  if (size === null) throw new Error(`comfy: ${what} is not a PNG`);
+  return size;
+}
+
+/** Groesse aus dem Kopf des Ergebnisses — nur die ersten 44 Base64-Zeichen (33 Bytes) werden dekodiert, nicht das
+ *  ganze, womoeglich zweistellige Megabyte grosse Bild. */
+function withSize(base64: string): ComfyImageResult {
+  return { base64, ...pngSizeOrThrow(base64ToBytes(base64.slice(0, 44)), "result") };
 }

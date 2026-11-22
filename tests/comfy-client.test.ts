@@ -298,3 +298,122 @@ describe("ComfyClient", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bearbeiten und Hochskalieren: Vorlage hochladen, Graph patchen, Ergebnisgröße aus dem PNG.
+import { classifyWorkflow } from "../src/core/comfy/workflow";
+import type { ActiveWorkflow } from "../src/core/comfy/library";
+import flux3Edit from "../comfy/workflows/flux3-klein-edit.api.json";
+import upscaleWf from "../comfy/workflows/upscale-4x-ultrasharp.api.json";
+
+function active(file: string, graph: unknown): ActiveWorkflow {
+  const c = classifyWorkflow(JSON.parse(JSON.stringify(graph)));
+  if (c.role === null) throw new Error("fixture invalid");
+  return { file, name: file, json: JSON.stringify(graph), ...c };
+}
+const EDIT = active("flux3-klein-edit.api.json", flux3Edit);
+const UPSCALE = active("upscale-4x-ultrasharp.api.json", upscaleWf);
+
+const be32 = (n: number): number[] => [(n >>> 24) & 0xff, (n >>> 16) & 0xff, (n >>> 8) & 0xff, n & 0xff];
+function pngBytes(w: number, h: number): Uint8Array {
+  return new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...be32(w), ...be32(h), 8, 6, 0, 0, 0, 1, 2, 3, 4]);
+}
+const b64 = (b: Uint8Array): string => Buffer.from(b).toString("base64");
+
+function stubWithUpload(opts: { uploadStatus?: number; resultBase64?: string; uploadJson?: unknown } = {}) {
+  const base = stub({ historySteps: [DONE], base64: opts.resultBase64 ?? b64(pngBytes(64, 32)) });
+  const uploads: { url: string; body: Uint8Array; contentType: string }[] = [];
+  base.transport.postBytes = async (url, body, contentType) => {
+    uploads.push({ url, body, contentType });
+    return { status: opts.uploadStatus ?? 200, json: opts.uploadJson ?? { name: "lig-x.png", subfolder: "", type: "input" } };
+  };
+  return { ...base, uploads };
+}
+const latin1 = (b: Uint8Array): string => Array.from(b, (c) => String.fromCharCode(c)).join("");
+const sentGraph = (calls: { url: string; body?: unknown }[]): Record<string, { inputs: Record<string, unknown> }> =>
+  (calls.find((c) => c.url.endsWith("/prompt"))!.body as { prompt: Record<string, { inputs: Record<string, unknown> }> }).prompt;
+
+describe("ComfyClient — Vorlage hochladen", () => {
+  it("lädt per multipart an /upload/image, Name aus dem Inhalts-Hash, overwrite=true", async () => {
+    const { transport, uploads } = stubWithUpload();
+    const client = new ComfyClient("http://h:8000", "", transport);
+    const png = pngBytes(10, 10);
+    const name = await client.uploadImage(png);
+    expect(name).toBe("lig-x.png");
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]!.url).toBe("http://h:8000/upload/image");
+    expect(uploads[0]!.contentType.startsWith("multipart/form-data; boundary=")).toBe(true);
+    const body = latin1(uploads[0]!.body);
+    expect(body).toMatch(/filename="lig-[0-9a-f]{16}\.png"/);
+    expect(body).toContain('name="overwrite"\r\n\r\ntrue');
+    expect(body).toContain('name="type"\r\n\r\ninput');
+  });
+
+  it("derselbe Inhalt ergibt denselben Dateinamen, anderer Inhalt einen anderen", async () => {
+    const { transport, uploads } = stubWithUpload();
+    const client = new ComfyClient("http://h:8000", "", transport);
+    await client.uploadImage(pngBytes(10, 10));
+    await client.uploadImage(pngBytes(10, 10));
+    await client.uploadImage(pngBytes(11, 10));
+    const names = uploads.map((u) => /filename="([^"]+)"/.exec(latin1(u.body))![1]);
+    expect(names[0]).toBe(names[1]);
+    expect(names[2]).not.toBe(names[0]);
+  });
+
+  it("ein Unterordner in der Antwort geht in den Namen ein", async () => {
+    const { transport } = stubWithUpload({ uploadJson: { name: "a.png", subfolder: "sub", type: "input" } });
+    expect(await new ComfyClient("http://h", "", transport).uploadImage(pngBytes(1, 1))).toBe("sub/a.png");
+  });
+
+  it("HTTP 500 beim Upload ist ein Fehler mit Status", async () => {
+    const { transport } = stubWithUpload({ uploadStatus: 500 });
+    await expect(new ComfyClient("http://h", "", transport).uploadImage(pngBytes(1, 1))).rejects.toThrow(/upload.*500/);
+  });
+});
+
+describe("ComfyClient — Bearbeiten und Hochskalieren", () => {
+  it("runEdit sendet Anweisung, Seed, Steps und den Upload-Namen, Größe kommt aus dem Ergebnis-PNG", async () => {
+    const { transport, calls } = stubWithUpload();
+    const r = await new ComfyClient("http://h", "", transport).runEdit(EDIT, { imagePng: pngBytes(1536, 896), prompt: "make it rain", seed: 5, steps: 12 });
+    expect(r).toEqual({ base64: b64(pngBytes(64, 32)), width: 64, height: 32 });
+    const g = sentGraph(calls);
+    expect(g["4"]!.inputs.text).toBe("make it rain");
+    expect(g["7"]!.inputs.seed).toBe(5);
+    expect(g["7"]!.inputs.steps).toBe(12);
+    expect(g["11"]!.inputs.image).toBe("lig-x.png");
+  });
+
+  it("runUpscale setzt die Zwischenskalierung auf die Maße der Vorlage", async () => {
+    const { transport, calls } = stubWithUpload({ resultBase64: b64(pngBytes(2560, 1920)) });
+    const r = await new ComfyClient("http://h", "", transport).runUpscale(UPSCALE, { imagePng: pngBytes(640, 480) });
+    expect(r.width).toBe(2560);
+    const g = sentGraph(calls);
+    expect(g["6"]!.inputs.width).toBe(640);
+    expect(g["6"]!.inputs.height).toBe(480);
+    expect(g["1"]!.inputs.image).toBe("lig-x.png");
+  });
+
+  it("ein Ergebnis, das kein PNG ist, ist ein Fehler statt einer erfundenen Größe", async () => {
+    const { transport } = stubWithUpload({ resultBase64: b64(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, ...new Array<number>(40).fill(0)])) });
+    await expect(new ComfyClient("http://h", "", transport).runUpscale(UPSCALE, { imagePng: pngBytes(4, 4) })).rejects.toThrow(/not a PNG/);
+  });
+
+  it("eine Vorlage, die kein PNG ist, wird vor dem Upload abgewiesen", async () => {
+    const { transport, uploads } = stubWithUpload();
+    await expect(new ComfyClient("http://h", "", transport).runUpscale(UPSCALE, { imagePng: new Uint8Array(40) })).rejects.toThrow(/init image is not a PNG/);
+    expect(uploads).toHaveLength(0);
+  });
+
+  it("ein schon abgebrochenes Signal lädt nichts hoch", async () => {
+    const { transport, uploads } = stubWithUpload();
+    const ac = new AbortController();
+    ac.abort();
+    await expect(new ComfyClient("http://h", "", transport).runEdit(EDIT, { imagePng: pngBytes(4, 4), prompt: "x", seed: 1, steps: 1, signal: ac.signal })).rejects.toThrow(/aborted/);
+    expect(uploads).toHaveLength(0);
+  });
+
+  it("ein Workflow der falschen Rolle wird abgewiesen", async () => {
+    const { transport } = stubWithUpload();
+    await expect(new ComfyClient("http://h", "", transport).runEdit(UPSCALE, { imagePng: pngBytes(4, 4), prompt: "x", seed: 1, steps: 1 })).rejects.toThrow(/role/);
+  });
+});

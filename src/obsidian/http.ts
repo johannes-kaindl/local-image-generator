@@ -37,6 +37,24 @@ export async function httpGetJson(url: string, timeoutMs = 3000): Promise<{ stat
   return raced.value;
 }
 
+/** Rohe Bytes per POST — fuer den multipart-Upload der Vorlage an ComfyUI (`/upload/image`). `requestUrl` kennt kein
+ *  FormData; der Koerper kommt fertig aus dem Kit (`multipart-body`). Der Puffer wird auf genau die Bytes der Ansicht
+ *  zugeschnitten: ein `subarray` haengte sonst den Rest seines Puffers an. Grenze 30 min wie beim JSON-POST. */
+export async function httpPostBytes(url: string, body: Uint8Array, contentType: string, timeoutMs = 1_800_000): Promise<{ status: number; json: unknown }> {
+  const buf = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
+  const raced = await withTimeout(
+    requestUrl({ url, method: "POST", contentType, body: buf, throw: false }).then((r) => {
+      let json: unknown = undefined;
+      try { json = r.json; } catch { /* nicht-JSON-Body → json bleibt undefined */ }
+      return { status: r.status, json } as const;
+    }),
+    timeoutMs,
+    window,
+  );
+  if (raced.timedOut) throw new Error(`timeout after ${timeoutMs} ms`);
+  return raced.value;
+}
+
 /** Binärantwort als Base64 — für ComfyUIs /view, das ein PNG liefert, kein JSON.
  *  `arrayBuffer` ist der einzige Weg, den requestUrl für Bytes anbietet. Der Timeout ist
  *  großzügig wie beim POST: das Bild kann groß sein. */
@@ -69,6 +87,7 @@ export function comfyTransport(): ComfyTransport {
     // Wer dort das try/catch entfernt, muss diesen Timeout mitentfernen.
     getJson: (url) => httpGetJson(url),
     getBase64: (url) => httpGetBase64(url),
+    postBytes: (url, body, contentType) => httpPostBytes(url, body, contentType),
     sleep: (ms) => new Promise((r) => window.setTimeout(r, ms)),
     now: () => Date.now(),
     // Renderer-WebSocket aus dem Kit (`text-socket`). Gemessen (Johannes, 2026-10-17; hier 2026-10-18
