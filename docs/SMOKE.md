@@ -69,7 +69,7 @@ Diese Naht zum Host prüft `scripts/gui-smoke.ts` gegen ein **laufendes** Obsidi
      `yijing-oracle` — durchweg `shots.ts`, wo eine falsch erkannte Sprache falsch beschriftete
      README-Bilder erzeugt statt nur roter Prüfpunkte).
 
-   Die Bilanz hat seit 2026-10-12 vier Zustände (grün · rot · übersprungen · nichts gemessen, Soll-Liste 52 Punkte als Nenner): „übersprungen“ ist nur, was in dieser Lage nicht angefordert oder nicht anwendbar ist (`--builtin` fehlt, `--quick`, kein WebGPU). Fehlt eine Vorbedingung (Server, Mock, Zustand nicht herstellbar), steht der Punkt als „nichts gemessen“ da und der Lauf endet mit Exit 1. Antwortet der Server dagegen
+   Die Bilanz hat seit 2026-10-12 vier Zustände (grün · rot · übersprungen · nichts gemessen, Soll-Liste 58 Punkte als Nenner): „übersprungen“ ist nur, was in dieser Lage nicht angefordert oder nicht anwendbar ist (`--builtin` fehlt, `--quick`, kein WebGPU). Fehlt eine Vorbedingung (Server, Mock, Zustand nicht herstellbar), steht der Punkt als „nichts gemessen“ da und der Lauf endet mit Exit 1. Antwortet der Server dagegen
    **falsch** (HTTP-Fehler, kein Modellname), bleibt es ein Abbruch: das ist ein Befund.
 
 3. **Deployter Stand:**
@@ -188,6 +188,12 @@ Kette, nicht die Bildqualität. `--keep` lässt den Smoke-Ordner liegen.
 | 49 | Regler-Zeilen bei **300 px**: Beschriftung, Regler und Wert jeder Gruppe (Steps, CFG, Denoise, Seed) stehen auf **einer** Zeile | Server-Modus plus Vorlage (alle vier Gruppen sichtbar), `.lig-panel` auf 300 px gestellt (die Brücke hat keinen `setWidth`-Helfer; alles im Panel richtet sich nach der Hülle). Je Gruppe: Mitten der drei Elemente auf einer Höhe (Spanne ≤ 4 px) und linke Kanten in Leserichtung. Vorher (flache Flex-Kinder in einer umbrechenden Zeile, Task „Slider-Beschriftungen …“) lag die nächste Beschriftung am Zeilenende, 28–33 px versetzt. Weniger als vier sichtbare Gruppen oder eine andere Breite als 300 px = nichts gemessen |
 | 50 | Gegenprobe zu 49: ohne das Raster stehen die Gruppen versetzt | nimmt der Reglerzeile die Klasse `lig-controls` (damit ist sie wieder die alte Flex-Zeile) und misst dieselbe Gruppenzeile: mindestens eine Gruppe MUSS versetzt sein, sonst sieht Punkt 49 den Defekt nicht (CORE-TEST-01/-24). Gemessen 2026-10-25: alle vier Gruppen versetzt (Spanne 28–33 px, Reihenfolge verletzt) |
 | 51 | Eine Vorlage mit abweichenden Maßen kommt am echten Bild-Server an (er verlangt width×height) | nur gegen einen ECHTEN Server (Draw Things lehnt `init_images` mit abweichenden Maßen mit HTTP 422 ab, gemessen 2026-11-18, App 26.1020.0): ein Lauf mit einer 400×200-Vorlage gegen 512×512 muss ein Bild liefern, das als img2img ausgewiesen ist (denoising 0.4). Antwortet `/mock/fail`, ist es der Mock, der jede Größe nimmt, und der Punkt steht auf „nichts gemessen“ |
+| 52 | ComfyUI: Aufgaben-Schalter und Workflow-Dropdown — ein Wechsel auf `sdxl-pixel-art` schickt den LoRA-Graphen | Ordner mit den fünf Referenz-Workflows aus `comfy/workflows`; gemessen am DOM (drei Stellungen, Dropdown nur mit den Erzeugen-Workflows), an den Einstellungen (Auswahl gespeichert) und an der Leitung (der Mock empfängt einen Graphen mit `lora_name: pixel-art-xl.safetensors`) |
+| 53 | ComfyUI: je Aufgabe genau die Regler, die der Workflow nimmt | drei Aufgaben × neun Zeilen (Prompt, Chips, Negativ, Vorlage, Größe, Steps, Seed, Denoise, CFG) gegen die Tabelle der Spec, an den Zeilen-Containern über `getComputedStyle` (ein Feld in einer versteckten Zeile meldet selbst noch `block`). Gegenprobe 2026-11-22: Steps in jeder Aufgabe sichtbar → rot („upscale: steps sichtbar“) |
+| 54 | ComfyUI-Bearbeiten: Upload, neue Datei, Notiz mit `task: edit` und der **gemessenen** Größe | Vorlage 40×24 im Vault, Klick auf den Schalter und den Knopf; der Mock liefert absichtlich 96×64, das Rezept sagt 512×512 — die Notiz muss 96×64 tragen, `workflow`, keine `cfg`/`denoising`. Gegenprobe: Größe aus dem Rezept → rot („512×512 statt 96×64“) |
+| 55 | ComfyUI-Hochskalieren: `<quelle>-upscale.png`, Notiz ohne Seed/Prompt/Steps/Modell/CFG, Breite = 4× Vorlage | dieselbe Vorlage, Ergebnis 160×96; zusätzlich darf der Verlauf nicht wachsen (Hochskalieren hat kein Rezept). Gegenprobe wie 54 → rot |
+| 56 | Eine gelöschte Workflow-Datei verschwindet aus dem Dropdown, ohne Neustart | der Vault-Watcher (entprellt 300 ms) lädt die Bibliothek neu; Frist 2 s |
+| 57 | Erzeugen nach Bearbeiten mit gesetzter Vorlage lädt nichts hoch | die Vorlage bleibt im Zustand, Erzeugen darf sie nicht senden: Upload-Zähler des Mocks unverändert, Mock sieht `txt2img` |
 
 Punkt 12 läuft trotz seiner Nummer im `--quick`-Teil, direkt nach 4: er braucht keine
 Generierung. Die Nummer ist ein **Name**, keine Reihenfolge — eine Umnummerierung von 5–11
@@ -544,6 +550,23 @@ aufräumen wollte.
 ## Durchläufe
 
 <!-- Neueste zuerst. CORE-TEST-02 verlangt den festgehaltenen Lauf als Nachweis. -->
+
+### 2026-11-22 · Workflow-Ordner, Bearbeiten, Hochskalieren · Staging-Vault · beide Mocks · **41 grün · 0 rot · 16 übersprungen · 1 nichts gemessen** (58 Punkte)
+
+Lauf über `messlauf.sh` (Port 9780, Lock `--exclusive focus`). Der Aufbau setzt `data.json` zurück und kennt keinen Endpunkt; `SHOTS_ENDPOINT` wirkt im `--setup` nicht. Deshalb schreibt `SETUP_BEFEHL` danach eine minimale `data.json`:
+
+```bash
+node scripts/mock-a1111.mjs &                      # 7861
+MOCK_COMFY_PORT=8199 node scripts/mock-comfy.mjs &  # 8199
+export REPO=local-image-generator PORT=9780 SMOKE_ARGS="--comfy http://127.0.0.1:8199" \
+  SETUP_BEFEHL='npm run shots -- --setup && printf %s "{\"engine\":\"server\",\"endpoint\":\"http://127.0.0.1:7861\"}" > "$STAGING_VAULTS_DIR/local-image-generator/.obsidian/plugins/local-image-generator/data.json"' \
+  && python3 ~/.claude/hooks/obsidian-cdp-lock.py acquire --label local-image-generator --intent "GUI-Smoke" --exclusive focus --port 9780 --ttl 1800 --warten 300 \
+  && ../tools/obsidian-cdp/messlauf.sh
+```
+
+Die comfy-Punkte 35–47 stellen ihren Workflow seit diesem Umbau über den Ordner her und waren in allen drei Läufen grün. Der erste Lauf der neuen Punkte hing an 52: Punkt 46 lädt das Plugin neu und schließt das Panel, ein Klick auf „Generieren“ ging ins Leere und wartete bis zur Frist. Seither öffnet der Punkt das Panel selbst, prüft den Knopf vor dem Klick (ein gesperrter oder fehlender Knopf ist sofort ein Befund) und wartet höchstens 60 s. Gegenprobe mit zwei Mutationen (danach zurückgesetzt): 53, 54, 55 und 42 rot, 37 grün. Nichts gemessen bleibt 51, das einen echten Draw Things braucht.
+
+**Live gegen den ComfyUI-Dienst des Maintainers (ComfyUI 0.43, M5, Slot-Regel vorher: free 93 %, Swap 0, load1 2,1; danach `comfyuictl free`).** Kein GUI-Lauf, sondern derselbe Core-Weg wie im Plugin (`ComfyClient.generate`, `runEdit`, `runUpscale` mit den Referenz-Workflows aus `comfy/workflows`), aus einem Wegwerf-Skript: FLUX.3 klein 1344×576, 16 Steps, 55 s · SDXL 1024×1024, 25 Steps, 43 s · SDXL Pixel-Art 1024×1024, 35 s, Pixel-Stil deutlich · Bearbeiten (Vorlage 1536×896, Schild auf „Café Mondschein“, regnerischer Abend) 1328×768 in 115 s, Schrift in voller Auflösung exakt, Laden und Verkäuferin unverändert, der Regen nur angedeutet · Hochskalieren des Edit-Ergebnisses 1328×768 → 5312×3072 in 8 s, ein Ausschnitt in voller Auflösung ohne Streifen. Die Größen kamen aus dem PNG, nicht aus dem Rezept. Nicht gemessen: derselbe Weg durch das Panel einer offenen Instanz gegen den echten Dienst.
 
 ### 2026-09-05 (abends) · 0.12-dev, Final-Review-Fixes · Staging-Vault · beide Mocks · **34/34 grün** — nach zwei roten Zwischenständen, die beide echte Befunde waren
 

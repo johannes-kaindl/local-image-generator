@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **ComfyUI mode: a workflow folder instead of a single workflow file.** Settings → *Workflow folder* takes a vault folder; the plugin reads every `.json` file in it and recognizes its role from the graph — *generate* (a sampler with a sized latent, as before), *edit* (an image input that feeds the sampler's latent through a reference node, as in the FLUX.3 klein edit template) or *upscale* (an image input and an upscale model, no sampler). The settings list each file with its role, or with the reason it is not usable. A file you add, change or delete appears in the panel without a restart. An existing *Workflow file* setting is migrated: its folder becomes the workflow folder and the file stays selected.
+- **Panel: task switch and workflow picker.** In ComfyUI mode a three-way switch (*Generate · Edit · Upscale*) and a *Workflow* dropdown sit above the prompt; the choice per task is remembered. Each task shows only the controls its workflow takes: *Edit* needs a template image and takes an instruction, seed and steps (no negative prompt, no size); *Upscale* takes only the template image. A task without a valid workflow in the folder stays selectable and says why in its tooltip and the status line.
+- **Edit an image by instruction and upscale it (ComfyUI).** The template image is uploaded to ComfyUI (`/upload/image`) as PNG, named after its content hash, so the same image is never uploaded under two names. The result is a new file in your output folder, like a generated image. The result note records `task`, `workflow` and the source image, and the size **measured from the result** — an edit workflow resizes to about one megapixel, an upscaler multiplies by four. An upscale note carries no prompt, seed, steps or model (there is no recipe), the file is named `<source>-upscale.png`, and it does not go into the history; an edit does, and restoring it selects the same task and workflow.
+- **Plugin API:** `status().capabilities.edit` and `.upscale`; `generate({ task: "edit", initImage, prompt })`; a new method `upscale({ image })` with its own result params (`task`, `workflow`, `width`, `height`, `created`); `save()` accepts both. A task the current mode can't do comes back as `{ ok: false, reason: "unsupported" }`. Additive: `apiVersion` stays 1, `ApiImage.params` keeps its type.
+- **Reference workflows** for FLUX.3 klein, SDXL, SDXL with the pixel-art-xl LoRA, FLUX.3 klein edit and 4x-UltraSharp under `comfy/workflows/` (provenance in the README there).
+
+### Changed
+
+- ComfyUI mode rejects img2img workflows (image through `VAEEncode` into the latent) and ControlNet workflows with a plain-language reason instead of mistaking them for edit workflows; both are not supported in this version.
+- An unchanged recipe now disables *Generate* in ComfyUI mode too (task, workflow and the values the task takes are compared); ComfyUI would have returned the cached image anyway.
+- Upscale workflows without an `ImageScale` node before the upscaler are accepted, but the settings warn that Apple GPUs produce stripes without it.
+
 ## [0.22.1] — 2026-11-20
 
 ### Fixed

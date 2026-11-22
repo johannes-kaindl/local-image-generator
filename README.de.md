@@ -16,14 +16,7 @@ Wege, wählbar in den Einstellungen:
   [SD.Next](https://github.com/vladmandic/sdnext) über deren gemeinsame, A1111-kompatible
   HTTP-API — mit den Modellen, die er geladen hat, und allen Reglern (Negativ-Prompt,
   Guidance, Größen).
-- **ComfyUI:** zeigt auf deinen eigenen laufenden ComfyUI-Server und übernimmt einen
-  Workflow, den du im API-Format exportiert hast — das Plugin patcht vor jedem Lauf
-  Prompt, Seed, Schrittzahl und Größe in genau diesen Workflow hinein und lässt alles
-  andere (Sampler, Scheduler, LoRAs, Upscaler) unangetastet, wie du es gebaut hast. Kein
-  img2img, kein CFG-Regler. Die Statuszeile zeigt einen Prozentwert, wenn dein ComfyUI eine
-  WebSocket-Verbindung aus Obsidian annimmt (ComfyUI 0.37 mit
-  `--enable-cors-header app://obsidian.md` tut das); sonst zählt sie Sekunden. Weiteres — die vollständige Liste dessen, was dieser Modus nicht kann, steht im
-  Changelog.
+- **ComfyUI:** zeigt auf deinen eigenen laufenden ComfyUI-Server und einen Vault-Ordner mit Workflows, die du im API-Format exportiert hast. Das Plugin erkennt an jedem Graphen, ob er erzeugt, ein Bild per Anweisung bearbeitet (FLUX.3 klein Edit) oder hochskaliert (4x-UltraSharp), und im Panel wechselst du zwischen *Erzeugen · Bearbeiten · Hochskalieren* und zwischen deinen Workflows, ohne die Einstellungen zu öffnen. Vor jedem Lauf setzt es Prompt, Seed, Schrittzahl und — beim Erzeugen — Negativ-Prompt und Größe in den Workflow ein und lässt alles andere (Sampler, Scheduler, CFG, LoRAs, Upscaler) so, wie du es gebaut hast; Bearbeiten und Hochskalieren laden die Vorlage hoch und notieren die Größe, die tatsächlich herauskam. Die Statuszeile zeigt einen Prozentwert, wenn dein ComfyUI eine WebSocket-Verbindung aus Obsidian annimmt (ComfyUI 0.37 mit `--enable-cors-header app://obsidian.md` tut das); sonst zählt sie Sekunden. Noch kein img2img mit Denoise und kein ControlNet, kein CFG-Regler — die vollständige Liste steht im Changelog.
 - **Image Playground (mobil):** der einzige Modus, der auf dem Handy funktioniert —
   alle anderen brauchen ein Desktop-Obsidian mit GPU bzw. einen erreichbaren
   lokalen Server. Läuft vollständig on-device über Apples Image Playground per

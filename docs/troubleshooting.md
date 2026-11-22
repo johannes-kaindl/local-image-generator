@@ -62,7 +62,7 @@ Each entry starts with what you see — the wording is the plugin's own English 
 
 ## The workflow is not accepted
 
-The **Workflow file** must be a workflow exported from ComfyUI in API format. The plugin names the problem:
+The **Workflow folder** holds workflows exported from ComfyUI in API format (`.json`). The settings list every file with its role — generate, edit or upscale — or with the reason it is not usable:
 
 | Message | Cause and fix |
 |---|---|
@@ -72,8 +72,17 @@ The **Workflow file** must be a workflow exported from ComfyUI in API format. Th
 | Several samplers found (…). Refiner chains aren't supported — the plugin can't tell which one to fill in. | Reduce the workflow to a single sampler. |
 | This sampler has no steps field … | Use a sampler with a `steps` field (for example KSampler). |
 | The latent node carries no width/height … Use EmptyLatentImage as the sampler's latent_image. | Feed the sampler from an **EmptyLatentImage** node. |
+| Several image inputs found (…). | An edit or upscale workflow takes exactly one **Load Image** node — the plugin fills it with the template image. |
+| The image reaches the sampler through VAEEncode (img2img with denoise). … | img2img with denoise isn't supported in ComfyUI mode yet. For editing by instruction use an edit workflow such as `flux3-klein-edit.api.json`. |
+| ControlNet workflows aren't supported yet. | Remove the ControlNet nodes, or use the workflow outside the plugin. |
+| The image input doesn't reach the sampler's latent_image … | The **Load Image** node is not connected to what the sampler renders from. |
+| No text node feeds the sampler's positive input … | Connect a **CLIP Text Encode** node to the sampler's positive input (through the reference node in an edit workflow). |
+| Several text nodes feed the sampler's positive input (…). … | Edit workflows with their own negative prompt aren't supported; use a zeroed negative (**ConditioningZeroOut**). |
+| An image input without a sampler or an upscale model … | An upscale workflow needs **Load Upscale Model** and **Upscale Image (using Model)**. |
 
-"Workflow file not found: …" means the file was moved or deleted; pick it again with **Choose…**.
+An upscale workflow without an **Upscale Image** (`ImageScale`) node between **Load Image** and the upscaler is accepted, but the settings warn: on Apple GPUs the result comes out as horizontal stripes. Put the node in with the image's own size; the plugin sets its width and height to the template image's.
+
+"Workflow folder not found: …" means the folder was moved or deleted; pick it again in the settings. "No valid edit workflow in the workflow folder" (or generate, upscale) means the folder has no usable file for the task chosen in the panel.
 
 ## Nothing happens when I press Generate
 

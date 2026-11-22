@@ -23,14 +23,7 @@ Spec im Cockpit `_SDD/2026-08-19-eingebaute-engine-zwei-backends-design.md`; Com
   BEIDEN Backends: der Server kontinuierlich (denoising 0–1 in 0,05er-Schritten), die
   eingebaute Engine ueber ihren eigenen VAE-Encoder ebenso kontinuierlich (0–1 in 0,05er-
   Schritten; der Einstiegspunkt im Zeitplan wird interpoliert statt gerastert, s. `.claude/rules/img2img.md`).
-- **ComfyUI (seit 0.13):** ein vom Nutzer bereitgestellter API-Workflow (Vault-Datei, JSON im
-  ComfyUI-API-Format) wird vor jedem Lauf **gepatcht**, nicht neu gebaut — Prompt, Negativ,
-  Seed, Steps und Groesse wandern in die vom Workflow selbst benannten Nodes, alles andere
-  (Sampler, Scheduler, CFG, LoRAs, Upscaler) bleibt in der Hand des Nutzers. Ein Workflow ohne
-  setzbare Steps oder Bildmasse wird abgewiesen, nicht stillschweigend mit Luecken uebernommen
-  (Begruendung in `.claude/rules/comfy.md`). Kein img2img, kein CFG-Regler, Fortschrittsbalken nur über den optionalen Socket (seit Welle 24) — Details
-  im CHANGELOG-Eintrag 0.13.0. Herkunft: Client und Workflow-Inspektion sind aus `yijing-oracle`
-  uebernommen (Vendoring-Header in `src/core/comfy/client.ts`/`workflow.ts`), nicht neu gebaut.
+- **ComfyUI (seit 0.13, Workflow-Ordner seit 2026-11-22):** die API-Workflows des Nutzers liegen in einem **Vault-Ordner**; `classifyWorkflow` (`src/core/comfy/workflow.ts`) erkennt die Rolle jeder Datei am Graphen — Erzeugen, Bearbeiten (Bild-Eingang mündet in den Latent, z. B. FLUX.3 klein Edit) oder Hochskalieren (Upscale-Modell ohne Sampler) —, das Panel wählt Aufgabe (Kit-Segment-Schalter) und Workflow. Ein Workflow wird vor jedem Lauf **gepatcht**, nicht neu gebaut — Prompt, Seed, Steps und beim Erzeugen Negativ und Größe wandern in die vom Workflow selbst benannten Nodes, alles andere (Sampler, Scheduler, CFG, LoRAs, Upscaler) bleibt in der Hand des Nutzers. Ein Workflow ohne setzbare Steps oder Bildmaße wird abgewiesen, img2img mit Denoise und ControlNet ebenfalls, mit Klartext (Begründung in `.claude/rules/comfy.md`). Bearbeiten und Hochskalieren laden die Vorlage per multipart hoch und messen die Ergebnisgröße am PNG. Kein CFG-Regler, Fortschrittsbalken nur über den optionalen Socket (seit Welle 24). Referenz-Workflows und -Config für den Dienst des Maintainers liegen in `comfy/`, der Abgleich der Vaults in `tools/vault-abgleich.mjs`. Herkunft: Client und Workflow-Inspektion sind aus `yijing-oracle` uebernommen (Vendoring-Header in `src/core/comfy/client.ts`/`workflow.ts`), nicht neu gebaut.
 - **Image Playground (seit Welle 13):** ein Apple-Kurzbefehl erzeugt das Bild über die Shortcuts-Brücke des Kits (`src/obsidian/playground-backend.ts`), mobil-tauglich; ohne Negativ, CFG, Größe, Steps und Seed (Keine-Attrappen-Linie: ein Regler, den das Backend nicht kann, wird ausgeblendet, nie ohne Wirkung gezeigt).
 
 Desktop-only, ein Sidebar-Hub mit zwei Reitern (Generate/History). Alle vier Backends

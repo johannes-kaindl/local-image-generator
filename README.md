@@ -16,15 +16,7 @@ account. Four ways to do it, chosen in the settings:
   [SD.Next](https://github.com/vladmandic/sdnext) over their shared
   A1111-compatible HTTP API — with whatever models it has loaded, and the
   full set of controls (negative prompt, guidance, sizes).
-- **ComfyUI:** point it at your own running ComfyUI server and hand it a
-  workflow you exported in the API format — the plugin patches your prompt,
-  seed, steps and size into that workflow before every run and leaves
-  everything else (sampler, scheduler, LoRAs, upscalers) exactly as you built
-  it. The status line shows a percentage when your ComfyUI accepts a
-  WebSocket connection from Obsidian (ComfyUI 0.37 started with
-  `--enable-cors-header app://obsidian.md` does); otherwise it counts
-  seconds. No img2img, no CFG slider — see the changelog for the full list of
-  what this mode does not do.
+- **ComfyUI:** point it at your own running ComfyUI server and a vault folder of workflows you exported in the API format. The plugin recognizes from each graph whether it generates, edits an image by instruction (FLUX.3 klein edit) or upscales (4x-UltraSharp), and the panel switches between *Generate · Edit · Upscale* and between your workflows without opening the settings. Before every run it patches prompt, seed, steps and — when generating — negative prompt and size into the workflow and leaves everything else (sampler, scheduler, CFG, LoRAs, upscalers) exactly as you built it; an edit or upscale uploads the template image and records the size it actually got. The status line shows a percentage when your ComfyUI accepts a WebSocket connection from Obsidian (ComfyUI 0.37 started with `--enable-cors-header app://obsidian.md` does); otherwise it counts seconds. No img2img with denoise and no ControlNet yet, no CFG slider — see the changelog for the full list.
 - **Image Playground (mobile):** the only mode that works on your phone —
   everything else needs a desktop Obsidian with either a GPU or a reachable
   local server. Runs entirely on-device through Apple's Image Playground via
