@@ -608,6 +608,12 @@ describe("Plugin-API — Bearbeiten und Hochskalieren", () => {
     expect((await createImageGenerationApi(nurUp).upscale({ image: "AAAA" })).ok).toBe(true);
   });
 
+  it("upscale meldet not-configured, wenn der Erzeugen-Workflow da ist (dann fehlt der Endpunkt)", async () => {
+    const ohneEndpunkt = deps({ getMode: () => "comfy", comfyWorkflow: (role) => activeEntry(lib, role, ""), readiness: () => ({ ready: false, reason: "not-configured" }) });
+    expect(await createImageGenerationApi(ohneEndpunkt).upscale({ image: "AAAA" })).toEqual({ ok: false, reason: "not-configured" });
+    expect(await createImageGenerationApi(ohneEndpunkt).generate({ prompt: "x", task: "edit", initImage: "AAAA" })).toEqual({ ok: false, reason: "not-configured" });
+  });
+
   it("upscale meldet einen unerreichbaren Server und ein abgebrochenes Signal", async () => {
     const tot = deps({ getMode: () => "comfy", comfyWorkflow: (role) => activeEntry(lib, role, ""), readiness: () => ({ ready: false, reason: "unreachable" }) });
     expect(await createImageGenerationApi(tot).upscale({ image: "AAAA" })).toEqual({ ok: false, reason: "unreachable" });

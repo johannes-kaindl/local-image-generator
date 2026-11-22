@@ -375,11 +375,14 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   };
 
   /** Bereitschaft fuer Bearbeiten und Hochskalieren: dieselbe wie fuer Erzeugen, nur zaehlt ein fehlender
-   *  Erzeugen-Workflow (`not-configured`) nicht — diese Aufgaben rechnen mit ihrem eigenen. */
+   *  Erzeugen-Workflow nicht — diese Aufgaben rechnen mit ihrem eigenen. `not-configured` heisst im comfy-Modus
+   *  „kein Erzeugen-Workflow“ ODER „kein Endpunkt“; ist der Erzeugen-Workflow da, bleibt nur der Endpunkt. */
   const readyFor = (): ApiFailure | null => {
     if (deps.isBusy()) return "busy";
     const r = deps.readiness();
-    return r.ready || r.reason === "not-configured" ? null : r.reason;
+    if (r.ready) return null;
+    if (r.reason === "not-configured" && deps.comfyWorkflow("txt2img") === null) return null;
+    return r.reason;
   };
   const supports = (role: "edit" | "upscale"): string | null =>
     deps.getMode() === "comfy" ? (deps.comfyWorkflow(role)?.file ?? null) : null;
