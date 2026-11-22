@@ -7,6 +7,8 @@ import type { GenParams } from "./viewmodel";
 import { formatCrop } from "../vendor/kit/crop";
 
 const FM_ORDER = [
+  "task",
+  "workflow",
   "prompt",
   "negative_prompt",
   "seed",
@@ -30,7 +32,26 @@ function linkOrText(path: string): string {
 
 /** @param imageLink Vault-Pfad des Bildes; als Embed `![[…]]`, bei einem Pfad mit `[ ] # ^ |` als Markdown-Embed `![](<…>)`, das den Pfad ganz liest. */
 export function buildImageNote(params: GenParams, imageLink: string): string {
+  const embed = wikilinkOf(imageLink) === null ? `![](<${imageLink}>)` : `!${linkOrText(imageLink)}`;
+  // Hochskalieren hat kein Rezept: Prompt, Seed, Steps, CFG und Modell waeren Angaben ueber etwas, das nicht
+  // stattgefunden hat. Die Notiz nennt nur, was das Bild ausmacht — Workflow, Quelle, gemessene Groesse.
+  if (params.task === "upscale") {
+    const up: Record<string, FmValue> = {
+      task: "upscale",
+      ...(params.workflow !== undefined ? { workflow: params.workflow } : {}),
+      ...(params.initImage !== null ? { init_image: linkOrText(params.initImage) } : {}),
+      ...(params.initCrop !== null ? { init_crop: formatCrop(params.initCrop) } : {}),
+      width: params.width,
+      height: params.height,
+      created: params.date,
+      image: linkOrText(imageLink),
+    };
+    return `${serializeFrontmatter(up, FM_ORDER)}\n${embed}\n`;
+  }
   const data: Record<string, FmValue> = {
+    // Nur bei einem ComfyUI-Lauf: welche Aufgabe (fehlt beim Erzeugen) und welcher Workflow des Ordners.
+    ...(params.task !== undefined ? { task: params.task } : {}),
+    ...(params.workflow !== undefined ? { workflow: params.workflow } : {}),
     prompt: params.prompt,
     // negative_prompt nur bei nicht-leerem Wert — ein leerer Negativ-Prompt ist
     // "nicht gesetzt", nicht "bewusst leer", und soll nicht als Rauschen in jeder Notiz stehen.
@@ -57,6 +78,5 @@ export function buildImageNote(params: GenParams, imageLink: string): string {
     // Wikilink im Wert stehen — unquoted bräche "[[" das YAML.
     image: linkOrText(imageLink),
   };
-  const embed = wikilinkOf(imageLink) === null ? `![](<${imageLink}>)` : `!${linkOrText(imageLink)}`;
   return `${serializeFrontmatter(data, FM_ORDER)}\n${embed}\n`;
 }

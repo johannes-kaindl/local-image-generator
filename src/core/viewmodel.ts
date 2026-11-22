@@ -2,9 +2,9 @@
 // ViewModel, trifft keine Entscheidungen.
 import { getLang, t } from "../vendor/kit/i18n";
 import { formatBytes as kitFormatBytes } from "../vendor/kit/format-bytes";
-import { backendCapabilities, toBackendContext, type SizeOption } from "./generation";
+import { backendCapabilities, toBackendContext, type ComfyTask, type SizeOption } from "./generation";
 import { filesFor, modelById, totalBytes, type BuiltinModelId } from "./model-manifest";
-import { slotsOf, type WorkflowProblem, type WorkflowState } from "./comfy/state";
+import { activeEntry, entriesOf, type ActiveWorkflow, type LibraryState, type WorkflowProblem } from "./comfy/library";
 import type { EngineChoice } from "./settings";
 import { cropEquals, type Crop } from "../vendor/kit/crop";
 
@@ -74,6 +74,12 @@ export interface GenParams {
   /** Nicht-null ⇔ es war ein img2img-Lauf. Nie ein Vorgabewert bei txt2img — das waere
    *  eine Angabe ueber etwas, das nicht stattgefunden hat. */
   denoising: number | null;
+  /** ComfyUI-Aufgabe, wenn es kein Erzeugen war. Bei `upscale` sind `prompt`, `negativePrompt`, `seed`, `steps` und
+   *  `cfg` KEIN Teil des Rezepts (Hochskalieren hat keine): jeder Schreiber (Notiz, API, Verlauf) verzweigt auf `task`
+   *  und gibt sie nicht weiter. */
+  task?: "edit" | "upscale";
+  /** Dateiname des ComfyUI-Workflows im Workflow-Ordner; fehlt ausserhalb des comfy-Modus. */
+  workflow?: string;
 }
 
 export interface PanelState {
@@ -85,11 +91,14 @@ export interface PanelState {
    *  Rezept nie. Vollstaendige Liste + Schadensbild je Stelle: `.claude/rules/modi-und-main.md`
    *  — "Ein neuer Backend-Modus faellt an rund einem Dutzend Stellen in den else-Zweig". */
   mode: EngineChoice;
-  /** Der Zustand des hinterlegten ComfyUI-Workflows — der GANZE Zustand, nicht nur die
-   *  Slots: das ViewModel braucht ihn spaeter (Statuszeile), und zwei Quellen fuer dieselbe
-   *  Sache waeren genau der Drift, gegen den die eine Haertungsquelle steht. Die Slots
-   *  leitet dieses Modul selbst per `slotsOf()` ab. */
-  workflow: WorkflowState;
+  /** Die Workflows des Ordners samt Rolle — der GANZE Zustand, nicht nur der aktive: das ViewModel braucht ihn fuer
+   *  Statuszeile, Aufgaben-Schalter und Dropdown, und zwei Quellen fuer dieselbe Sache waeren genau der Drift, gegen
+   *  den die eine Haertungsquelle steht. Den aktiven Workflow leitet `comfyActive()` ab. */
+  comfyLibrary: LibraryState;
+  /** Gewaehlte Aufgabe im comfy-Modus (Laufzeitzustand des Panels, Start: Erzeugen). */
+  comfyTask: ComfyTask;
+  /** Gewaehlte Datei je Rolle (settings.comfyWorkflowSelection). */
+  comfySelection: { txt2img: string; edit: string; upscale: string };
   /** Aenderungsstaerke des Denoise-Reglers, null wenn keine Vorlage gesetzt ist. Liegt im
    *  State (nicht nur im DOM), weil `recipeUnchanged` sie vergleichen muss: derselbe Seed
    *  mit anderer Staerke ergibt ein anderes Bild. */
@@ -145,7 +154,21 @@ export interface PanelViewModel {
   showImage: boolean;
   /** Welche Regler der Modus ehrlich anbieten kann (Keine-Attrappen-Linie aus 0.2): SD-Turbo ist
    *  guidance-frei und auf 512² destilliert — Negativ/CFG/Größe wären dort Attrappen. */
+  /** Aufgaben-Schalter und Workflow-Wahl — nur im comfy-Modus, sonst null. */
+  comfy: {
+    tasks: { task: ComfyTask; enabled: boolean; reason: string | null }[];
+    task: ComfyTask;
+    options: { file: string; label: string }[];
+    selected: string | null;
+  } | null;
+  /** Beschriftung des Hauptknopfs. */
+  generateLabel: "generate" | "edit" | "upscale";
   controls: {
+    /** Prompt-Feld (Hochskalieren hat keins); `chips` die Stil-Bausteine, nur beim Erzeugen. */
+    prompt: boolean;
+    chips: boolean;
+    /** Vorlage ist Pflicht (Bearbeiten, Hochskalieren): ohne sie bleibt der Knopf gesperrt. */
+    initRequired: boolean;
     negative: boolean;
     cfg: boolean;
     size: boolean;
@@ -222,7 +245,29 @@ export function formatElapsed(totalSec: number): string {
  *  fälschlich: ein unbeobachtbarer Modellwechsel darf Generate nicht blockieren. Reroll ist
  *  davon unabhängig: der würfelt den Seed vorher neu und ist nie an generateEnabled
  *  gebunden (generate-panel.ts). */
+/** Der Workflow, mit dem die gewaehlte Aufgabe rechnen wuerde — null ohne gueltigen. */
+export function comfyActive(s: Pick<PanelState, "comfyLibrary" | "comfyTask" | "comfySelection">): ActiveWorkflow | null {
+  return activeEntry(s.comfyLibrary, s.comfyTask, s.comfySelection[s.comfyTask]);
+}
+
+/** comfy: dasselbe Rezept ist dieselbe Aufgabe mit demselben Workflow und denselben Werten, die die Aufgabe nimmt.
+ *  CFG und Modellname zaehlen nicht (der Workflow traegt sie), die Groesse nur beim Erzeugen. ComfyUI gaebe fuer ein
+ *  unveraendertes Rezept ohnehin das Bild aus seinem Cache zurueck. */
+function comfyRecipeUnchanged(s: PanelState): boolean {
+  const p = s.image?.params;
+  const active = comfyActive(s);
+  if (p === undefined || active === null) return false;
+  const task = p.task ?? "txt2img";
+  if (task !== s.comfyTask || p.workflow !== active.file) return false;
+  const sameInit = p.initImage === (s.initImage?.path ?? null) && cropEquals(p.initCrop, s.initCrop);
+  if (task === "upscale") return sameInit;
+  const sameRecipe = p.prompt === s.prompt && p.seed === s.seed && p.steps === s.steps;
+  if (task === "edit") return sameRecipe && sameInit;
+  return sameRecipe && p.negativePrompt === s.negativePrompt && p.width === s.width && p.height === s.height;
+}
+
 function recipeUnchanged(s: PanelState): boolean {
+  if (s.mode === "comfy") return comfyRecipeUnchanged(s);
   const p = s.image?.params;
   // playground faellt bewusst in denselben Zweig wie comfy: `s.server` bleibt fuer
   // playground immer "unconfigured" (kein Server-Konzept), modelUnchanged ist also immer
@@ -265,10 +310,18 @@ function serverStatus(s: PanelState): PanelViewModel["status"] {
  *  fuer diese Aufgabe hin. Der Server kommt danach, mit denselben Meldungen wie im
  *  A1111-Modus — er ist derselbe Zustand. */
 function comfyStatus(s: PanelState): PanelViewModel["status"] {
-  const w = s.workflow;
-  if (w.kind === "unconfigured") return { icon: "circle-x", text: t("status.noWorkflow"), cls: "is-error" };
-  if (w.kind === "missing") return { icon: "circle-x", text: t("status.workflowMissing", w.path), cls: "is-error" };
-  if (w.kind === "invalid") return { icon: "circle-x", text: workflowProblemText(w.reason), cls: "is-error" };
+  const lib = s.comfyLibrary;
+  if (lib.kind === "unconfigured") return { icon: "circle-x", text: t("status.noWorkflow"), cls: "is-error" };
+  if (lib.kind === "missing") return { icon: "circle-x", text: t("status.workflowFolderMissing", lib.folder), cls: "is-error" };
+  if (comfyActive(s) === null) {
+    // Ist die gewaehlte Datei (oder die einzige im Ordner) ungueltig, sagt der Grund mehr als „kein gueltiger
+    // Workflow“: der Nutzer soll wissen, WAS er an seinem Graphen aendern muss.
+    const named = lib.entries.find((e) => e.file === s.comfySelection[s.comfyTask]) ?? (lib.entries.length === 1 ? lib.entries[0] : undefined);
+    if (named !== undefined && named.classified.role === null) {
+      return { icon: "circle-x", text: `${named.file}: ${workflowProblemText(named.classified.error)}`, cls: "is-error" };
+    }
+    return { icon: "circle-x", text: t("comfy.task.none", t(`workflow.role.${s.comfyTask}`)), cls: "is-error" };
+  }
   // Der SERVER-Teil bekommt eigene Saetze, obwohl der Zustand derselbe ist: der Endpunkt ist
   // zwischen Server- und comfy-Modus GETEILT. Wer umstellt, behaelt seinen A1111-Endpunkt —
   // der Statuscheck ist dann zu Recht streng, aber „ist die API aktiviert?" schickt den
@@ -293,6 +346,13 @@ export function workflowProblemText(p: WorkflowProblem): string {
     case "dangling-ref": return t("workflow.err.dangling", p.field, p.id);
     case "no-steps-field": return t("workflow.err.noSteps");
     case "no-size-fields": return t("workflow.err.noSize");
+    case "ambiguous-image-input": return t("workflow.err.ambiguousImage", p.ids.join(", "));
+    case "img2img-unsupported": return t("workflow.err.img2img");
+    case "controlnet-unsupported": return t("workflow.err.controlnet");
+    case "image-not-in-latent": return t("workflow.err.imageNotInLatent");
+    case "no-prompt-node": return t("workflow.err.noPrompt");
+    case "ambiguous-prompt-node": return t("workflow.err.ambiguousPrompt", p.ids.join(", "));
+    case "no-upscaler": return t("workflow.err.noUpscaler");
   }
 }
 
@@ -301,7 +361,7 @@ export function workflowProblemText(p: WorkflowProblem): string {
  *  Server waere hier die falsche Anlaufstelle. Steht der Workflow, gilt derselbe
  *  Leerzustand wie im Server-Modus. */
 function comfyEmpty(s: PanelState, busy: boolean): PanelViewModel["empty"] {
-  if (s.workflow.kind !== "ok") {
+  if (comfyActive(s) === null) {
     return { text: t("empty.noWorkflow"), ctaLabel: t("empty.noWorkflowCta"), ctaAction: "settings" };
   }
   // Eigene Texte aus demselben Grund wie in comfyStatus: der Server-Leerzustand schickte den
@@ -408,8 +468,11 @@ export function buildViewModel(s: PanelState): PanelViewModel {
     ? s.engine.kind === "ready"
     : playground
       ? s.playgroundShortcutName.trim() !== ""
-      : s.server.kind === "ok" && (!comfy || s.workflow.kind === "ok");
-  const caps = backendCapabilities(toBackendContext(s.mode, s.builtinModel, slotsOf(s.workflow)));
+      : s.server.kind === "ok" && (!comfy || comfyActive(s) !== null);
+  const task: ComfyTask = comfy ? s.comfyTask : "txt2img";
+  const caps = backendCapabilities(toBackendContext(s.mode, s.builtinModel, { task, workflow: comfy ? comfyActive(s) : null }));
+  // Pflichten der Aufgabe: ein Prompt nur, wo es einen gibt, eine Vorlage, wo sie Pflicht ist.
+  const inputsReady = (!caps.prompt || s.prompt.trim().length > 0) && (!caps.initRequired || s.initImage !== null);
 
   const status = builtin ? engineStatus(s) : playground ? playgroundStatus(s) : comfy ? comfyStatus(s) : serverStatus(s);
   const empty = builtin ? engineEmpty(s, busy) : playground ? playgroundEmpty(s, busy) : comfy ? comfyEmpty(s, busy) : serverEmpty(s, busy);
@@ -425,17 +488,22 @@ export function buildViewModel(s: PanelState): PanelViewModel {
   return {
     status,
     empty,
-    generateEnabled: backendReady && !busy && s.prompt.trim().length > 0 && !recipeUnchanged(s),
+    generateEnabled: backendReady && !busy && inputsReady && !recipeUnchanged(s),
     insertEnabled: s.image !== null && s.editorActive && !busy,
     showImage: s.image !== null,
+    comfy: comfy ? comfyChoice(s) : null,
+    generateLabel: task === "txt2img" ? "generate" : task,
     controls: {
+      prompt: caps.prompt,
+      chips: caps.prompt && task === "txt2img",
+      initRequired: caps.initRequired,
       negative: caps.negativePrompt,
       cfg: caps.cfg,
       // Sichtbar, sobald es etwas zu WAEHLEN gibt — nicht „ist es Modell X".
-      size: caps.sizes === null || caps.sizes.length > 1,
+      size: caps.size,
       sizes: caps.sizes,
       initImage: caps.initImage,
-      denoising: caps.initImage && s.initImage !== null,
+      denoising: caps.denoising && s.initImage !== null,
       // Zwei unabhaengige Bedingungen, wie beim Denoise-Regler: will der Nutzer ihn, UND
       // gibt es mindestens zwei GELADENE Modelle zu wechseln.
       modelPicker: builtin && s.showModelPicker && s.downloadedModels.length > 1,
@@ -444,10 +512,28 @@ export function buildViewModel(s: PanelState): PanelViewModel {
       // Bisher hing an KEINEM Modus ein eigenes Signal fuer Steps/Seed — der Regler war immer
       // sichtbar, nur sein Bereich (stepsMin/stepsMax) wechselte. playground ist der erste
       // Modus, der beides gar nicht entgegennimmt (Abnahme-Befund Welle 13).
-      steps: !playground,
-      seed: !playground,
+      steps: caps.steps,
+      seed: caps.seed,
     },
     modelLabel,
     modelOptions: s.downloadedModels.map((id) => ({ id, label: modelById(id).label })),
   };
+}
+
+const TASKS: readonly ComfyTask[] = ["txt2img", "edit", "upscale"];
+
+/** Aufgaben-Schalter und Dropdown. Gleiche Anzeigenamen (`a.json`, `a.api.json`) bekommen den Dateinamen, damit zwei
+ *  Eintraege nie gleich aussehen. */
+function comfyChoice(s: PanelState): NonNullable<PanelViewModel["comfy"]> {
+  const tasks = TASKS.map((task) => {
+    const enabled = activeEntry(s.comfyLibrary, task, s.comfySelection[task]) !== null;
+    return { task, enabled, reason: enabled ? null : t("comfy.task.none", t(`workflow.role.${task}`)) };
+  });
+  const entries = entriesOf(s.comfyLibrary, s.comfyTask);
+  const names = entries.map((e) => e.name);
+  const options = entries.map((e) => ({
+    file: e.file,
+    label: names.indexOf(e.name) !== names.lastIndexOf(e.name) ? e.file : e.name,
+  }));
+  return { tasks, task: s.comfyTask, options, selected: comfyActive(s)?.file ?? null };
 }

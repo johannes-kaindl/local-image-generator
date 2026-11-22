@@ -161,3 +161,33 @@ describe("buildImageNote — Pfade, die ein Wikilink nicht tragen kann", () => {
     expect(md).toContain("![[Bilder/neu.png]]");
   });
 });
+
+describe("buildImageNote — ComfyUI-Aufgaben", () => {
+  const p = (over: Partial<GenParams>): GenParams => ({
+    prompt: "make it rain", negativePrompt: "", seed: 5, steps: 12, cfg: null, model: "unknown",
+    width: 1328, height: 768, date: "2026-11-22T01:00:00", initImage: "Bilder/turm.png", initCrop: null, denoising: null, ...over,
+  });
+
+  it("Bearbeiten: task, workflow, Quelle, Anweisung, Seed, Steps — kein cfg, kein denoising, kein negative_prompt", () => {
+    const fm = buildImageNote(p({ task: "edit", workflow: "flux3-klein-edit.api.json" }), "Bilder/x.png").split("---")[1]!;
+    expect(fm).toMatch(/^task: edit$/m);
+    expect(fm).toMatch(/^workflow: flux3-klein-edit\.api\.json$/m);
+    expect(fm).toMatch(/^init_image: "\[\[Bilder\/turm\.png\]\]"$/m);
+    expect(fm).toMatch(/^prompt: make it rain$/m);
+    expect(fm).toMatch(/^seed: 5$/m);
+    expect(fm).toMatch(/^width: 1328$/m);
+    expect(fm).not.toMatch(/^cfg:|^denoising:|^negative_prompt:/m);
+  });
+
+  it("Hochskalieren: nur task, workflow, Quelle, Maße, created, image", () => {
+    const fm = buildImageNote(p({ task: "upscale", workflow: "upscale-4x-ultrasharp.api.json", width: 5312, height: 3072 }), "Bilder/x.png").split("---")[1]!;
+    const keys = [...fm.matchAll(/^([a-z_]+):/gm)].map((m) => m[1]);
+    expect(keys).toEqual(["task", "workflow", "init_image", "width", "height", "created", "image"]);
+  });
+
+  it("Erzeugen im comfy-Modus nennt den Workflow, aber keine Aufgabe", () => {
+    const fm = buildImageNote(p({ workflow: "flux3-klein.api.json", initImage: null }), "Bilder/x.png").split("---")[1]!;
+    expect(fm).toMatch(/^workflow: flux3-klein\.api\.json$/m);
+    expect(fm).not.toMatch(/^task:/m);
+  });
+});

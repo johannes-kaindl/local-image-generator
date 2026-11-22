@@ -8,7 +8,7 @@ const ctx = (mode: "builtin" | "server", builtinModel: keyof typeof BUILTIN_MODE
   defaultSteps: 20,
   model: mode === "builtin" ? BUILTIN_MODELS[builtinModel].id : "someModel.safetensors",
   builtinModel: BUILTIN_MODELS[builtinModel].id,
-  workflowSlots: null,
+  comfy: { task: "txt2img" as const, workflow: null },
   now: new Date("2026-08-22T22:15:00"),
   randomSeed: () => 4242,
 });
@@ -246,7 +246,7 @@ describe("eine Haertung, zwei Aufrufer", () => {
   // durch dieselbe Haertung — dieser Test haelt fest, dass der schmale Auftrag dieselben
   // Backend-Wahrheiten bekommt wie der volle, statt eigener Defaults.
   const c = { mode: "builtin" as const, defaultSteps: 20, model: BUILTIN_MODELS["sd-turbo"].id,
-              builtinModel: BUILTIN_MODELS["sd-turbo"].id, workflowSlots: null,
+              builtinModel: BUILTIN_MODELS["sd-turbo"].id, comfy: { task: "txt2img" as const, workflow: null },
               now: new Date("2026-08-22T22:15:00"), randomSeed: () => 4242 };
 
   it("der schmale Auftrag erbt dieselben Backend-Wahrheiten wie der volle", () => {
@@ -281,7 +281,7 @@ describe("hardenParams — comfy ueber die Produktionsroute (toBackendContext)",
     defaultSteps: 20,
     model: "irgendein-checkpoint.safetensors",
     builtinModel: BUILTIN_MODELS["sd-turbo"].id,
-    workflowSlots: slots,
+    comfy: { task: "txt2img" as const, workflow: { file: "w.json", name: "w", json: "{}", role: "txt2img" as const, slots } },
     now: new Date("2026-08-22T22:15:00"),
     randomSeed: () => 4242,
   };
@@ -312,7 +312,7 @@ describe("hardenParams — cfg je Modus", () => {
   });
 
   it("comfy: null — patchWorkflow fasst das CFG-Feld des Samplers nicht an", () => {
-    const p = hardenParams({ prompt: "x", cfg: 9 }, { ...ctx("server"), mode: "comfy" as const, workflowSlots: comfySlots });
+    const p = hardenParams({ prompt: "x", cfg: 9 }, { ...ctx("server"), mode: "comfy" as const, comfy: { task: "txt2img" as const, workflow: { file: "w.json", name: "w", json: "{}", role: "txt2img" as const, slots: comfySlots } } });
     expect(p.cfg).toBeNull();
   });
 

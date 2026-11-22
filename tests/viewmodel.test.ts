@@ -3,7 +3,8 @@ import { registerI18n } from "../src/i18n/strings";
 import { setLang } from "../src/vendor/kit/i18n";
 import { buildViewModel, formatBytes, formatElapsed, partialDownloadLabel, type GenParams, type PanelState } from "../src/core/viewmodel";
 import { assetsFor, RUNTIME_WASM, totalBytes } from "../src/core/model-manifest";
-import type { WorkflowState } from "../src/core/comfy/state";
+import { libraryFrom, type LibraryState } from "../src/core/comfy/library";
+import sdxlFixture from "./fixtures/comfy-sdxl.json";
 
 beforeEach(() => {
   registerI18n();
@@ -32,7 +33,9 @@ const base: PanelState = {
   builtinModel: "sd-turbo",
   showModelPicker: false,
   mode: "server",
-  workflow: { kind: "unconfigured" },
+  comfyLibrary: { kind: "unconfigured" },
+  comfyTask: "txt2img",
+  comfySelection: { txt2img: "", edit: "", upscale: "" },
   engine: { kind: "not-downloaded" },
   server: { kind: "ok", modelName: "sd-turbo" },
   playgroundShortcutName: "Generate Image (Obsidian)",
@@ -55,22 +58,8 @@ const stateOf = (overrides: Partial<PanelState>): PanelState => ({ ...base, ...o
  *  der Task-9-Brief benutzt. */
 const PANEL_DEFAULT = base;
 
-/** Ein gueltig eingelesener Workflow (inspectWorkflow-Ausgabe), fuer Tests, die nur
- *  brauchen, dass der Workflow-Zustand "ok" ist — die konkreten Node-IDs sind beliebig. */
-const OK_WORKFLOW: WorkflowState = {
-  kind: "ok",
-  path: "w.json",
-  json: "{}",
-  slots: {
-    sampler: "3",
-    positive: "6",
-    negative: "7",
-    latent: "5",
-    seedField: "seed",
-    stepsField: "steps",
-    workflowSteps: 20,
-  },
-};
+/** Ein Ordner mit einem gueltigen Erzeugen-Workflow, fuer Tests, die nur brauchen, dass der Workflow-Zustand "ok" ist. */
+const OK_WORKFLOW: LibraryState = libraryFrom("w", [{ path: "w/w.json", raw: JSON.stringify(sdxlFixture) }]);
 
 describe("buildViewModel — server state", () => {
   it("unconfigured: Fehler-Status, Empty mit Settings-CTA, Generate disabled", () => {
@@ -224,6 +213,7 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     expect(buildViewModel(base).controls).toEqual({
       negative: true, cfg: true, size: true, sizes: null, initImage: true, denoising: false,
       modelPicker: false, stepsMin: 1, stepsMax: 50, steps: true, seed: true,
+      prompt: true, chips: true, initRequired: false,
     });
   });
   it("builtin/not-downloaded: Regler reduziert, CTA download, Generate gesperrt — der Server-Zustand ist egal; img2img seit 0.11 aber verfuegbar", () => {
@@ -231,6 +221,7 @@ describe("buildViewModel — builtin engine (0.6)", () => {
     expect(vm.controls).toEqual({
       negative: false, cfg: false, size: false, sizes: [{ width: 512, height: 512 }], initImage: true,
       denoising: false, modelPicker: false, stepsMin: 1, stepsMax: 8, steps: true, seed: true,
+      prompt: true, chips: true, initRequired: false,
     });
     expect(vm.empty?.ctaAction).toBe("download");
     expect(vm.status.cls).toBe("is-error");
@@ -510,7 +501,7 @@ describe("Status im comfy-Modus", () => {
   const basis = { ...PANEL_DEFAULT, mode: "comfy" as const, server: { kind: "ok", modelName: null } as const };
 
   it("meldet den Workflow-Fehler, nicht den Server", () => {
-    const vm = buildViewModel({ ...basis, workflow: { kind: "invalid", path: "w.json", reason: { kind: "no-sampler" } } });
+    const vm = buildViewModel({ ...basis, comfyLibrary: libraryFrom("w", [{ path: "w/w.json", raw: JSON.stringify({ "1": { class_type: "X", inputs: {} } }) }]) });
     expect(vm.status.cls).toBe("is-error");
     // Brief-Text ist "No sampler found..." (kleines s) — die grossgeschriebene Fassung im
     // Brief-Test war ein Tippfehler, der Text selbst ist woertlich aus Step 6 uebernommen.
@@ -518,19 +509,19 @@ describe("Status im comfy-Modus", () => {
   });
 
   it("meldet einen unerreichbaren Server auch bei gutem Workflow", () => {
-    const vm = buildViewModel({ ...basis, server: { kind: "unreachable" }, workflow: OK_WORKFLOW });
+    const vm = buildViewModel({ ...basis, server: { kind: "unreachable" }, comfyLibrary: OK_WORKFLOW });
     expect(vm.status.cls).toBe("is-error");
   });
 
   it("ist erst bereit, wenn Server UND Workflow stimmen", () => {
-    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, prompt: "x" });
+    const vm = buildViewModel({ ...basis, comfyLibrary: OK_WORKFLOW, prompt: "x" });
     expect(vm.generateEnabled).toBe(true);
     // I4 (Final-Review 2026-09-06): der Name behauptet eine Konjunktion, der Rumpf prueft
     // ohne diese Zeile nur den EINEN Punkt, an dem beide Konjunkte wahr sind. Streicht
     // jemand die Workflow-Bedingung aus `buildViewModel`, bliebe die Suite gruen — und der
     // Generate-Knopf waere im comfy-Modus ohne brauchbaren Workflow klickbar, ohne dass
     // etwas passiert. Der Server ist hier unveraendert `ok`; nur der Workflow fehlt.
-    const ohneWorkflow = buildViewModel({ ...basis, workflow: { kind: "missing", path: "w.json" }, prompt: "x" });
+    const ohneWorkflow = buildViewModel({ ...basis, comfyLibrary: { kind: "missing", folder: "w" }, prompt: "x" });
     expect(ohneWorkflow.generateEnabled).toBe(false);
   });
 
@@ -540,21 +531,21 @@ describe("Status im comfy-Modus", () => {
   // Draw-Things-Zeile belegt, dass es nicht mehr der Server-Text ist (nur zusammen sind sie
   // von einem beliebig geaenderten Server-Text unterscheidbar).
   it("nennt bei fehlendem Endpunkt ComfyUIs Port statt Draw Things", () => {
-    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, server: { kind: "unconfigured" } });
+    const vm = buildViewModel({ ...basis, comfyLibrary: OK_WORKFLOW, server: { kind: "unconfigured" } });
     expect(vm.empty?.text).toContain("8188");
     expect(vm.empty?.text).not.toContain("Draw Things");
     expect(vm.status.text).toContain("ComfyUI");
   });
 
   it("erklaert bei unerreichbarem Endpunkt den uebernommenen A1111-Endpunkt", () => {
-    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW, server: { kind: "unreachable" } });
+    const vm = buildViewModel({ ...basis, comfyLibrary: OK_WORKFLOW, server: { kind: "unreachable" } });
     expect(vm.empty?.ctaAction).toBe("recheck");
     expect(vm.empty?.text).toContain("8188");
     expect(vm.status.text).toContain("8188");
   });
 
   it("zeigt Negativ-Prompt, aber keinen CFG-Regler", () => {
-    const vm = buildViewModel({ ...basis, workflow: OK_WORKFLOW });
+    const vm = buildViewModel({ ...basis, comfyLibrary: OK_WORKFLOW });
     expect(vm.controls.negative).toBe(true);
     expect(vm.controls.cfg).toBe(false);
     expect(vm.controls.initImage).toBe(false);

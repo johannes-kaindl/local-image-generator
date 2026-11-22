@@ -5,7 +5,7 @@
 // laufen ZUERST im onload, vor addSettingTab/registerView/addRibbonIcon/addCommand — sonst
 // rendern die ersten t()-Aufrufe rohe Keys.
 import { arrayBufferToBase64, getLanguage, MarkdownView, normalizePath, Notice, Plugin, TFile, TFolder } from "obsidian";
-import { buildImageFilename, buildNoteFilename, dedupeFilename, dirOf } from "./core/filename";
+import { dedupeFilename, dirOf, imageFilenameFor, noteFilenameFor } from "./core/filename";
 import { deleteEntry, pushHistory } from "./core/history";
 import { registerI18n } from "./i18n/strings";
 import { buildImageNote } from "./core/note";
@@ -23,8 +23,10 @@ import {
   type BuiltinModelId,
 } from "./core/model-manifest";
 import { DEFAULT_SETTINGS, migrateSettings, SETTINGS_SCHEMA, type EngineChoice, type LigSettings } from "./core/settings";
-import { slotsOf, workflowStateFrom, type WorkflowState } from "./core/comfy/state";
+import { activeEntry, libraryFrom, type ActiveWorkflow, type LibraryState } from "./core/comfy/library";
+import type { WorkflowRole } from "./core/comfy/workflow";
 import { ComfyClient, type ComfyProgress } from "./core/comfy/client";
+import type { ComfyTask } from "./core/generation";
 import { hardenParams, type HardenContext } from "./core/params";
 import {
   createImageGenerationApi,
@@ -50,7 +52,7 @@ import { base64OfDataUrl, decodeInitImage, rgbaToDataUrl } from "./obsidian/png"
 import { cropImageToBase64, fitImageToBase64 } from "./vendor/kit-obsidian/image-crop";
 import { CropModal } from "./vendor/kit-obsidian/crop-modal";
 import type { Crop } from "./vendor/kit/crop";
-import { dataUrlToBytes } from "./vendor/kit/data-url";
+import { base64ToBytes, dataUrlToBytes } from "./vendor/kit/data-url";
 import { LigSettingTab } from "./obsidian/settings-tab";
 import { ImagePickerModal } from "./obsidian/image-picker";
 import { GeneratorView, VIEW_TYPE, type PanelRecipe, type ViewHost } from "./obsidian/view";
@@ -60,6 +62,12 @@ import { pickLang, setLang, t } from "./vendor/kit/i18n";
 
 /** Wie lange `onload` auf Server-Pruefung und Workflow-Lesen wartet, damit `api.status()` gleich nach dem Start den echten Stand kennt. */
 const START_PRUEFUNG_MS = 1000;
+
+/** Ein ComfyUI-Lauf, der kein Erzeugen ist: welche Aufgabe mit welchem Workflow. */
+type ComfyJob = { task: "edit" | "upscale"; workflow: ActiveWorkflow };
+
+/** Die ganze Vorlage als Ausschnitt — damit `cropImageToBase64` sie ohne gewaehlten Ausschnitt nur nach PNG umkodiert. */
+const FULL_CROP: Crop = { x: 0, y: 0, w: 1, h: 1 };
 
 export default class LocalImageGeneratorPlugin extends Plugin {
   settings: LigSettings = DEFAULT_SETTINGS;
@@ -87,9 +95,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   // settings.builtinModel / settings.showModelPicker und werden in getPanelState() abgeleitet
   // (Omit macht ein zweites Spiegeln typseitig unmoeglich). Zwei von Hand synchron gehaltene
   // Wahrheiten hatten schon eine: das ViewModel las state.mode, alles Neuere settings.engine.
-  // `workflow` ist Teil von PanelState (der ganze Zustand, nicht nur die Slots) —
-  // eine Intersection mit einem eigenen Workflow-Typ ist damit nicht mehr noetig.
-  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker" | "playgroundShortcutName"> = {
+  // `comfyLibrary` ist Teil von PanelState (der ganze Ordnerzustand, nicht nur der aktive Workflow); `comfySelection`
+  // fehlt wie `mode`: es IST settings.comfyWorkflowSelection und wird in getPanelState() abgeleitet.
+  private state: Omit<PanelState, "mode" | "builtinModel" | "showModelPicker" | "playgroundShortcutName" | "comfySelection"> = {
     initImage: null,
     initCrop: null,
     denoising: null,
@@ -97,7 +105,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     downloadedModels: [],
     engine: { kind: "not-downloaded" },
     server: { kind: "checking" }, // in onload nach settings-load auf "unconfigured"/"checking" gesetzt
-    workflow: { kind: "unconfigured" },
+    comfyLibrary: { kind: "unconfigured" },
+    comfyTask: "txt2img",
     run: { kind: "idle" },
     image: null,
     editorActive: false,
@@ -109,6 +118,9 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     width: 512,
     height: 512,
   };
+
+  /** Entprellung des Ordner-Watchers (comfy-Modus). */
+  private libraryReloadTimer = 0;
 
   async onload(): Promise<void> {
     registerI18n();
@@ -122,7 +134,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       getMode: () => this.settings.engine,
       presets: () => this.settings.presets,
       builtinModel: () => this.settings.builtinModel,
-      workflowSlots: () => slotsOf(this.state.workflow),
+      comfyWorkflow: (role) => this.comfyWorkflow(role),
       readiness: () => this.apiReadiness(),
       // Der EINE Netzaufruf hinter `api.recheck()`. `checkServer()` schreibt `state.server`
       // und wirft nicht — ein unerreichbarer Server ist dort ein Ergebnis; die Fassade liest
@@ -131,7 +143,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         await this.checkServer();
       },
       isBusy: () => this.isBusy(),
-      harden: (input) => hardenParams(input, this.hardenContext()),
+      harden: (input) => hardenParams(input, this.hardenContext("txt2img")),
       run: async (params, onProgress, initImageData, signal) => {
         // Ein Konsument haelt seine api-Referenz ueber unser Entladen hinaus. Ohne diesen
         // Guard baut ensureLocalEngine() eine neue GPU-Session fuer eine Plugin-Instanz,
@@ -177,8 +189,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
           builtinModel: this.settings.builtinModel,
           showModelPicker: this.settings.showModelPicker,
           playgroundShortcutName: this.settings.playgroundShortcutName,
+          comfySelection: this.settings.comfyWorkflowSelection,
         };
       },
+      setComfyTask: (task) => {
+        this.state.comfyTask = task;
+        this.refreshViews();
+      },
+      selectComfyWorkflow: (role, file) => void this.selectComfyWorkflow(role, file),
       getSettings: () => this.settings,
       setPrompt: (p) => {
         this.state.prompt = p;
@@ -240,6 +258,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         // stillschweigend als txt2img wieder aufgelegter img2img-Eintrag waere genau die
         // Sorte Luege, die die Keine-Attrappen-Linie verbietet: der Nutzer sieht
         // die leere Vorlagen-Zeile und weiss, dass er sie neu waehlen muss.
+        // Ein Bearbeiten-Eintrag stellt Aufgabe und Workflow mit her; fehlt der Workflow, faellt die Auswahl auf den
+        // ersten gueltigen der Rolle zurueck und die Statuszeile sagt, wenn es keinen gibt.
+        if (this.settings.engine === "comfy") {
+          const role: WorkflowRole = entry.task ?? "txt2img";
+          this.state.comfyTask = role;
+          if (entry.workflow !== undefined) void this.selectComfyWorkflow(role, entry.workflow);
+        }
         const quelle = entry.initImage !== null ? this.app.vault.getAbstractFileByPath(entry.initImage) : null;
         if (quelle instanceof TFile) void this.setInitImage(quelle, entry.initCrop);
         else {
@@ -306,10 +331,24 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     // entscheidet ueber die Bereitschaft (apiReadiness()/getPanelState() lesen ihn direkt).
     else if (this.settings.engine !== "playground") startPruefungen.push(this.checkServer());
     if (this.settings.engine === "comfy") {
-      startPruefungen.push(this.loadWorkflow());
+      startPruefungen.push(this.loadComfyLibrary());
       // Beim Start kann der Vault noch nicht indiziert sein (`getAbstractFileByPath` liefert dann `null`): nach Layout-Ready noch einmal.
-      this.app.workspace.onLayoutReady(() => { if (this.state.workflow.kind !== "ok") void this.loadWorkflow(); });
+      this.app.workspace.onLayoutReady(() => { if (this.state.comfyLibrary.kind !== "ok") void this.loadComfyLibrary(); });
     }
+    // Der Ordner ist das Bedienelement: ein hineingelegter, geaenderter oder geloeschter Workflow erscheint ohne Neustart.
+    const onVaultChange = (path: string, oldPath?: string): void => {
+      if (this.settings.engine !== "comfy") return;
+      const folder = this.settings.comfyWorkflowFolder.trim().replace(/\/+$/, "");
+      if (folder === "") return;
+      const inFolder = (p: string | undefined): boolean => p !== undefined && (p === folder || p.startsWith(`${folder}/`));
+      if (!inFolder(path) && !inFolder(oldPath)) return;
+      window.clearTimeout(this.libraryReloadTimer);
+      this.libraryReloadTimer = window.setTimeout(() => void this.loadComfyLibrary(), 300);
+    };
+    this.registerEvent(this.app.vault.on("create", (f) => onVaultChange(f.path)));
+    this.registerEvent(this.app.vault.on("modify", (f) => onVaultChange(f.path)));
+    this.registerEvent(this.app.vault.on("delete", (f) => onVaultChange(f.path)));
+    this.registerEvent(this.app.vault.on("rename", (f, old) => onVaultChange(f.path, old)));
     if (startPruefungen.length > 0) {
       await Promise.race([
         Promise.allSettled(startPruefungen),
@@ -362,8 +401,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       return { ready: false, reason: "model-not-downloaded" };
     }
     if (this.settings.engine === "comfy") {
-      const w = this.state.workflow;
-      if (w.kind !== "ok") return { ready: false, reason: "not-configured" };
+      if (this.comfyWorkflow("txt2img") === null) return { ready: false, reason: "not-configured" };
       // Danach gilt dieselbe Server-Bedingung wie fuer A1111 — Fall-through nach unten.
     }
     if (this.settings.engine === "playground") {
@@ -409,13 +447,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
   /** Der EINE Kontext, unter dem gehaertet wird — Panel wie Provider-API. Zwei Kontexte
    *  waeren zwei Wahrheiten: die API meldete dann andere Parameter, als das Panel in seine
    *  Notiz schreibt. Genau dafuer liegt die Haertung in core/params.ts an einer Stelle. */
-  private hardenContext(): HardenContext {
+  private hardenContext(task: ComfyTask = this.state.comfyTask): HardenContext {
     return {
       mode: this.settings.engine,
       defaultSteps: this.settings.defaultSteps,
       model: this.currentModelName(),
       builtinModel: this.settings.builtinModel,
-      workflowSlots: slotsOf(this.state.workflow),
+      comfy: { task, workflow: this.comfyWorkflow(task) },
       now: new Date(),
       randomSeed: () => Math.floor(Math.random() * 2 ** 31),
     };
@@ -452,7 +490,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     if (!img) return;
     let file: TFile;
     try {
-      const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
+      const path = await this.resolveImagePath(imageFilenameFor(img.params));
       file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl).buffer as ArrayBuffer);
     } catch (e) {
       new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));
@@ -475,7 +513,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     const params: GenParams = { ...rest, date: created, initImage: null, initCrop: rest.initCrop };
     let file: TFile;
     try {
-      const path = await this.resolveImagePath(buildImageFilename(new Date(params.date), params.seed));
+      const path = await this.resolveImagePath(imageFilenameFor(params));
       file = await this.app.vault.createBinary(path, dataUrlToBytes(`data:image/png;base64,${image.base64}`).buffer as ArrayBuffer);
     } catch (e) {
       return { ok: false, reason: "write-failed", message: e instanceof Error ? e.message : String(e) };
@@ -512,7 +550,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       if (clean !== "" && !(this.app.vault.getAbstractFileByPath(clean) instanceof TFolder)) {
         await this.app.vault.createFolder(clean).catch(() => undefined);
       }
-      const filename = buildImageFilename(new Date(params.date), params.seed);
+      const filename = imageFilenameFor(params);
       const path = dedupeFilename(
         normalizePath(clean === "" ? filename : `${clean}/${filename}`),
         (p) => this.app.vault.getAbstractFileByPath(p) !== null,
@@ -557,7 +595,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // playground hat keinen Server zu pruefen — derselbe Ausschluss wie beim Start
       // (onload) und beim GUI-Guard (generate()).
       if (mode !== "playground") await this.checkServer();
-      if (mode === "comfy") await this.loadWorkflow();
+      if (mode === "comfy") await this.loadComfyLibrary();
     } else {
       await this.refreshEngineState();
     }
@@ -714,12 +752,14 @@ export default class LocalImageGeneratorPlugin extends Plugin {
    *
    *  `url` kommt vom Aufrufer (resolveEndpointFor("comfy")) statt hier erneut aufgeloest
    *  zu werden — ein Lauf braucht GENAU EINE Aufloesung, nicht eine je Backend-Baustein. */
-  private makeComfyClient(url: string, onProgress: (p: ComfyProgress) => void): ImageBackend {
-    const w = this.state.workflow;
-    if (w.kind !== "ok") throw new Error("kein brauchbarer Workflow");
+  private makeComfyClient(url: string, onProgress: (p: ComfyProgress) => void, job: ComfyJob | null): ComfyClient {
+    // Erzeugen braucht den txt2img-Workflow im Konstruktor; Bearbeiten und Hochskalieren bekommen ihren Workflow am
+    // Aufruf (`runEdit`/`runUpscale`), der Konstruktor-Graph bleibt dann leer und wird nie gesendet.
+    const w = job === null ? this.comfyWorkflow("txt2img") : null;
+    if (job === null && w === null) throw new Error("kein brauchbarer Workflow");
     // clientId + onProgress schalten den Fortschritts-Socket ein (Welle 24); er ist optional,
     // ohne ihn zaehlt die Statuszeile Sekunden.
-    return new ComfyClient(url, w.json, comfyTransport(), {
+    return new ComfyClient(url, w?.json ?? "", comfyTransport(), {
       timeoutMs: 1_800_000,
       clientId: activeWindow.crypto.randomUUID(),
       onProgress,
@@ -834,28 +874,40 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     return this.state.server;
   }
 
-  /** Workflow-Datei lesen und beurteilen. Laeuft beim Start (nur im comfy-Modus), nach dem
-   *  Setzen des Pfades und beim Moduswechsel — nicht vor jedem Lauf: ein Workflow aendert
-   *  sich nicht zwischen zwei Klicks, und ein Vault-Read pro Klick waere Rauschen. */
-  async loadWorkflow(): Promise<WorkflowState> {
-    const path = this.settings.comfyWorkflowPath.trim();
-    let raw: string | null = null;
-    if (path !== "") {
-      // Form wie ueberall sonst in main.ts: getAbstractFileByPath + instanceof TFile.
-      // Ein Ordner unter dem Pfad ist hier dasselbe wie "nicht da".
-      const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof TFile) {
+  /** Der Workflow, mit dem eine Rolle rechnet: die gewaehlte Datei, sonst die erste gueltige, sonst null. */
+  comfyWorkflow(role: WorkflowRole): ActiveWorkflow | null {
+    return activeEntry(this.state.comfyLibrary, role, this.settings.comfyWorkflowSelection[role]);
+  }
+
+  /** Auswahl einer Rolle speichern (Panel-Dropdown, Zurueckladen eines Rezepts). */
+  async selectComfyWorkflow(role: WorkflowRole, file: string): Promise<void> {
+    this.settings.comfyWorkflowSelection = { ...this.settings.comfyWorkflowSelection, [role]: file };
+    this.refreshViews();
+    await this.saveSettings();
+  }
+
+  /** Workflow-Ordner lesen und jede Datei beurteilen. Laeuft beim Start (nur im comfy-Modus), nach dem Setzen des
+   *  Ordners, beim Moduswechsel und entprellt bei jeder Vault-Aenderung im Ordner — nicht vor jedem Lauf. */
+  async loadComfyLibrary(): Promise<LibraryState> {
+    const folder = normalizePath(this.settings.comfyWorkflowFolder.trim() || "/");
+    const configured = this.settings.comfyWorkflowFolder.trim() !== "";
+    let files: { path: string; raw: string }[] | null = null;
+    const dir = configured ? this.app.vault.getAbstractFileByPath(folder) : null;
+    if (dir instanceof TFolder) {
+      files = [];
+      for (const child of dir.children) {
+        if (!(child instanceof TFile) || child.extension !== "json") continue;
         try {
-          raw = await this.app.vault.cachedRead(file);
+          files.push({ path: child.path, raw: await this.app.vault.cachedRead(child) });
         } catch {
-          raw = null;
+          // Eine unlesbare Datei faellt weg wie eine fehlende; die anderen bleiben benutzbar.
         }
       }
     }
-    if (this.unloaded) return this.state.workflow; // keine spaeten State-Mutationen
-    this.state.workflow = workflowStateFrom(path, raw);
+    if (this.unloaded) return this.state.comfyLibrary; // keine spaeten State-Mutationen
+    this.state.comfyLibrary = libraryFrom(configured ? folder : "", files);
     this.refreshViews();
-    return this.state.workflow;
+    return this.state.comfyLibrary;
   }
 
   refreshViews(): void {
@@ -895,8 +947,8 @@ export default class LocalImageGeneratorPlugin extends Plugin {
      *  das Bild — sonst laege ein Megabyte pro Eintrag in data.json. */
     initImageData: string | null,
     onProgress?: ApiRequest["onProgress"],
-    opts?: { external?: boolean; signal?: AbortSignal },
-  ): Promise<{ ok: true; base64: string } | { ok: false; message: string }> {
+    opts?: { external?: boolean; signal?: AbortSignal; comfyJob?: ComfyJob },
+  ): Promise<{ ok: true; base64: string; width?: number; height?: number } | { ok: false; message: string }> {
     const builtin = this.settings.engine === "builtin";
     const playground = this.settings.engine === "playground";
     // GENAU EINE Aufloesung fuer den ganzen Lauf — Backend-Bau UND Fortschritts-Poller
@@ -917,7 +969,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       : playground
         ? this.makePlaygroundBackend()
         : this.settings.engine === "comfy"
-          ? this.makeComfyClient(endpointUrl!, (p) => comfyProgress(p))
+          ? this.makeComfyClient(endpointUrl!, (p) => comfyProgress(p), opts?.comfyJob ?? null)
           : new A1111Client(endpointUrl!, httpPostJson);
     const external = opts?.external === true;
     // `phase` ist die WAHRE Phase und steuert den Kontrollfluss unten (Poller/Timer); im
@@ -1010,13 +1062,27 @@ export default class LocalImageGeneratorPlugin extends Plugin {
           : params.initCrop !== null
             ? await cropImageToBase64(initImageData, params.initCrop)
             : initImageData;
-      const png = await backend.generate({ ...params, initImageData: sentInit, signal: opts?.signal });
+      const job = opts?.comfyJob;
+      let out: { base64: string; width?: number; height?: number };
+      if (job !== undefined && backend instanceof ComfyClient) {
+        // Bearbeiten und Hochskalieren: die Vorlage geht als PNG hoch (Ausschnitt oder ganzes Bild — `cropImageToBase64`
+        // kodiert ueber Canvas immer PNG, auch aus einer JPEG- oder WebP-Vorlage), die Groesse kommt aus dem Ergebnis.
+        if (initImageData === null) throw new Error("comfy: no init image");
+        const pngB64 = await cropImageToBase64(initImageData, params.initCrop ?? FULL_CROP);
+        const imagePng = base64ToBytes(pngB64);
+        const r = job.task === "edit"
+          ? await backend.runEdit(job.workflow, { imagePng, prompt: params.prompt, seed: params.seed, steps: params.steps, signal: opts?.signal })
+          : await backend.runUpscale(job.workflow, { imagePng, signal: opts?.signal });
+        out = r;
+      } else {
+        out = { base64: await backend.generate({ ...params, initImageData: sentInit, signal: opts?.signal }) };
+      }
       phase = "done";
       // Ergebnis kann nach onunload eintreffen (Remote-Call ist nicht abbrechbar). Dann
       // keine State-Mutation, kein refreshViews — nur das finally räumt den Timer ab.
-      if (this.unloaded) return { ok: true, base64: png };
+      if (this.unloaded) return { ok: true, ...out };
       this.state.run = { kind: "idle" };
-      return { ok: true, base64: png };
+      return { ok: true, ...out };
     } catch (e) {
       phase = "done";
       const msg = e instanceof Error ? e.message : String(e);
@@ -1070,8 +1136,13 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       ? this.state.engine.kind === "ready"
       : this.settings.engine === "playground"
         ? this.settings.playgroundShortcutName.trim() !== ""
-        : this.state.server.kind === "ok" && (this.settings.engine !== "comfy" || this.state.workflow.kind === "ok");
+        : this.state.server.kind === "ok" && (this.settings.engine !== "comfy" || this.comfyWorkflow(this.state.comfyTask) !== null);
     if (!bereit) return;
+    const comfy = this.settings.engine === "comfy";
+    const task: ComfyTask = comfy ? this.state.comfyTask : "txt2img";
+    const workflow = comfy ? this.comfyWorkflow(task) : null;
+    // Bearbeiten und Hochskalieren verlangen eine Vorlage; das ViewModel sperrt den Knopf, das hier ist die Defensive.
+    if (task !== "txt2img" && this.state.initImage === null) return;
     // Rezept-Ehrlichkeit: die eingebaute Engine kennt weder Negativ-Prompt noch CFG
     // noch andere Größen — die Notiz trägt genau das, was gerechnet wurde. hardenParams
     // neutralisiert das still statt es abzulehnen (Keine-Attrappen-Linie).
@@ -1090,24 +1161,38 @@ export default class LocalImageGeneratorPlugin extends Plugin {
         initCrop: this.state.initCrop,
         denoising: r.denoising ?? undefined,
       },
-      this.hardenContext(),
+      this.hardenContext(task),
     );
+    // Workflow und Aufgabe gehoeren zum Rezept (Notiz, Verlauf, Rezept-Vergleich).
+    if (workflow !== null) params.workflow = workflow.file;
+    if (task !== "txt2img") params.task = task;
     // AUFTRAG: die Bytes, getrennt vom Rezept. Die Bedingung haengt an
     // `denoising`, NICHT an `params.initImage`: Letzteres ist der Pfad und darf null sein,
     // waehrend sehr wohl ein Bild mitlaeuft (API-Fall). `denoising !== null` ist per
     // Haertung genau dann wahr, wenn es ein Ausgangsbild gibt.
-    const initData = params.denoising !== null && init !== null ? base64OfDataUrl(init.dataUrl) : null;
-    const result = await this.runGeneration(params, initData);
+    const initData = (params.denoising !== null || task !== "txt2img") && init !== null ? base64OfDataUrl(init.dataUrl) : null;
+    const job: ComfyJob | null = task !== "txt2img" && workflow !== null ? { task, workflow } : null;
+    const result = await this.runGeneration(params, initData, undefined, job !== null ? { comfyJob: job } : undefined);
     // Ergebnis kann nach onunload eintreffen — runGeneration hat dann selbst schon keine
     // späte State-Mutation vorgenommen; hier zusätzlich kein Bild, keine Historie schreiben.
     if (this.unloaded) return;
     if (result.ok) {
+      // Die Groesse eines Bearbeiten- oder Hochskalieren-Laufs ist gemessen (PNG-Kopf), nicht gewuenscht.
+      if (result.width !== undefined && result.height !== undefined) {
+        params.width = result.width;
+        params.height = result.height;
+      }
       this.state.image = { dataUrl: `data:image/png;base64,${result.base64}`, params };
-      this.settings.history = pushHistory(this.settings.history, {
-        prompt: params.prompt, negativePrompt: params.negativePrompt, seed: params.seed, steps: params.steps,
-        cfg: params.cfg, model: params.model, width: params.width, height: params.height, created: params.date,
-        denoising: params.denoising, initImage: params.initImage, initCrop: params.initCrop,
-      });
+      // Hochskalieren kommt nicht in den Verlauf: es hat kein Rezept ausser Quelle und Workflow.
+      if (params.task !== "upscale") {
+        this.settings.history = pushHistory(this.settings.history, {
+          prompt: params.prompt, negativePrompt: params.negativePrompt, seed: params.seed, steps: params.steps,
+          cfg: params.cfg, model: params.model, width: params.width, height: params.height, created: params.date,
+          denoising: params.denoising, initImage: params.initImage, initCrop: params.initCrop,
+          ...(params.task === "edit" ? { task: "edit" as const } : {}),
+          ...(params.workflow !== undefined ? { workflow: params.workflow } : {}),
+        });
+      }
       this.refreshViews();
       void this.saveSettings();
     }
@@ -1140,7 +1225,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
     if (folder !== "" && !(this.app.vault.getAbstractFileByPath(folder) instanceof TFolder)) {
       await this.app.vault.createFolder(folder).catch(() => undefined);
     }
-    const name = buildNoteFilename(params.prompt, params.seed);
+    const name = noteFilenameFor(params);
     const path = dedupeFilename(
       folder === "" ? name : normalizePath(`${folder}/${name}`),
       (p) => this.app.vault.getAbstractFileByPath(p) !== null,
@@ -1167,7 +1252,7 @@ export default class LocalImageGeneratorPlugin extends Plugin {
       // zwischen Generieren und Create Zeit vergeht. isoStamp
       // liefert lokale Zeit ohne Offset — new Date() parst das als lokale Zeit zurück,
       // der Round-Trip ist verlustfrei.
-      const path = await this.resolveImagePath(buildImageFilename(new Date(img.params.date), img.params.seed));
+      const path = await this.resolveImagePath(imageFilenameFor(img.params));
       file = await this.app.vault.createBinary(path, dataUrlToBytes(img.dataUrl).buffer as ArrayBuffer);
     } catch (e) {
       new Notice(t("notice.saveFailed", e instanceof Error ? e.message : String(e)));

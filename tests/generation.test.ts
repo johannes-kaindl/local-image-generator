@@ -82,12 +82,14 @@ describe("backendCapabilities", () => {
       maxSteps: BUILTIN_MODELS["sd-turbo"].steps.max,
       fixedSize: BUILTIN_MODELS["sd-turbo"].sizes[0],
       sizes: BUILTIN_MODELS["sd-turbo"].sizes,
+      prompt: true, steps: true, seed: true, size: false, initRequired: false, denoising: true,
     });
   });
   it("server kann alles, was das Panel anbietet (Modellargument ist Pflicht, aber im Server-Zweig unbeachtet)", () => {
     expect(backendCapabilities({ mode: "server" })).toEqual({
       negativePrompt: true, cfg: true, initImage: true, minSteps: STEPS.min, maxSteps: STEPS.max,
       fixedSize: null, sizes: null,
+      prompt: true, steps: true, seed: true, size: true, initRequired: false, denoising: true,
     });
   });
 });
@@ -103,7 +105,7 @@ describe("backendCapabilities im playground-Modus (Image Playground, Spec Bauste
   });
 
   it("toBackendContext bildet 'playground' verlustfrei ab (kein Modell, keine Slots noetig)", () => {
-    expect(toBackendContext("playground", "sd-turbo", null)).toEqual({ mode: "playground" });
+    expect(toBackendContext("playground", "sd-turbo", { task: "txt2img", workflow: null })).toEqual({ mode: "playground" });
   });
 });
 
@@ -147,16 +149,17 @@ describe("img2img-Faehigkeit", () => {
 
 describe("backendCapabilities im comfy-Modus", () => {
   const slots = { sampler: "1", positive: "2", negative: "3", latent: "4", seedField: "seed", stepsField: "steps", workflowSteps: 6 } as const;
+  const workflow = { file: "w.json", name: "w", json: "{}", role: "txt2img" as const, slots };
 
   it("kann Negativ-Prompt, aber kein CFG und kein img2img", () => {
-    const c = backendCapabilities({ mode: "comfy", slots });
+    const c = backendCapabilities({ mode: "comfy", task: "txt2img", workflow });
     expect(c.negativePrompt).toBe(true);
     expect(c.cfg).toBe(false);
     expect(c.initImage).toBe(false);
   });
 
   it("laesst die Groesse frei und setzt die Server-Step-Grenzen", () => {
-    const c = backendCapabilities({ mode: "comfy", slots });
+    const c = backendCapabilities({ mode: "comfy", task: "txt2img", workflow });
     expect(c.sizes).toBeNull();
     expect(c.fixedSize).toBeNull();
     expect(c.minSteps).toBe(STEPS.min);
@@ -164,7 +167,7 @@ describe("backendCapabilities im comfy-Modus", () => {
   });
 
   it("sperrt alles, solange kein brauchbarer Workflow da ist", () => {
-    const c = backendCapabilities({ mode: "comfy", slots: null });
+    const c = backendCapabilities({ mode: "comfy", task: "txt2img", workflow: null });
     expect(c.negativePrompt).toBe(false);
     expect(c.cfg).toBe(false);
     expect(c.initImage).toBe(false);

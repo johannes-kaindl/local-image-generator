@@ -1,4 +1,6 @@
 import { localFileStamp, localIso } from "../vendor/kit/local-stamp";
+import { baseName, splitFileName } from "../vendor/kit/rel-path";
+import type { GenParams } from "./viewmodel";
 // Dateinamens-Schema: lig-<YYYYMMDD-HHmmss>-s<seed>.png
 export function buildImageFilename(d: Date, seed: number): string {
   return `lig-${localFileStamp(d, { compact: true, seconds: true })}-s${seed}.png`;
@@ -44,4 +46,24 @@ export function dirOf(path: string): string {
 // Bewusst lokal, nicht UTC: die Notiz dokumentiert, wann JAY das Bild gemacht hat.
 export function isoStamp(d: Date): string {
   return localIso(d, { seconds: true, offset: false });
+}
+
+/** Stamm der Quelldatei fuer ein Hochskalieren, oder null ohne benennbare Quelle (API-Bytes). */
+function upscaleStem(p: GenParams): string | null {
+  if (p.initImage === null) return null;
+  const stem = splitFileName(baseName(p.initImage)).stem.replace(FORBIDDEN, " ").trim();
+  return stem === "" ? null : `${stem}-upscale`;
+}
+
+/** Dateiname des Ergebnisbildes. Hochskalieren hat keinen Seed: es heisst nach der Quelle (`turm-upscale.png`), ohne
+ *  Quelle nach dem Zeitstempel. Erzeugen und Bearbeiten behalten `lig-<Stempel>-s<seed>.png`. */
+export function imageFilenameFor(p: GenParams): string {
+  if (p.task !== "upscale") return buildImageFilename(new Date(p.date), p.seed);
+  return `${upscaleStem(p) ?? `lig-${localFileStamp(new Date(p.date), { compact: true, seconds: true })}-upscale`}.png`;
+}
+
+/** Dateiname der Ergebnis-Notiz, nach derselben Regel wie `imageFilenameFor`. */
+export function noteFilenameFor(p: GenParams): string {
+  if (p.task !== "upscale") return buildNoteFilename(p.prompt, p.seed);
+  return `${upscaleStem(p) ?? `lig-${localFileStamp(new Date(p.date), { compact: true, seconds: true })}-upscale`}.md`;
 }

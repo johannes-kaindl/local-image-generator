@@ -8,7 +8,8 @@ import type { HardenInput } from "./params";
 import type { Crop } from "../vendor/kit/crop";
 import type { GenParams } from "./viewmodel";
 import type { EngineChoice } from "./settings";
-import type { WorkflowSlots } from "./comfy/workflow";
+import type { WorkflowRole } from "./comfy/workflow";
+import type { ActiveWorkflow } from "./comfy/library";
 import {
   IMAGE_GEN_PROVIDER_API_VERSION,
   type GenerateImageOptions,
@@ -217,10 +218,10 @@ export interface ApiDeps {
    *  braucht es, um zwischen SD-Turbos einer Größe und SDXL-Turbos zweien zu unterscheiden.
    *  Im Server-Modus ungenutzt (der Server waehlt selbst). */
   builtinModel(): BuiltinModelId;
-  /** Die Slots des hinterlegten ComfyUI-Workflows, oder null ohne brauchbaren Workflow —
-   *  `backendCapabilities` braucht sie im comfy-Modus. Pflicht, nicht optional (wie
-   *  `builtinModel` oben): ein optionales Feld waere wieder ein stiller Default. */
-  workflowSlots(): WorkflowSlots | null;
+  /** Der aktive ComfyUI-Workflow einer Rolle (die im Panel gewaehlte Datei, sonst die erste gueltige), oder null ohne
+   *  brauchbaren — `backendCapabilities` braucht ihn im comfy-Modus. Pflicht, nicht optional (wie `builtinModel` oben):
+   *  ein optionales Feld waere wieder ein stiller Default. */
+  comfyWorkflow(role: WorkflowRole): ActiveWorkflow | null;
   /** Netzfreie Bereitschaft. `main.ts` leitet sie aus state.engine/state.server ab —
    *  status() macht selbst KEINEN Netzaufruf.
    *  Als Union, nicht als flaches Objekt: `{ ready: false }` OHNE Grund waere ein Zustand,
@@ -297,7 +298,7 @@ export function createImageGenerationApi(deps: ApiDeps): ImageGenerationApi {
   // Als benannte Funktion statt als Methode, damit `recheck()` sie ohne `this` aufrufen kann:
   // ein Konsument darf `const { recheck } = api` schreiben, und dann gaebe es kein `this`.
   const readStatus = (): ApiStatus => {
-      const caps = backendCapabilities(toBackendContext(deps.getMode(), deps.builtinModel(), deps.workflowSlots()));
+      const caps = backendCapabilities(toBackendContext(deps.getMode(), deps.builtinModel(), { task: "txt2img", workflow: deps.comfyWorkflow("txt2img") }));
       const r = deps.readiness();
       // busy schlaegt jede andere Bereitschaft: das Backend mag geladen sein, aber es
       // rechnet gerade — ein Konsument, der jetzt anfragt, bekaeme eine Absage.

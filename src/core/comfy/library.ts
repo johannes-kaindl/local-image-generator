@@ -4,9 +4,12 @@
 // Die Auswahl je Rolle ist ein Dateiname. Fehlt die gewählte Datei oder ist sie ungültig, gilt die erste gültige der
 // Rolle (Sortierung nach Dateiname): ein gelöschter Workflow lässt die Stellung bedienbar, statt sie still zu sperren.
 import { baseName } from "../../vendor/kit/rel-path";
-import { classifyWorkflow, type Classified, type WorkflowRole } from "./workflow";
+import { classifyWorkflow, type Classified, type RoleError, type WorkflowRole } from "./workflow";
 
 type Valid = Exclude<Classified, { role: null }>;
+
+/** Warum eine Datei im Ordner nicht benutzbar ist — ein Grund je Ausgang, fuer Einstellungen und Statuszeile. */
+export type WorkflowProblem = RoleError | { kind: "json" };
 
 export interface LibraryEntry {
   path: string;
@@ -16,7 +19,7 @@ export interface LibraryEntry {
   name: string;
   /** Rohes JSON, wie es im Vault steht: der Client parst selbst und arbeitet auf dem unveränderten Graphen. */
   json: string;
-  classified: Classified | { role: null; error: { kind: "json" } };
+  classified: Valid | { role: null; error: WorkflowProblem };
 }
 
 export type LibraryState =

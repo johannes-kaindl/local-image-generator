@@ -1,10 +1,10 @@
-import { backendCapabilities, toBackendContext, CFG, DEFAULT_SIZE, DENOISING, type SizeOption } from "./generation";
+import { backendCapabilities, toBackendContext, CFG, DEFAULT_SIZE, DENOISING, type ComfyTask, type SizeOption } from "./generation";
 import type { BuiltinModelId } from "./model-manifest";
 import { isoStamp } from "./filename";
 import type { EngineChoice } from "./settings";
 import type { GenParams } from "./viewmodel";
 import { parseCrop } from "../vendor/kit/crop";
-import type { WorkflowSlots } from "./comfy/workflow";
+import type { ActiveWorkflow } from "./comfy/library";
 import { clampInt } from "../vendor/kit/num";
 
 /** Was ein Aufrufer wuenschen darf. Nur `prompt` ist Pflicht. */
@@ -42,11 +42,9 @@ export interface HardenContext {
    *  ungenutzt (backendCapabilities ignoriert `model`, wenn mode !== "builtin"), aber trotzdem
    *  Pflicht: ein optionales Feld waere wieder ein stiller Default gewesen. */
   builtinModel: BuiltinModelId;
-  /** Die Slots des hinterlegten ComfyUI-Workflows, oder null ohne brauchbaren Workflow —
-   *  `backendCapabilities` braucht sie, um im comfy-Modus zu urteilen. Pflichtfeld aus
-   *  demselben Grund wie `builtinModel`: ein optionales Feld waere wieder ein stiller
-   *  Default gewesen. */
-  workflowSlots: WorkflowSlots | null;
+  /** Aufgabe und aktiver Workflow im comfy-Modus (ausserhalb ungenutzt) — `backendCapabilities` urteilt daraus.
+   *  Pflichtfeld aus demselben Grund wie `builtinModel`: ein optionales Feld waere wieder ein stiller Default. */
+  comfy: { task: ComfyTask; workflow: ActiveWorkflow | null };
   /** Wird eingefroren — die Notiz beschreibt das Bild, das man sieht. */
   now: Date;
   /** Injiziert statt Math.random(), damit die Haertung testbar bleibt. */
@@ -96,7 +94,7 @@ function nearestSize(width: number, height: number, sizes: readonly SizeOption[]
 }
 
 export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams {
-  const caps = backendCapabilities(toBackendContext(ctx.mode, ctx.builtinModel, ctx.workflowSlots));
+  const caps = backendCapabilities(toBackendContext(ctx.mode, ctx.builtinModel, ctx.comfy));
   // clampInt gibt seinen Fallback UNGEPRUEFT zurueck — ein defaultSteps von 20 landete im
   // builtin-Modus (dessen Katalog-Maximum liegt seit 0.12 bei 8, davor 4) sonst unveraendert
   // im Ergebnis. Deshalb wird auch er geklemmt;
@@ -115,7 +113,9 @@ export function hardenParams(input: HardenInput, ctx: HardenContext): GenParams 
   const wantedHeight = finite(input.height, DEFAULT_SIZE.height);
   const size = caps.sizes ? nearestSize(wantedWidth, wantedHeight, caps.sizes) : { width: wantedWidth, height: wantedHeight };
   const steps = clampInt(input.steps ?? ctx.defaultSteps, caps.minSteps, caps.maxSteps, fallbackSteps);
-  const rawDenoising = wanted === undefined ? null : clampFloat(input.denoising, DENOISING.min, DENOISING.max, DENOISING.default);
+  // Eine Vorlage ohne Denoise gibt es seit dem ComfyUI-Bearbeiten: es fuehrt die Vorlage als Referenz, nicht als
+  // Startlatent — ein Wert hier waere eine Angabe ueber etwas, das nicht stattfindet.
+  const rawDenoising = wanted === undefined || !caps.denoising ? null : clampFloat(input.denoising, DENOISING.min, DENOISING.max, DENOISING.default);
   // Seit 0.12 ohne Sonderfall: beide Backends melden den eingestellten Wert. Die
   // builtin-Engine interpoliert ihren Einstiegspunkt (denoiseEntry im Scheduler),
   // statt auf `steps` Positionen zu rasten.

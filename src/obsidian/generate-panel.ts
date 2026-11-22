@@ -3,7 +3,7 @@
 import { setIcon, setTooltip } from "obsidian";
 import { presetActive, togglePresetInPrompt } from "../core/presets";
 import { t } from "../vendor/kit/i18n";
-import { buildViewModel } from "../core/viewmodel";
+import { buildViewModel, comfyActive } from "../core/viewmodel";
 import { CFG, DENOISING, SIZES, STEPS, type SizeOption } from "../core/generation";
 import type { BuiltinModelId } from "../core/model-manifest";
 import type { HistoryEntry } from "../core/settings";
@@ -146,7 +146,8 @@ export class GeneratePanel implements HubPanel<TabId> {
     // (Mount-once, s. Modulkopf): ein spaeterer Workflow-Wechsel wirkt erst beim naechsten
     // Oeffnen des Panels, nicht live auf einen schon gezeichneten Regler.
     const state0 = this.host.getPanelState();
-    const workflowSteps = state0.mode === "comfy" && state0.workflow.kind === "ok" ? state0.workflow.slots.workflowSteps : null;
+    const active0 = state0.mode === "comfy" ? comfyActive(state0) : null;
+    const workflowSteps = active0 !== null && active0.role !== "upscale" ? active0.slots.workflowSteps : null;
     const startSteps = String(workflowSteps ?? this.host.getSettings().defaultSteps);
     this.stepsEl = controls.createEl("input", {
       cls: "lig-steps",

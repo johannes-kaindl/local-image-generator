@@ -419,7 +419,7 @@ export class LigSettingTab extends PluginSettingTab {
         tf.setPlaceholder(t("settings.workflow.pick"));
         tf.setValue(this.plugin.settings.comfyWorkflowPath).onChange(async (v) => {
           await this.setControlValue("comfyWorkflowPath", v);
-          void this.plugin.loadWorkflow();
+          void this.plugin.loadComfyLibrary();
         });
       })
       .addButton((b) =>
@@ -427,7 +427,7 @@ export class LigSettingTab extends PluginSettingTab {
           new WorkflowPickerModal(this.app, (file) => {
             void (async () => {
               await this.setControlValue("comfyWorkflowPath", file.path);
-              void this.plugin.loadWorkflow();
+              void this.plugin.loadComfyLibrary();
               this.refreshUi();
             })();
           }).open();

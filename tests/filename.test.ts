@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildImageFilename, dedupeFilename, buildNoteFilename, dirOf, isoStamp } from "../src/core/filename";
+import { buildImageFilename, dedupeFilename, buildNoteFilename, dirOf, imageFilenameFor, isoStamp, noteFilenameFor } from "../src/core/filename";
+import type { GenParams } from "../src/core/viewmodel";
 
 describe("buildImageFilename", () => {
   it("Schema lig-YYYYMMDD-HHmmss-s<seed>.png", () => {
@@ -78,5 +79,28 @@ describe("isoStamp", () => {
 
   it("füllt einstellige Werte auf", () => {
     expect(isoStamp(new Date(2026, 0, 2, 3, 4, 5))).toBe("2026-01-02T03:04:05");
+  });
+});
+
+describe("Dateinamen je ComfyUI-Aufgabe", () => {
+  const d = new Date("2026-11-22T01:02:03");
+  const p = (over: Partial<GenParams>): GenParams => ({
+    prompt: "", negativePrompt: "", seed: 0, steps: 0, cfg: null, model: "unknown", width: 4, height: 4,
+    date: "2026-11-22T01:02:03", initImage: null, initCrop: null, denoising: null, ...over,
+  });
+
+  it("Hochskalieren heißt nach der Quelle mit -upscale", () => {
+    expect(imageFilenameFor(p({ task: "upscale", initImage: "Bilder/turm.png" }))).toBe("turm-upscale.png");
+    expect(noteFilenameFor(p({ task: "upscale", initImage: "Bilder/turm.png" }))).toBe("turm-upscale.md");
+  });
+
+  it("Hochskalieren ohne Quelle (API-Bytes) heißt nach dem Zeitstempel", () => {
+    expect(imageFilenameFor(p({ task: "upscale" }))).toBe(`lig-${"20261122-010203"}-upscale.png`);
+  });
+
+  it("Erzeugen und Bearbeiten behalten das Schema mit Seed", () => {
+    expect(imageFilenameFor(p({ seed: 7 }))).toBe(buildImageFilename(d, 7));
+    expect(imageFilenameFor(p({ seed: 7, task: "edit" }))).toBe(buildImageFilename(d, 7));
+    expect(noteFilenameFor(p({ seed: 7, prompt: "a cat" }))).toBe(buildNoteFilename("a cat", 7));
   });
 });

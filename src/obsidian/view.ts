@@ -6,6 +6,8 @@ import type { HistoryEntry, LigSettings } from "../core/settings";
 import { t } from "../vendor/kit/i18n";
 import type { BuiltinModelId } from "../core/model-manifest";
 import type { PanelState } from "../core/viewmodel";
+import type { ComfyTask } from "../core/generation";
+import type { WorkflowRole } from "../core/comfy/workflow";
 import { GeneratePanel } from "./generate-panel";
 import { HistoryPanel } from "./history-panel";
 import { buildHubInto, type HubController, type HubPanel, type TabId } from "./hub";
@@ -54,6 +56,10 @@ export interface ViewHost {
   clearHistory(): void;
   setHistoryView(v: "recent" | "grouped"): void;
   showTab(id: TabId): void;
+  /** ComfyUI: Aufgabe des Panels wechseln (Erzeugen, Bearbeiten, Hochskalieren). */
+  setComfyTask(task: ComfyTask): void;
+  /** ComfyUI: Workflow einer Rolle waehlen (Dateiname im Workflow-Ordner, gespeichert). */
+  selectComfyWorkflow(role: WorkflowRole, file: string): void;
 }
 
 export class GeneratorView extends ItemView {
